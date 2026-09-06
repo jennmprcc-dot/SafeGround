@@ -11,6 +11,7 @@ import { cn } from "~/lib/cn";
 import { useAuth } from "~/lib/auth";
 import { listSweeps, getMyCheckIn, demoUserId } from "~/lib/server";
 import { BellMoonIcon, CheckIcon, HomeIcon, InfoIcon, MenuIcon, MoonIcon, NightLampIcon } from "~/lib/appIcons";
+import { HeartIcon } from "~/lib/icons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
 import type { ToastState } from "~/components/ui";
 
@@ -195,6 +196,14 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
     <>
       <BottomSheet open={open && !crisisOpen} onClose={onClose} title="Menu">
         <nav className="flex flex-col gap-1" aria-label="Menu">
+          <Link
+            to="/hometeam"
+            onClick={onClose}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <HeartIcon size={22} aria-hidden />
+            HomeTeam — step in for a neighbor
+          </Link>
           <Link
             to="/privacy"
             onClick={onClose}

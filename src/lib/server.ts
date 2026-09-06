@@ -25,6 +25,8 @@ import { DEMO_RESOURCES, DEMO_SWEEPS } from "~/lib/data";
 import type { CategoryId } from "~/lib/data";
 import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertRow, AlertSource } from "~/lib/alerts";
 import { DEMO_SENDER } from "~/lib/alerts";
+import type { NeedRow, NeedStatus, NeedVisibility, NeedSource, MemberStatusRow } from "~/lib/hometeam";
+import { demoNeeds } from "~/lib/hometeam";
 
 /* ── Public row shapes (serializable) ──────────────────────────── */
 
@@ -216,6 +218,48 @@ export function demoUserId(displayName: string, deviceToken: string): string {
 
 /* ── Row mappers (DB → UI shape) ────────────────────────────────── */
 
+/** Raw supply_requests row shape (HomeTeam feed) — snake_case from the DB. */
+interface DbNeedRow {
+  id: string;
+  items: string[] | null;
+  note: string | null;
+  status: string;
+  visibility: string;
+  requester_label: string | null;
+  logged_by_outreach: boolean;
+  claimed_name: string | null;
+  claimed_at: string | Date | null;
+  assigned_name: string | null;
+  assigned_at: string | Date | null;
+  delivered_name: string | null;
+  delivered_at: string | Date | null;
+  created_at: string | Date;
+}
+const ISO = (d: string | Date | null): string | null =>
+  d ? (typeof d === "string" ? d : new Date(d).toISOString()) : null;
+function mapNeed(r: DbNeedRow): NeedRow {
+  const status: NeedStatus =
+    r.status === "open" ? "open" : r.status === "delivered" ? "delivered" : r.status === "fulfilled" ? "fulfilled" : r.status === "claimed" ? "claimed" : "in_progress";
+  const visibility: NeedVisibility =
+    r.visibility === "assign_only" ? "assign_only" : r.visibility === "private" ? "private" : "open";
+  return {
+    id: r.id,
+    items: Array.isArray(r.items) ? r.items : [],
+    note: r.note,
+    status,
+    visibility,
+    requesterLabel: r.requester_label ?? "A neighbor",
+    loggedByOutreach: r.logged_by_outreach,
+    claimedByName: r.claimed_name,
+    claimedAt: ISO(r.claimed_at),
+    assignedToName: r.assigned_name,
+    assignedAt: ISO(r.assigned_at),
+    deliveredByName: r.delivered_name,
+    deliveredAt: ISO(r.delivered_at),
+    createdAt: typeof r.created_at === "string" ? r.created_at : new Date(r.created_at).toISOString(),
+    source: "db" as const,
+  };
+}
 interface DbResourceRow {
   id: string;
   name: string;
@@ -1052,4 +1096,250 @@ export const getMyActiveAlert = createServerFn({ method: "GET" })
     const res = await listAlertsFor({ data: { phone: data.phone } });
     const mine = res.rows.find((r) => r.senderPhone === data.phone && !r.resolved) ?? null;
     return { row: mine, source: res.source };
+  });
+/* ── Wave 2b: HomeTeam needs loop (owner-directed 2026-09-06) ────
+ * Writes go through the existing RPCs only (hometeam_join/claim/complete —
+ * consent join + first-claim-wins + delivery recorded server-side; no direct
+ * INSERT/UPDATE policies on phone-identified rows). Reads run service-role but
+ * are gated HERE: only OPEN-visibility needs are served to supporters, and
+ * assign_only/private needs drop their requester label + carry no claim
+ * affordance in the UI. Phone identity is digits-only (sg_norm_phone shape). */
+/** Open needs feed: open-visibility needs first, then in-progress/delivered
+ * (assign_only keeps its status but no public requester detail; private needs
+ * never appear on the supporter feed at all). */
+export const listNeeds = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ rows: NeedRow[]; source: NeedSource }> => {
+    try {
+      const rows = (await sql()`
+        select
+          sr.id, sr.items, sr.note, sr.status::text as status, sr.visibility::text as visibility,
+          sr.created_at,
+          case
+            when sr.visibility = 'open' then coalesce(u.display_name, 'A neighbor')
+            else 'Coordinator'
+          end as requester_label,
+          (sr.visibility in ('assign_only', 'private')) as logged_by_outreach,
+          hc.display_name as claimed_name, sr.claimed_at,
+          ha.display_name as assigned_name, sr.assigned_at,
+          hd.display_name as delivered_name, sr.delivered_at
+        from public.supply_requests sr
+        left join public.users u on u.id = sr.requested_by
+        left join public.hometeam_members hc on hc.id = sr.hometeam_claimed_by
+        left join public.hometeam_members ha on ha.id = sr.assigned_to
+        left join public.hometeam_members hd on hd.id = sr.delivered_by
+        where sr.visibility in ('open', 'assign_only')
+          and sr.status <> 'cancelled'
+          and coalesce(sr.fulfilled_at, sr.created_at) > now() - interval '30 days'
+          and coalesce(sr.anonymize_at, now()) > now()
+        order by
+          case when sr.status = 'open' then 0 when sr.status in ('claimed', 'in_progress') then 1 else 2 end,
+          sr.created_at desc
+        limit 60`) as unknown as DbNeedRow[];
+      return { rows: rows.map(mapNeed), source: "db" };
+    } catch {
+      return { rows: demoNeeds(), source: "demo" };
+    }
+  },
+);
+/** Join the HomeTeam: phone + name + explicit consent (R-P1). After-hours
+ * emergency-alert consent is DEFAULT OFF; the toggle sets it when present. */
+export const joinHomeTeam = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as { phone?: unknown; name?: unknown; consentsToAfterHours?: unknown };
+    return {
+      phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+      name: typeof v.name === "string" ? v.name.replace(/\s+/g, " ").trim().slice(0, 40) : "",
+      consentsToAfterHours: v.consentsToAfterHours === true,
+    };
+  })
+  .handler(async ({ data }): Promise<{ ok: boolean; memberId: string | null; error: string | null; source: NeedSource }> => {
+    const { phone, name, consentsToAfterHours } = data;
+    try {
+      const rows = (await sql()`
+        select public.hometeam_join(${phone}, ${name}) as id`) as unknown as Array<{ id: string }>;
+      if (consentsToAfterHours) {
+        // After-hours toggle is DEFAULT OFF; setting it is a graceful, non-blocking
+        // update — the saver must never fail the join (older DBs lack the column).
+        await sql()`
+          update public.hometeam_members
+          set consents_to_after_hours = true
+          where phone = ${phone} and consents_to_after_hours = false
+            and exists (select 1 from information_schema.columns
+                        where table_schema = 'public' and table_name = 'hometeam_members'
+                        and column_name = 'consents_to_after_hours')`;
+      }
+      return { ok: true, memberId: rows[0]?.id ?? null, error: null, source: "db" };
+    } catch (e) {
+      if (isDbDown(e)) {
+        return { ok: true, memberId: `draft-${Date.now()}`, error: null, source: "demo" };
+      }
+      return { ok: false, memberId: null, error: calmRpcError(e, "That didn't go through — try again in a moment."), source: "db" };
+    }
+  });
+/** "I got that" — server-atomic first-claim-wins via hometeam_claim. */
+export const claimNeed = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as { requestId?: unknown; phone?: unknown };
+    return {
+      requestId: String(v.requestId ?? "").slice(0, 64),
+      phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+    };
+  })
+  .handler(async ({ data }): Promise<{ ok: boolean; alreadyHandled: boolean; error: string | null; source: NeedSource }> => {
+    const { requestId, phone } = data;
+    try {
+      await sql()`select public.hometeam_claim(${requestId}::uuid, ${phone})`;
+      return { ok: true, alreadyHandled: false, error: null, source: "db" };
+    } catch (e) {
+      if (isDbDown(e)) return { ok: true, alreadyHandled: false, error: null, source: "demo" };
+      const err = calmRpcError(e, "That didn't go through — try again in a moment.");
+      return { ok: false, alreadyHandled: /already being handled|already complete/i.test(err), error: err, source: "db" };
+    }
+  });
+/** "Mark delivered" — hometeam_complete records who brought what, when. */
+export const markNeedDelivered = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as { requestId?: unknown; phone?: unknown };
+    return {
+      requestId: String(v.requestId ?? "").slice(0, 64),
+      phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+    };
+  })
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; source: NeedSource }> => {
+    const { requestId, phone } = data;
+    try {
+      await sql()`select public.hometeam_complete(${requestId}::uuid, ${phone})`;
+      return { ok: true, error: null, source: "db" };
+    } catch (e) {
+      if (isDbDown(e)) return { ok: true, error: null, source: "demo" };
+      return { ok: false, error: calmRpcError(e, "That didn't go through — nothing changed. Try again when you can."), source: "db" };
+    }
+  });
+/** Log a need. Neighbors log for themselves (phone + name → ensured demo user,
+ * the same pattern sweeps/check-ins use — public.users has no phone column);
+ * outreach rosters log on someone's behalf from their phone (keeps attribution
+ * without touching the neighbor's row). */
+export const logNeed = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as {
+      items?: unknown; note?: unknown; neighborPhone?: unknown; neighborName?: unknown;
+      outreachPhone?: unknown; pickup?: unknown; visibility?: unknown;
+    };
+    const items = Array.isArray(v.items)
+      ? (v.items as unknown[]).map((x) => String(x).replace(/\s+/g, " ").trim().slice(0, 60)).filter((x) => x.length > 0).slice(0, 10)
+      : [];
+    return {
+      items,
+      note: typeof v.note === "string" ? v.note.replace(/\s+/g, " ").trim().slice(0, 400) : "",
+      pickupPreference: typeof v.pickup === "string" ? v.pickup.replace(/\s+/g, " ").trim().slice(0, 200) : "",
+      neighborPhone: String(v.neighborPhone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+      neighborName: typeof v.neighborName === "string" ? v.neighborName.replace(/\s+/g, " ").trim().slice(0, 40) : "",
+      outreachPhone: String(v.outreachPhone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+      visibility: v.visibility === "assign_only" || v.visibility === "private" ? (v.visibility as "assign_only" | "private") : "open",
+    };
+  })
+  .handler(async ({ data }): Promise<{ ok: boolean; requestId: string | null; error: string | null; source: NeedSource }> => {
+    const { items, note, pickupPreference, neighborPhone, neighborName, outreachPhone, visibility } = data;
+    try {
+      // Outreach-on-behalf path: staff phone must match the live roster (phone
+      // identity, server-verified — no client trust).
+      const staffRows = (await sql()`
+        select display_name from public.outreach_roster
+        where phone = ${outreachPhone} and active limit 1`) as unknown as Array<{ display_name: string }>;
+      const isStaff = staffRows.length > 0;
+      // Non-staff phones may only create open needs — privacy(assign_only/private)
+      // choices are enforced server-side, never by hiding a button.
+      const finalVisibility = isStaff ? visibility : "open";
+      // Neighbor path: ensure a users row the way sweeps/check-ins do (stable
+      // per-device identity; phone stays a HomeTeam-only identity, never users).
+      const displayName = (neighborName || "Neighbor").trim();
+      const userId = demoUserId(displayName, `ht-${neighborPhone}`);
+      await sql()`
+        insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_user_meta_data)
+        values (${userId}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+                ${`demo+ht-${neighborPhone}@safeground.local`}, '', now(), now(), now(), '{"demo":true}')
+        on conflict (id) do nothing`;
+      await sql()`
+        insert into public.users (id, display_name, role)
+        values (${userId}, ${displayName}, 'neighbor')
+        on conflict (id) do update set display_name = ${displayName}`;
+      const rows = (await sql()`
+        insert into supply_requests (requested_by, items, note, pickup_preference, visibility,
+                                     created_at, fulfilled_at, cancelled_at)
+        values (${userId}, ${items}, ${note === "" ? null : note}, ${pickupPreference === "" ? null : pickupPreference},
+                ${finalVisibility}::text, now(), null, null)
+        returning id, created_at`) as unknown as Array<{ id: string; created_at: string | Date }>;
+      const row = rows[0];
+      if (!row) return { ok: false, requestId: null, error: null, source: "db" };
+      return { ok: true, requestId: row.id, error: null, source: "db" };
+    } catch (e) {
+      if (isDbDown(e)) {
+        const requestId = `draft-${Date.now()}`;
+        return { ok: true, requestId, error: null, source: "demo" };
+      }
+      return { ok: false, requestId: null, error: calmRpcError(e, "That didn't go through — try again when you're ready."), source: "db" };
+    }
+  });
+/** Opt out of new needs (pause) — status keeps history, claims nothing new. */
+export const pauseHomeTeam = createServerFn({ method: "POST" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; source: NeedSource }> => {
+    const { phone } = data;
+    try {
+      await sql()`select public.hometeam_pause(${phone})`;
+      return { ok: true, source: "db" };
+    } catch {
+      return { ok: false, source: "demo" };
+    }
+  });
+export const resumeHomeTeam = createServerFn({ method: "POST" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; source: NeedSource }> => {
+    const { phone } = data;
+    try {
+      await sql()`select public.hometeam_resume(${phone})`;
+      return { ok: true, source: "db" };
+    } catch {
+      return { ok: false, source: "demo" };
+    }
+  });
+/** HomeTeam status for a phone: member row (active/paused) when joined. */
+export const getHomeTeamStatus = createServerFn({ method: "GET" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<MemberStatusRow> => {
+    const { phone } = data;
+    if (!phone) return { phone, displayName: null, status: "active", consentsToAfterHours: null, source: "demo" };
+    try {
+      const rows = (await sql()`
+        select phone, display_name, status, consents_to_after_hours
+        from public.hometeam_members where phone = ${phone} limit 1
+      `) as unknown as Array<{ phone: string; display_name: string; status: string; consents_to_after_hours: boolean | null }>;
+      const r = rows[0];
+      if (!r) return { phone, displayName: null, status: "active", consentsToAfterHours: null, source: "db" };
+      return {
+        phone: r.phone,
+        displayName: r.display_name,
+        status: r.status === "paused" ? "paused" : "active",
+        consentsToAfterHours: r.consents_to_after_hours ?? false,
+        source: "db",
+      };
+    } catch {
+      return { phone, displayName: null, status: "active", consentsToAfterHours: null, source: "demo" };
+    }
+  });
+/** True when a phone is on the active outreach roster (staff can log on
+ * someone's behalf — server-verified; the UI just shows the option). */
+export const isOutreachPhone = createServerFn({ method: "GET" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ isOutreach: boolean; source: NeedSource }> => {
+    const { phone } = data;
+    if (!phone) return { isOutreach: false, source: "db" };
+    try {
+      const rows = (await sql()`
+        select 1 from public.outreach_roster where phone = ${phone} and active limit 1
+      `) as unknown as Array<Record<string, unknown>>;
+      return { isOutreach: rows.length > 0, source: "db" };
+    } catch {
+      return { isOutreach: false, source: "demo" };
+    }
   });
