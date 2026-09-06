@@ -209,6 +209,9 @@ export interface SeedResult {
   sweepsInserted: number;
   resourcesTotal: number;
   sweepsTotal: number;
+  hometeamTotal: number;
+  needsTotal: number;
+  alertsTotal: number;
 }
 
 export async function seedDemoData(): Promise<SeedResult> {
@@ -244,11 +247,61 @@ export async function seedDemoData(): Promise<SeedResult> {
 
   const r1 = await sql()`select count(*)::int as n from resources`;
   const r2 = await sql()`select count(*)::int as n from sweeps`;
+
+  // ── HomeTeam wave seed (idempotent, same fictional-demo style) ──
+  // Two demo supporters with explicit consent + one open need + one resolved
+  // demo alert. The need's location is a place NAME only ("Skatepark,
+  // San Rafael") — no pin, no coordinates (privacy-first demo shapes).
+  // requested_by needs a users row: reuse a deterministic demo neighbor.
+  const janePhone = "14155550101";
+  const baoPhone = "14155550102";
+  const joePhone = "14155550103";
+  const seedUserId = uuid5("seed:neighbor:joe");
+  try {
+    await sql()`
+      insert into auth.users (id, email)
+      values (${seedUserId}, ${`demo+${seedUserId.slice(0, 8)}@safeground.local`})
+      on conflict (id) do nothing`;
+  } catch { /* auth.users may be locked down; public.users insert below still works if the FK allows */ }
+  await sql()`
+    insert into public.users (id, display_name, role)
+    values (${seedUserId}, 'Joe (demo)', 'neighbor')
+    on conflict (id) do nothing`;
+  await sql()`select public.hometeam_join(${janePhone}, 'Jane')`;
+  await sql()`select public.hometeam_join(${baoPhone}, 'Bao')`;
+  await sql()`
+    insert into supply_requests (id, requested_by, items, note, pickup_preference, status, visibility)
+    values (${uuid5("seed:need:joe-tent")}, ${seedUserId},
+            array['tent']::text[], 'Joe needs a tent at the skatepark',
+            'Skatepark, San Rafael', 'open', 'open')
+    on conflict (id) do nothing`;
+  // Resolved demo alert — shows the shape without looking like a live emergency.
+  try {
+    await sql()`
+      insert into emergency_alerts
+        (id, sender_phone, kind, note, location_shared, audience, resolved_at, resolved_by_phone, created_at)
+      values (${uuid5("seed:alert:demo-resolved")}, ${joePhone}, 'help_needed',
+              'Demo alert — already resolved, just showing the shape.',
+              false, array['friends', 'peers', 'hometeam']::text[],
+              now() - interval '2 hours', ${joePhone}, now() - interval '3 hours')
+      on conflict (id) do nothing`;
+  } catch { /* emergency_alerts may not exist on very old DBs mid-migration; schema apply precedes seed */ }
+
+  const r3 = await sql()`select count(*)::int as n from hometeam_members`;
+  const r4 = await sql()`select count(*)::int as n from supply_requests`;
+  let alertsTotal = 0;
+  try {
+    const r5 = await sql()`select count(*)::int as n from emergency_alerts`;
+    alertsTotal = Number(r5[0]?.n ?? 0);
+  } catch { /* table may be absent if schema apply was skipped */ }
   return {
     resourcesInserted: DEMO_RESOURCES.length,
     sweepsInserted: DEMO_SWEEPS.length,
     resourcesTotal: Number(r1[0]?.n ?? 0),
     sweepsTotal: Number(r2[0]?.n ?? 0),
+    hometeamTotal: Number(r3[0]?.n ?? 0),
+    needsTotal: Number(r4[0]?.n ?? 0),
+    alertsTotal,
   };
 }
 

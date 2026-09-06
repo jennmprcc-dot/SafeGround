@@ -14,7 +14,10 @@ row-level security. The UX is trauma-informed and mobile-first.
 
 - **TanStack Start** (React 19 + Vite + Tailwind CSS v4)
 - **Supabase-ready data layer** — see `schema.sql` (tables: users, sweeps,
-  supply requests, resources, check-ins, trusted peers, with RLS policies)
+  supply requests, resources, check-ins, trusted peers, HomeTeam members,
+  emergency alerts, with RLS policies + consent-first RPCs:
+  `hometeam_join/pause/resume/claim/assign/complete`,
+  `send_emergency_alert` / `resolve_emergency_alert`)
 - Server-side DB access uses **`pg`** (`node-postgres`) over the Supavisor
   pooler with TLS on the wire (`ssl.rejectUnauthorized: false` — the sandbox
   can't validate the pooler cert SAN; the service credential + network wall
@@ -79,3 +82,19 @@ MVP baseline: Home + Resource Navigator (list + map views) + Sweep Alerts
 trusted peers, fuzzed find-my-friend map, 12h overdue gentles). Supply
 requests, peer-support chat, and the outreach dashboard follow in Wave 2 per
 the business plan.
+
+## HomeTeam + emergency alerts (schema wave)
+
+- **HomeTeam** — MPRCC's community supporter program (named for MPRCC's future
+  housing development). Join = phone + name + explicit consent, no account, no
+  location. Needs flow pending → in_progress → delivered with
+  `visibility` = `open` (supporters tap "I got that") / `assign_only`
+  (coordinator assigns) / `private` (outreach only). In-app push only; SMS deferred.
+- **Emergency alerts** — one-tap alert to the sender's chosen groups
+  (friends / peers / HomeTeam, pre-checked, uncheckable) + optional fuzzed
+  ~150m location (per-alert consent). "I'm OK" resolves; 24h expiry.
+  **Never contacts 911 or any agency** — outreach views active alerts to help;
+  nothing auto-dispatched.
+- RPCs are `SECURITY DEFINER`, phone-normalized, with calm trauma-informed
+  errors. Seed: Jane + Bao (demo supporters), "Joe needs a tent at the
+  skatepark" (open need, place name only, no pin), one resolved demo alert.
