@@ -2,7 +2,8 @@
 -- SafeGround — Supabase-ready data layer (deliverable artifact, Build A)
 -- ============================================================================
 -- Tables: users, sweeps, supply_requests, resources, check_ins, trusted_peers,
---         hometeam_members, emergency_alerts (+ HomeTeam columns on supply_requests)
+--         hometeam_members, emergency_alerts, outreach_roster
+--         (+ HomeTeam columns on supply_requests)
 -- Privacy guarantees (PRD §6, R-P1…R-P11) are implemented as row-level
 -- security policies, NOT as application conventions:
 --   * resources / sweeps:   public anon read (R-P6 — read without fear)
@@ -106,9 +107,19 @@ create table public.hometeam_members (
   phone                   text not null unique check (char_length(phone) between 7 and 20),
   display_name            text not null check (char_length(display_name) between 1 and 40),
   consented_to_contact_at timestamptz not null default now(),
+  -- After-hours emergency-alert consent. Default OFF (owner-directed 2026-09-06):
+  -- HomeTeam supporters receive emergency alerts only during business hours
+  -- (8:00–18:00 Mon–Fri, sender's local time = Marin) UNLESS this is true.
+  -- Set when the supporter taps "yes, reach me after hours too" in the join
+  -- sheet; the send RPC enforces it IN the audience filter, not at read time.
+  consents_to_after_hours boolean not null default false,
   status                  text not null default 'active' check (status in ('active', 'paused')),
   created_at              timestamptz not null default now()
 );
+
+-- Forward migration for databases created BEFORE this wave (idempotent).
+alter table public.hometeam_members
+  add column if not exists consents_to_after_hours boolean not null default false;
 
 -- ---------------------------------------------------------------------------
 -- supply_requests (owner + outreach only — queue, Wave 2)
@@ -254,17 +265,31 @@ create trigger trg_requests_anonymize
   for each row execute function public.trg_fn_requests_anonymize();
 
 -- ---------------------------------------------------------------------------
--- emergency_alerts — trusted-peer one-tap alert (owner-directed 2026-09-06)
+-- emergency_alerts — trusted-peer one-tap alert (owner-directed 2026-09-06;
+-- refinements encoded 2026-09-06, plan rev 10)
 --
 -- The sender picks quick options (Unsafe place / Police nearby / Help needed —
 -- never police) + a short note, chooses WHO sees it (friends / peers /
--- HomeTeam supporters — all pre-checked, uncheckable in the send sheet), and
--- chooses whether to attach a fuzzed ~150m location (pre-selected Yes,
--- uncheckable — location_shared=false + NULL fuzz means no location).
--- "I'm OK" resolves; everything expires after 24h (R-P10). NOTHING here
--- contacts 911 or any agency — outreach can VIEW active alerts to help (the
--- dashboard reads them), but nothing is auto-dispatched (R-P8 spirit:
--- alerts reach only the sender's own chosen people + the peer team).
+-- HomeTeam supporters), and chooses location: three sender-chosen options per
+-- alert — none / fuzzed ~150m / exact — NEVER pre-selected (the send RPC
+-- raises unless location_shared is explicitly 'none'|'fuzzed'|'exact').
+--
+-- Audience rule (R-P8, rev 10): friends + peers ALWAYS get the alert. HomeTeam
+-- members get it ONLY during business hours 8:00–18:00 Mon–Fri (Marin local)
+-- UNLESS consents_to_after_hours — enforced INSIDE send_emergency_alert by
+-- row-filtering the hometeam audience by hour + weekday + consent (not just at
+-- read time). "Send-only-above-board": audience must name at least one group —
+-- never silently drop to "no one".
+--
+-- "I'm on it": the first helper in the alert's audience (or a roster member)
+-- who claims becomes claimed_by (normalized phone, FK-free) — the ownership
+-- path ("who's helping"). The sender clears their own alert ("I'm OK") as the
+-- primary path (records resolved_by_role='sender'); outreach staff may clear as
+-- a safety override (resolved_by_role='staff') only if a roster member.
+-- outcome_note is the staff/sender outcome record (≤1000 chars) — visible to
+-- admin + sender only. 24h expiry via trg_alerts_expiry; resolve/expire are
+-- the ONLY close paths. NOTHING here contacts 911 or any agency — outreach can
+-- VIEW active alerts to help; nothing is auto-dispatched.
 -- Identity is phone-based (senders may have no account — R-P6/R-P7).
 -- ---------------------------------------------------------------------------
 create table public.emergency_alerts (
@@ -276,28 +301,93 @@ create table public.emergency_alerts (
   -- Fuzzed ~150m point, supplied by the sender's device with per-alert consent.
   fuzz_lat           double precision check (fuzz_lat between -90 and 90),
   fuzz_lng           double precision check (fuzz_lng between -180 and 180),
-  location_shared    boolean not null default false,
+  -- Location choice, sender-picked per alert: 'none' | 'fuzzed' | 'exact'.
+  -- NEVER pre-selected — the enum default is 'none' and send_emergency_alert
+  -- raises if the caller does not pass an explicit value in {none,fuzzed,exact}
+  -- (NULL or empty is rejected, never defaulted).
+  location_shared    text not null default 'none'
+                     check (location_shared in ('none', 'fuzzed', 'exact')),
+  exact_lat          double precision check (exact_lat between -90 and 90),
+  exact_lng          double precision check (exact_lng between -180 and 180),
   -- Consent record: which groups the sender chose (non-empty subset).
   audience           text[] not null default '{friends,peers,hometeam}'
                      check (audience <@ array['friends', 'peers', 'hometeam']
                        and cardinality(audience) > 0),
+  -- "I'm on it" ownership: first claim wins (guarded in sg_claim_alert); the
+  -- claiming helper is in the alert's audience OR is a roster member. FK-free
+  -- phone (senders/helpers may have no account — R-P6/R-P7).
+  claimed_by         text check (char_length(claimed_by) between 7 and 20),
+  claimed_at         timestamptz,
   resolved_at        timestamptz,
   resolved_by_phone  text check (char_length(resolved_by_phone) between 7 and 20),
+  -- Outcome tracking (rev 10): resolved_by_role 'sender' (I'm OK) or 'staff'
+  -- (outreach safety override); outcome_note ≤1000 chars, visible only to
+  -- admin + sender (staff_limited can never see it).
+  resolved_by_role   text check (resolved_by_role in ('sender', 'staff')),
+  outcome_note       text check (char_length(outcome_note) <= 1000),
   -- NOTE: set by the BEFORE INSERT trigger `trg_alerts_expiry` (+24h, R-P10)
   -- (a generated column can't express `timestamptz + interval` — stable kind).
   expires_at         timestamptz,
   created_at         timestamptz not null default now()
 );
 
--- Alerts: expires_at = created_at + 24h; location NULL unless explicitly shared.
+-- Forward migration for databases created BEFORE this wave (idempotent).
+-- Column renames cannot be conditional, so the legacy-shape migration lives in
+-- a single guarded DO block: it only fires when the OLD (boolean)
+-- location_shared is still present. Fresh builds never have the boolean at
+-- all (the create above already defines the text column), so the block is a
+-- no-op and leaves no re-run artifacts behind.
+alter table public.emergency_alerts add column if not exists exact_lat double precision check (exact_lat between -90 and 90);
+alter table public.emergency_alerts add column if not exists exact_lng double precision check (exact_lng between -180 and 180);
+-- Migrate legacy boolean location_shared: false -> 'none', true -> 'fuzzed'.
+-- (No legacy value can mean 'exact' — exact coordinates were never stored.)
+do $sgmig$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'emergency_alerts'
+      and column_name = 'location_shared'
+      and data_type = 'boolean'
+  ) then
+    if not exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'emergency_alerts'
+        and column_name = 'location_shared_v2'
+    ) then
+      alter table public.emergency_alerts
+        add column location_shared_v2 text not null default 'none'
+          check (location_shared_v2 in ('none', 'fuzzed', 'exact'));
+    end if;
+    update public.emergency_alerts set location_shared_v2 =
+      case when location_shared then 'fuzzed' else 'none' end
+      where location_shared_v2 = 'none';
+    alter table public.emergency_alerts drop column location_shared;
+    alter table public.emergency_alerts rename column location_shared_v2 to location_shared;
+  end if;
+end;
+$sgmig$;
+-- Add the ownership + outcome columns (both shapes of DB; unconditional adds
+-- are safe because they're "if not exists").
+alter table public.emergency_alerts add column if not exists claimed_by text check (char_length(claimed_by) between 7 and 20);
+alter table public.emergency_alerts add column if not exists claimed_at timestamptz;
+alter table public.emergency_alerts add column if not exists resolved_by_role text check (resolved_by_role in ('sender', 'staff'));
+alter table public.emergency_alerts add column if not exists outcome_note text check (char_length(outcome_note) <= 1000);
+
+-- Alerts: expires_at = created_at + 24h; fuzz NULL unless 'fuzzed'/'exact';
+-- exact lat/lng NULL unless 'exact' (server-side — coords never leave the DB
+-- beyond the consent level the sender chose).
 create or replace function public.trg_fn_alerts_expiry()
 returns trigger language plpgsql set search_path = public
 as $sg$
 begin
   new.expires_at := coalesce(new.created_at, now()) + interval '24 hours';
-  if not coalesce(new.location_shared, false) then
+  if new.location_shared not in ('fuzzed', 'exact') then
     new.fuzz_lat := null;
     new.fuzz_lng := null;
+  end if;
+  if new.location_shared <> 'exact' then
+    new.exact_lat := null;
+    new.exact_lng := null;
   end if;
   return new;
 end;
@@ -339,12 +429,76 @@ create trigger trg_checkins_timestamps
 create or replace function public.is_outreach()
 returns boolean
 language sql stable security definer set search_path = public
-as $$
+as $sgfn$
   select exists (
     select 1 from public.users
     where id = auth.uid() and role in ('outreach', 'outreach_admin')
   );
-$$;
+$sgfn$;
+
+-- ---------------------------------------------------------------------------
+-- outreach_roster — the peer-team staff roster (owner-directed 2026-09-06)
+--
+-- Phone-based like hometeam_members (peer workers live on their phones, may
+-- have no auth.account — R-P6/R-P7). `role`: 'admin' sees everything and can
+-- set the roster + resolve alerts; 'staff_limited' can read open needs + active
+-- alerts + claim/deliver supplies, but CANNOT clear alerts (sg_resolve is
+-- restricted to admin + sender), CANNOT set the roster, and CANNOT view
+-- outcome analytics (outcome_note is visible to admin + sender only).
+-- Readable by all (public select so the app can render "who's on the team"),
+-- writable ONLY through sg_outreach_roster_set (admin-only RPC) — no direct
+-- INSERT/UPDATE/DELETE policies exist.
+-- ---------------------------------------------------------------------------
+create table public.outreach_roster (
+  phone        text primary key check (char_length(phone) between 7 and 20),
+  display_name text not null check (char_length(display_name) between 1 and 40),
+  role         text not null default 'staff_limited'
+               check (role in ('admin', 'staff_limited')),
+  active       boolean not null default true,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+alter table public.outreach_roster enable row level security;
+-- Everyone may read the roster (it's the public "who's on the team" list);
+-- writes happen ONLY through the sg_outreach_roster_set RPC (admin-only).
+create policy "roster public read"          on public.outreach_roster for select using (true);
+
+-- ---------------------------------------------------------------------------
+-- is_roster_admin() / is_roster_staff() — authorization gates for the
+-- alert/needs RPCs below and the Wave 2 dashboard. Unlike is_outreach() they
+-- do NOT depend on auth.users: peer workers are phone-identified. When a
+-- phone-based caller (sender / helper / staff) needs role checks, the RPC
+-- passes the caller's own phone and these helpers answer against the roster.
+-- ---------------------------------------------------------------------------
+create or replace function public.is_roster_admin(p_phone text)
+returns boolean language sql stable security definer set search_path = public
+as $sgfn$
+  select coalesce(bool_or(role = 'admin'), false)
+  from public.outreach_roster
+  where phone = public.sg_norm_phone(p_phone) and active;
+$sgfn$;
+
+create or replace function public.is_roster_staff(p_phone text)
+returns boolean language sql stable security definer set search_path = public
+as $sgfn$
+  select coalesce(bool_or(active), false)
+  from public.outreach_roster
+  where phone = public.sg_norm_phone(p_phone);
+$sgfn$;
+
+-- ---------------------------------------------------------------------------
+-- "Who's on the outreach team?" — one helper returning the active roster as
+-- (phone, display_name, role). Readable by everyone; grounded in the roster
+-- table (always the app's single source of truth — never an RLS trigger on
+-- public.users, which phone-identified peer workers can't touch).
+-- ---------------------------------------------------------------------------
+create or replace view public.outreach_team
+with (security_invoker = true) as
+select phone, display_name, role
+from public.outreach_roster
+where active
+order by display_name;
 
 -- ---------------------------------------------------------------------------
 -- Row-level security — enable on every table, then policies
@@ -455,6 +609,12 @@ create policy "hometeam outreach reads roster"      on public.hometeam_members f
 -- No direct anon/authenticated read policies: phone identity has no auth.uid().
 create policy "alerts outreach views active"        on public.emergency_alerts for select
   using (public.is_outreach() and resolved_at is null and expires_at > now());
+-- Admins (auth.account-based outreach) may also view resolved alerts + outcome
+-- notes for MPRCC's reporting (time-to-resolve, who helped). Staff_limited
+-- phone identities never read outcome notes — the Wave 2 dashboard gates on
+-- is_roster_admin() at the query layer.
+create policy "alerts admin views resolved"         on public.emergency_alerts for select
+  using (public.is_outreach());
 
 -- Peers see rows ONLY through the mutual trusted-peers relationship. Exact
 -- columns are never exposed — the view selects only fuzz_*.
@@ -625,22 +785,36 @@ begin
 end;
 $sg$;
 
--- One-tap emergency alert. Audience is the sender's explicit per-alert choice
--- (friends / peers / hometeam subset — stored as the consent record). Location
--- is stored ONLY when p_location_shared is true (trigger nulls fuzz otherwise).
--- NEVER contacts 911 or any agency — this writes one row for the sender's own
--- chosen people + the outreach team to see.
+-- One-tap emergency alert (owner-directed plan rev 10).
+--
+-- * Audience is the sender's explicit per-alert choice (friends / peers /
+--   hometeam subset — stored as the consent record) and must name at least one
+--   group: "send-only-above-board", never silently drop to no one.
+-- * HomeTeam members receive alerts ONLY during business hours (8:00–18:00
+--   Mon–Fri, the sender's locality = Marin; enforced here in local wall-clock
+--   time, not server timezone) UNLESS consents_to_after_hours — the audience
+--   stored is exactly the deliverable set: hometeam is dropped from the row
+--   when the consent rule excludes every supporter. (friends/peers always stay.)
+-- * Location is NEVER pre-selected: p_location_shared must be explicitly one
+--   of 'none'|'fuzzed'|'exact'; NULL/empty is rejected with a clear error.
+--   'fuzzed' stores the fuzz point only; 'exact' stores the exact point only.
+-- * NEVER contacts 911 or any agency — this writes one row for the sender's
+--   own chosen people + the outreach team to see.
 create or replace function public.send_emergency_alert(
   p_sender_phone text, p_kind text, p_note text,
   p_fuzz_lat double precision, p_fuzz_lng double precision,
-  p_location_shared boolean, p_audience text[]
+  p_location_shared text, p_audience text[],
+  p_exact_lat double precision default null,
+  p_exact_lng double precision default null
 )
 returns uuid language plpgsql security definer set search_path = public
 as $sg$
 declare
   v_phone text := public.sg_norm_phone(p_sender_phone);
   v_aud   text[];
+  v_loc   text;
   v_id    uuid;
+  v_local timestamp := now() at time zone 'America/Los_Angeles';
 begin
   if char_length(v_phone) < 7 or char_length(v_phone) > 15 then
     raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
@@ -651,42 +825,178 @@ begin
   if p_note is not null and char_length(p_note) > 500 then
     raise exception 'Please keep the note under 500 characters so it stays quick to read.';
   end if;
+  -- Location: explicitly provided, never defaulted (rev 10).
+  v_loc := btrim(coalesce(p_location_shared, ''));
+  if v_loc not in ('none', 'fuzzed', 'exact') then
+    raise exception 'Please choose how much location to share — none, an approximate area, or the exact spot.';
+  end if;
+  if v_loc = 'fuzzed' and (p_fuzz_lat is null or p_fuzz_lng is null
+     or p_fuzz_lat not between -90 and 90 or p_fuzz_lng not between -180 and 180) then
+    raise exception 'Sharing an approximate area needs those coordinates — or send without location, that is always okay.';
+  end if;
+  if v_loc = 'exact' and (p_exact_lat is null or p_exact_lng is null
+     or p_exact_lat not between -90 and 90 or p_exact_lng not between -180 and 180) then
+    raise exception 'The exact spot needs its coordinates — or share an approximate area instead.';
+  end if;
+  -- Audience: at least one group, explicit (rev 10 "send-only-above-board").
   v_aud := coalesce(p_audience, array[]::text[]);
   if cardinality(v_aud) = 0 or not (v_aud <@ array['friends', 'peers', 'hometeam']) then
     raise exception 'Please choose at least one group to share this with — friends, peers, or HomeTeam.';
   end if;
-  if coalesce(p_location_shared, false) then
-    if p_fuzz_lat is null or p_fuzz_lng is null
-       or p_fuzz_lat not between -90 and 90 or p_fuzz_lng not between -180 and 180 then
-      raise exception 'Sharing location needs an approximate area — or send without it, that is always okay.';
-    end if;
+  -- Business-hours rule for the HomeTeam audience (rev 10, enforced here):
+  -- hometeam is kept only when at least one ACTIVE supporter will actually
+  -- receive it during business hours (8:00–18:00 Mon–Fri local) or has
+  -- consents_to_after_hours. Everyone else in {friends,peers} is kept as-is.
+  if coalesce(array_position(v_aud, 'hometeam'), 0) > 0
+     and not exists (
+       select 1 from public.hometeam_members hm
+       where hm.status = 'active'
+         and (hm.consents_to_after_hours
+              or (extract(dow from v_local) between 1 and 5
+                  and extract(hour from v_local) >= 8
+                  and extract(hour from v_local) < 18))
+     ) then
+    v_aud := array_remove(v_aud, 'hometeam');
+  end if;
+  -- Send-only-above-board (rev 10): never drop to "no one". If the business-
+  -- hours rule emptied the audience, reject with a gentle explanation instead
+  -- of silently creating an alert that reaches nobody.
+  if cardinality(v_aud) = 0 then
+    raise exception 'Right now that choice would reach no one — HomeTeam supporters only get alerts during business hours (8am–6pm weekdays) unless they opt in for after-hours.';
   end if;
   insert into public.emergency_alerts
-    (sender_phone, kind, note, fuzz_lat, fuzz_lng, location_shared, audience)
+    (sender_phone, kind, note, fuzz_lat, fuzz_lng,
+     location_shared, exact_lat, exact_lng, audience)
   values (v_phone, p_kind, nullif(btrim(coalesce(p_note, '')), ''),
-          case when coalesce(p_location_shared, false) then p_fuzz_lat end,
-          case when coalesce(p_location_shared, false) then p_fuzz_lng end,
-          coalesce(p_location_shared, false), v_aud)
+          case when v_loc = 'fuzzed' then p_fuzz_lat end,
+          case when v_loc = 'fuzzed' then p_fuzz_lng end,
+          v_loc,
+          case when v_loc = 'exact' then p_exact_lat end,
+          case when v_loc = 'exact' then p_exact_lng end,
+          v_aud)
   returning id into v_id;
   return v_id;
 end;
 $sg$;
 
--- "I'm OK": the sender resolves their own alert.
-create or replace function public.resolve_emergency_alert(p_alert_id uuid, p_phone text)
+-- "I'm on it" — helper ownership of an alert. First claim wins; the claimant
+-- must be able to receive the alert in the first place: an active roster
+-- member (the peer team) OR an active HomeTeam supporter when the audience
+-- includes hometeam. (friends/peers are phone-identified with no phone→
+-- relationship table yet — the peer team is the trusted network for those.)
+-- Re-claims by the same phone are idempotent — they return the current state
+-- (no error). A stranger's claim attempts resolve to the current (null) state
+-- silently — no leak, no error noise.
+create or replace function public.sg_claim_alert(p_alert_id uuid, p_helper_phone text)
+returns table (claimed_by text, claimed_at timestamptz)
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone text := public.sg_norm_phone(p_helper_phone);
+begin
+  if char_length(v_phone) < 7 or char_length(v_phone) > 15 then
+    raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
+  end if;
+  -- First claim wins; claimants must be able to receive the alert.
+  update public.emergency_alerts
+  set claimed_by = v_phone, claimed_at = now()
+  where id = p_alert_id
+    and resolved_at is null
+    and claimed_by is null
+    and (
+      public.is_roster_staff(v_phone)
+      or ('hometeam' = any(audience) and exists (
+            select 1 from public.hometeam_members hm
+            where hm.phone = v_phone and hm.status = 'active'))
+    );
+  if not found then
+    return query
+      select ea.claimed_by, ea.claimed_at
+      from public.emergency_alerts ea
+      where ea.id = p_alert_id;
+    return;
+  end if;
+  return query
+    select ea.claimed_by, ea.claimed_at
+    from public.emergency_alerts ea
+    where ea.id = p_alert_id;
+end;
+$sg$;
+
+-- "I'm OK": the sender resolves their own alert (records resolved_by_role =
+-- 'sender', with an optional reason/outcome note — the sender's own words);
+-- outreach staff (admin) may resolve as a safety override when the sender
+-- can't, with an outcome note (resolved_by_role = 'staff').
+create or replace function public.resolve_emergency_alert(
+  p_alert_id uuid, p_phone text,
+  p_outcome_note text default null
+)
 returns boolean language plpgsql security definer set search_path = public
 as $sg$
 declare
   v_phone text := public.sg_norm_phone(p_phone);
+  v_note  text := btrim(coalesce(p_outcome_note, ''));
 begin
+  -- Sender path ("I'm OK"): records role + optional reason.
   update public.emergency_alerts
-  set resolved_at = now(), resolved_by_phone = v_phone
+  set resolved_at = now(), resolved_by_phone = v_phone,
+      resolved_by_role = 'sender',
+      outcome_note = case when char_length(v_note) > 0 then v_note else outcome_note end
   where id = p_alert_id
     and sender_phone = v_phone
     and resolved_at is null;
-  if not found then
-    raise exception 'That alert is already resolved, or was not sent from this number.';
+  if found then return true; end if;
+
+  -- Safety override: only roster admins. outcome_note is the staff record.
+  if public.is_roster_admin(v_phone) then
+    update public.emergency_alerts
+    set resolved_at = now(), resolved_by_phone = v_phone,
+        resolved_by_role = 'staff',
+        outcome_note = case when char_length(v_note) > 0 then v_note else outcome_note end
+    where id = p_alert_id
+      and resolved_at is null;
+    if found then return true; end if;
   end if;
+
+  raise exception 'That alert is already resolved, or was not sent from this number — and only outreach staff can clear someone else''s alert.';
+end;
+$sg$;
+
+-- Admin-only roster writer: upsert a peer-team member into outreach_roster
+-- (phone normalized; role admin|staff_limited; active toggle). Phone identity
+-- has no auth session in this app, so the admin gate is the roster itself: the
+-- phone passed must be an ACTIVE roster admin (their own record — self-upsert).
+-- Staff_limited callers are rejected. The initial roster is provisioned by the
+-- lead's seed (direct service-role inserts), and admins manage their own row
+-- in-app afterwards — chicken-and-egg safe: no one can promote themselves.
+create or replace function public.sg_outreach_roster_set(
+  p_phone text, p_display_name text, p_role text, p_active boolean
+)
+returns boolean language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone text := public.sg_norm_phone(p_phone);
+  v_name  text := btrim(coalesce(p_display_name, ''));
+begin
+  if not public.is_roster_admin(v_phone) then
+    raise exception 'Only an outreach admin can manage the team roster.';
+  end if;
+  if char_length(v_phone) < 7 or char_length(v_phone) > 15 then
+    raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
+  end if;
+  if char_length(v_name) < 1 or char_length(v_name) > 40 then
+    raise exception 'Please use a name of 1–40 characters.';
+  end if;
+  if p_role not in ('admin', 'staff_limited') then
+    raise exception 'Roster roles are admin or staff_limited.';
+  end if;
+  insert into public.outreach_roster (phone, display_name, role, active, updated_at)
+  values (v_phone, v_name, p_role, coalesce(p_active, true), now())
+  on conflict (phone) do update
+    set display_name = excluded.display_name,
+        role = excluded.role,
+        active = excluded.active,
+        updated_at = now();
   return true;
 end;
 $sg$;
@@ -708,6 +1018,8 @@ create index idx_hometeam_status          on public.hometeam_members (status);
 create index idx_requests_visibility      on public.supply_requests (visibility, status);
 create index idx_alerts_active            on public.emergency_alerts (resolved_at, expires_at);
 create index idx_alerts_sender            on public.emergency_alerts (sender_phone, created_at desc);
+create index idx_alerts_claim             on public.emergency_alerts (claimed_by, claimed_at);
+create index idx_roster_role              on public.outreach_roster (role, active);
 
 -- ---------------------------------------------------------------------------
 -- Comments — the privacy contract, in the schema itself
@@ -734,10 +1046,22 @@ comment on table public.supply_requests is
 comment on table public.hometeam_members is
   'HomeTeam community supporters (no account, no location — R-P6/R-P7). '
   'Join = phone + name + explicit consent (R-P1); paused = opted out. '
-  'Phone is the identity (digits-normalized). Named for MPRCC''s future housing development work.';
+  'consents_to_after_hours (default OFF) opts in to emergency alerts outside '
+  '8:00–18:00 Mon–Fri. Phone is the identity (digits-normalized). Named for '
+  'MPRCC''s future housing development work.';
 comment on table public.emergency_alerts is
-  'Trusted-peer one-tap alerts: quick kind + note, sender-chosen audience (friends/peers/hometeam), '
-  'fuzzed ~150m location ONLY with per-alert consent (R-P1/R-P4). "I''m OK" resolves; 24h expiry (R-P10). '
-  'NEVER contacts 911 or any agency — outreach views active alerts to help; nothing auto-dispatched.';
+  'Trusted-peer one-tap alerts: quick kind + note, sender-chosen audience '
+  '(friends/peers/hometeam), location never pre-selected — none/fuzzed~150m/'
+  'exact (rev 10). HomeTeam receives alerts only in business hours unless '
+  'consents_to_after_hours. "I''m on it" first-claim ownership; "I''m OK" '
+  'resolves; staff override records an outcome note; 24h expiry (R-P10). '
+  'NEVER contacts 911 or any agency — outreach views active alerts to help; '
+  'nothing auto-dispatched.';
+comment on table public.outreach_roster is
+  'MPRCC peer-team roster (phone identity, R-P6/R-P7). admin = full visibility '
+  'incl. outcome notes + can resolve alerts (safety override) + manage roster; '
+  'staff_limited = open needs + active alerts + claim/deliver — never clears '
+  'alerts, never sets roster, never sees outcome analytics. Writes only via '
+  'sg_outreach_roster_set (admin-only); reads are public.';
 comment on function public.is_outreach() is
   'Role gate used by outreach policies. Roles are provisioned manually by the lead; never self-serve.';

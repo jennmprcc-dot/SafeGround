@@ -212,6 +212,7 @@ export interface SeedResult {
   hometeamTotal: number;
   needsTotal: number;
   alertsTotal: number;
+  rosterTotal: number;
 }
 
 export async function seedDemoData(): Promise<SeedResult> {
@@ -276,16 +277,39 @@ export async function seedDemoData(): Promise<SeedResult> {
             'Skatepark, San Rafael', 'open', 'open')
     on conflict (id) do nothing`;
   // Resolved demo alert — shows the shape without looking like a live emergency.
+  // Text location_shared with explicit 'none' (new rev-10 column shape);
+  // resolved_by_role='sender' + outcome_note show the outcome-tracking shape.
   try {
     await sql()`
       insert into emergency_alerts
-        (id, sender_phone, kind, note, location_shared, audience, resolved_at, resolved_by_phone, created_at)
+        (id, sender_phone, kind, note, location_shared, audience,
+         resolved_at, resolved_by_phone, resolved_by_role, outcome_note, created_at)
       values (${uuid5("seed:alert:demo-resolved")}, ${joePhone}, 'help_needed',
               'Demo alert — already resolved, just showing the shape.',
-              false, array['friends', 'peers', 'hometeam']::text[],
-              now() - interval '2 hours', ${joePhone}, now() - interval '3 hours')
+              'none', array['friends', 'peers', 'hometeam']::text[],
+              now() - interval '2 hours', ${joePhone}, 'sender',
+              'Safely reached a friend nearby — all good. (Demo outcome note.)',
+              now() - interval '3 hours')
       on conflict (id) do nothing`;
   } catch { /* emergency_alerts may not exist on very old DBs mid-migration; schema apply precedes seed */ }
+
+  // ── Outreach roster seed (owner-directed 2026-09-06) ───────────────
+  // Jenn Mallow + Carrie "Bambi" Klyse (admins), Tracey Cohen (staff_limited,
+  // placeholder phone — real number not known yet; the lead will update it via
+  // sg_outreach_roster_set once provided). Idempotent ON CONFLICT DO NOTHING.
+  const rosterSeed: Array<[name: string, phone: string, role: string]> = [
+    ["Jenn Mallow", "14158797940", "admin"],
+    ["Carrie \"Bambi\" Klyse", "14155249090", "admin"],
+    ["Tracey Cohen", "0000000000", "staff_limited"],
+  ];
+  for (const [name, phone, role] of rosterSeed) {
+    try {
+      await sql()`
+        insert into outreach_roster (phone, display_name, role, active)
+        values (${phone}, ${name}, ${role}, true)
+        on conflict (phone) do nothing`;
+    } catch { /* roster table may not exist on very old DBs mid-migration */ }
+  }
 
   const r3 = await sql()`select count(*)::int as n from hometeam_members`;
   const r4 = await sql()`select count(*)::int as n from supply_requests`;
@@ -293,6 +317,11 @@ export async function seedDemoData(): Promise<SeedResult> {
   try {
     const r5 = await sql()`select count(*)::int as n from emergency_alerts`;
     alertsTotal = Number(r5[0]?.n ?? 0);
+  } catch { /* table may be absent if schema apply was skipped */ }
+  let rosterTotal = 0;
+  try {
+    const r6 = await sql()`select count(*)::int as n from outreach_roster`;
+    rosterTotal = Number(r6[0]?.n ?? 0);
   } catch { /* table may be absent if schema apply was skipped */ }
   return {
     resourcesInserted: DEMO_RESOURCES.length,
@@ -302,6 +331,7 @@ export async function seedDemoData(): Promise<SeedResult> {
     hometeamTotal: Number(r3[0]?.n ?? 0),
     needsTotal: Number(r4[0]?.n ?? 0),
     alertsTotal,
+    rosterTotal,
   };
 }
 

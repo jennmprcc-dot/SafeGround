@@ -91,9 +91,12 @@ export const CATEGORY_MAP: Record<CategoryId, Category> = Object.fromEntries(
   CATEGORIES.map((c) => [c.id, c]),
 ) as Record<CategoryId, Category>;
 
-/* ── Demo resources (12, all 8 categories) ────────────────────────
+/* ── Demo resources (15: 13 fictional across all 8 categories + 2 real Marin ⭐
+   owner-requested providers) ────────────────────────────────────
    Fictional places in a fictional waterfront district. Verified dates
-   are recent (within the last ~3 weeks). Demo — not real listings. */
+   are recent (within the last ~3 weeks). Demo — not real listings.
+   Real: The Street Chaplaincy (San Rafael) + The Bethany Project Marin
+   (Novato) — owner-requested, idempotently seeded into the live DB. */
 
 export const DEMO_RESOURCES: DemoResource[] = [
   {
@@ -277,6 +280,36 @@ export const DEMO_RESOURCES: DemoResource[] = [
     lat: 37.8178,
     lng: -122.2692,
     unconfirmed: ["phone", "note"],
+  },
+  {
+    id: "r-street-chaplaincy",
+    name: "The Street Chaplaincy",
+    category: "daycenters",
+    address: "1510 5th Ave, San Rafael, CA 94901",
+    hours: "Call ahead — support hours vary",
+    phone: "(415) 685-5058",
+    note: "Spiritual and wellness support with a welcoming ear — hot drinks, conversation, and a calm place to rest. Founded by Kieawnie Clar (Executive Director).",
+    verifiedAt: "2026-09-06",
+    verifiedBy: "Outreach Team Maya",
+    openNow: false,
+    lat: 37.9739,
+    lng: -122.5290,
+    unconfirmed: ["hours"],
+  },
+  {
+    id: "r-bethany-project",
+    name: "The Bethany Project Marin",
+    category: "food",
+    address: "Hamilton Community Church, 5400 Nave Dr, Novato, CA 94949",
+    hours: "Thursdays 1:30–4pm (community meal)",
+    phone: null,
+    note: "Thursday community meal at Hamilton Community Church — nobody heals alone. Founded by Kieawnie Clar (Jan 2025). Reach out at info@thebethanyprojectmarin.org.",
+    verifiedAt: "2026-09-06",
+    verifiedBy: "Outreach Team Maya",
+    openNow: false,
+    lat: 38.0680,
+    lng: -122.5220,
+    unconfirmed: ["phone", "hours"],
   },
 ];
 
