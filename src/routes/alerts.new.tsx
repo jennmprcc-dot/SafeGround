@@ -443,7 +443,7 @@ function SendAlertPage() {
             </div>
           </Card>
         ) : (
-          <BottomSheet open title="Send to your people — Step X of 3" peek={false}>
+          <BottomSheet open title="Send to your people" peek={false} onClose={() => undefined}>
             <div className="flex flex-col gap-4 pb-2">
               <p className="text-small text-sg-ink-soft">Step {step} of 3 — no rush, every choice is yours.</p>
 

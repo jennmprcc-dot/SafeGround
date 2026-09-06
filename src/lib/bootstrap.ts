@@ -294,13 +294,15 @@ export async function seedDemoData(): Promise<SeedResult> {
   } catch { /* emergency_alerts may not exist on very old DBs mid-migration; schema apply precedes seed */ }
 
   // ── Outreach roster seed (owner-directed 2026-09-06) ───────────────
-  // Jenn Mallow + Carrie "Bambi" Klyse (admins), Tracey Cohen (staff_limited,
-  // placeholder phone — real number not known yet; the lead will update it via
-  // sg_outreach_roster_set once provided). Idempotent ON CONFLICT DO NOTHING.
+  // Jenn Mallow + Carrie "Bambi" Klyse (admins), Tracey Cohen (staff_limited).
+  // Tracey's phone (14153028367) is owner-provided (2026-09-06); the seed is
+  // idempotent — main already carries the row, re-running fixes any previously
+  // seeded placeholder. No message is ever sent to roster members by the seed.
+  // Idempotent ON CONFLICT DO NOTHING.
   const rosterSeed: Array<[name: string, phone: string, role: string]> = [
     ["Jenn Mallow", "14158797940", "admin"],
     ["Carrie \"Bambi\" Klyse", "14155249090", "admin"],
-    ["Tracey Cohen", "0000000000", "staff_limited"],
+    ["Tracey Cohen", "14153028367", "staff_limited"],
   ];
   for (const [name, phone, role] of rosterSeed) {
     try {

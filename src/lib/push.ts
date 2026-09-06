@@ -44,7 +44,7 @@ export function pushConfigured(): boolean {
  * the notification). Returns a calm status string for debug labels — never
  * throws, never blocks the alert flow.
  */
-export async function notifyAlert(a: AlertRow): Promise<"sent" | "unconfigured" | "unsupported"> {
+export async function notifyAlert(_a: AlertRow): Promise<"sent" | "unconfigured" | "unsupported"> {
   if (!pushConfigured()) return "unconfigured";
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
   // Real registration lands with the FCM wave; until then, in-app surface only.

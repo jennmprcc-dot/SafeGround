@@ -8,9 +8,9 @@
  * Calm: no WARNING/DANGER/URGENT/MISSING/siren anywhere.
  */
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
-import { BottomSheet, Button, Card, EmptyState, SkeletonRows, StatusBadge, useToasts } from "~/components/ui";
+import { BottomSheet, Button, EmptyState, SkeletonRows, useToasts } from "~/components/ui";
 import { useAuth } from "~/lib/auth";
 import { listAlertsFor, claimEmergencyAlert } from "~/lib/server";
 import { getAlertIdentity, formatPhone } from "~/lib/alertIdentity";

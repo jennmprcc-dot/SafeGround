@@ -29,11 +29,10 @@ function MineView() {
   const [row, setRow] = useState<AlertRow | null>(null);
   const [source, setSource] = useState<AlertSource>("demo");
   const [loading, setLoading] = useState(true);
-  const [tick, setTick] = useState(0);
   const [clearOpen, setClearOpen] = useState(false);
   const [quietOpen, setQuietOpen] = useState(false);
   const [outcome, setOutcome] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [tick, setTick] = useState(0);
   const [crisisOpen, setCrisisOpen] = useState(false);
 
   const phone = identity?.phone ?? "";
@@ -65,6 +64,13 @@ function MineView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, signedIn, tick]);
 
+  // Gentle auto-refresh: keeps "who's helping" and the expires line current
+  // without any background location or polling that could feel like tracking.
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   if (!signedIn || !identity) {
     return (
       <AppShell>
@@ -85,9 +91,7 @@ function MineView() {
   }
 
   const clear = async (note: string) => {
-    setSaving(true);
     const res = await resolveEmergencyAlert({ data: { alertId: row?.id ?? "", phone, note } });
-    setSaving(false);
     if (res.ok) {
       push({ kind: "success", message: "All clear — your people can rest easy." });
       setRow(null);
