@@ -41,6 +41,13 @@ import { Pool } from "pg";
  *  1. Supabase's "Connect" string ships as a template with a literal
  *     `[YOUR-PASSWORD]` placeholder. If the owner saved it unfilled we throw a
  *     calm, actionable error instead of an auth loop.
+ *  1b. The secret holds ONLY the bare database password (no scheme/host) —
+ *     exactly what the live host's `DATABASE_URL` secret currently contains.
+ *     Rebuild the full URL on the dual-stack Supavisor pooler using the project
+ *     ref from `supabase_url` (public project hostname, not a secret).
+ *     Without this, `new URL()` throws, `pg` never connects, and the live site
+ *     serves demo data while local (which reads the full URL from `.env.local`)
+ *     works fine.
  *  2. Some secret managers wrap values in literal square brackets — strip a
  *     `[...]`-wrapped password segment.
  *  3. Supabase direct hosts (`db.<ref>.supabase.co:5432`) resolve IPv6-only
@@ -63,6 +70,15 @@ export function databaseUrl(): string {
         "password was never saved. Paste the actual password into DATABASE_URL (platform Secrets " +
         "UI, same place the current value lives) and re-publish."
     );
+  }
+  // Repair (1b): bare password with no scheme/host — rebuild the full pooler URL.
+  // The project ref comes from `supabase_url` (e.g. https://<ref>.supabase.co).
+  if (!url.includes("://")) {
+    const ref = projectRefFromSupabaseUrl();
+    const region = process.env.SUPABASE_DB_REGION || "us-west-2";
+    url =
+      `postgresql://postgres.${ref}:${encodeURIComponent(url)}` +
+      `@aws-0-${region}.pooler.supabase.com:5432/postgres`;
   }
   // Repair (2): postgres:[SECRET]@host → postgres:SECRET@host
   url = url.replace(/:\[([^\]]*)\]@/, ":$1@");
@@ -91,6 +107,24 @@ export function databaseUrl(): string {
     // surface the exact error downstream instead of us guessing at the string.
   }
   return url;
+}
+
+/**
+ * Project ref (e.g. `zxicnzsyyfaykdpqoftr`) from the public Supabase project URL
+ * in `supabase_url` / `SUPABASE_URL`. Only used for the bare-password repair
+ * above; throws a calm error if the project URL is missing or unparseable.
+ */
+function projectRefFromSupabaseUrl(): string {
+  const raw = (process.env.supabase_url || process.env.SUPABASE_URL || "").trim();
+  const m = raw.match(/^https?:\/\/([a-z0-9]+)\.supabase\.co\/?$/i);
+  if (!m) {
+    throw new Error(
+      "DATABASE_URL holds only the database password, but the Supabase project " +
+        "reference could not be read from supabase_url — save the project URL " +
+        "(https://<ref>.supabase.co) in supabase_url (platform Secrets UI) and re-publish."
+    );
+  }
+  return m[1];
 }
 
 /* ── pg client pool ────────────────────────────────────────────────
