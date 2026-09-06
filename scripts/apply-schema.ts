@@ -18,7 +18,7 @@ async function main() {
     const r = await bootstrap();
     console.log(`[safeground] schema: ${r.applied} applied, ${r.skipped} skipped, shim=${r.shimInstalled}`);
     console.log(`[safeground] seed: resources=${r.resourcesTotal} (${r.resourcesInserted} inserted), sweeps=${r.sweepsTotal} (${r.sweepsInserted} inserted)`);
-    console.log(`[safeground] seed: hometeam=${r.hometeamTotal}, needs=${r.needsTotal}, alerts=${r.alertsTotal}`);
+    console.log(`[safeground] seed: hometeam=${r.hometeamTotal}, needs=${r.needsTotal}, alerts=${r.alertsTotal}, roster=${r.rosterTotal}`);
     process.exit(0);
   }
   const s = await applySchema();
@@ -28,7 +28,7 @@ async function main() {
   }
   if (arg === "--seed") {
     const r = await seedDemoData();
-    console.log(`[safeground] seed: resources=${r.resourcesTotal} sweeps=${r.sweepsTotal} hometeam=${r.hometeamTotal} needs=${r.needsTotal} alerts=${r.alertsTotal}`);
+    console.log(`[safeground] seed: resources=${r.resourcesTotal} sweeps=${r.sweepsTotal} hometeam=${r.hometeamTotal} needs=${r.needsTotal} alerts=${r.alertsTotal} roster=${r.rosterTotal}`);
   }
   process.exit(0);
 }
