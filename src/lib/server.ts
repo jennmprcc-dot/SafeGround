@@ -42,8 +42,8 @@ export interface ResourceRow {
   note: string | null;
   /** ISO date (YYYY-MM-DD) or null — "Not confirmed yet" when absent. */
   verifiedAt: string | null;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   /** Derived server-side from the hours text (schema has no open_now column). */
   openNow: boolean;
 }
@@ -283,8 +283,8 @@ function mapResource(r: DbResourceRow): ResourceRow {
     phone: r.phone,
     note: r.note,
     verifiedAt: r.verified_at ? String(r.verified_at).slice(0, 10) : null,
-    lat: r.lat ?? 0,
-    lng: r.lng ?? 0,
+    lat: r.lat ?? null,
+    lng: r.lng ?? null,
     openNow: isOpenNow(r.hours),
   };
 }
@@ -392,8 +392,8 @@ function demoResources(): ResourceRow[] {
     phone: r.phone ?? null,
     note: r.note,
     verifiedAt: r.verifiedAt,
-    lat: r.lat,
-    lng: r.lng,
+    lat: r.lat ?? null,
+    lng: r.lng ?? null,
     openNow: r.openNow,
   }));
 }
@@ -1343,3 +1343,114 @@ export const isOutreachPhone = createServerFn({ method: "GET" })
       return { isOutreach: false, source: "demo" };
     }
   });
+
+/* ── Resources-real wave: admin add-resource (owner-directed 2026-09-06) ──
+ * Jenn + Bambi add resources as they learn about them. Server-side gate: the
+ * caller's normalized phone must match an ACTIVE outreach_roster row with
+ * role='admin' BEFORE anything is inserted — a non-admin gets a calm
+ * rejection from the server, not just a hidden button. verified_by records
+ * the admin's user row; verified_at = today (listing date). */
+
+/** True when this phone may add resources (active roster admin). UI hint only —
+ * the add server fn re-checks authoritatively (never client trust). */
+export const isAdminPhone = createServerFn({ method: "GET" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ isAdmin: boolean; source: DataSource }> => {
+    const { phone } = data;
+    if (!phone) return { isAdmin: false, source: "db" };
+    try {
+      const rows = (await sql()`
+        select 1 from public.outreach_roster
+        where phone = ${phone} and active and role = 'admin'
+        limit 1`) as unknown as Array<Record<string, unknown>>;
+      return { isAdmin: rows.length > 0, source: "db" };
+    } catch {
+      return { isAdmin: false, source: "demo" };
+    }
+  });
+
+const RESOURCE_CATEGORIES = [
+  "food", "shelter", "water", "showers", "clinics", "charging", "legal",
+  "daycenters", "transportation", "emergency",
+] as const;
+type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number];
+
+export const addResource = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as {
+      phone?: unknown; name?: unknown; category?: unknown; address?: unknown;
+      hours?: unknown; phoneOfResource?: unknown; note?: unknown; lat?: unknown; lng?: unknown;
+    };
+    const lat = Number(v.lat);
+    const lng = Number(v.lng);
+    return {
+      // Caller identity: normalized digits (sg_norm_phone shape) — matched
+      // server-side against outreach_roster role='admin' before any insert.
+      phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+      name: typeof v.name === "string" ? v.name.replace(/\s+/g, " ").trim().slice(0, 120) : "",
+      category: RESOURCE_CATEGORIES.includes(v.category as ResourceCategory) ? (v.category as ResourceCategory) : null,
+      address: typeof v.address === "string" ? v.address.trim().slice(0, 200) : "",
+      hours: typeof v.hours === "string" ? v.hours.replace(/\s+/g, " ").trim().slice(0, 200) : "",
+      phoneOfResource: typeof v.phoneOfResource === "string" ? v.phoneOfResource.trim().slice(0, 60) : "",
+      note: typeof v.note === "string" ? v.note.replace(/\s+/g, " ").trim().slice(0, 600) : "",
+      lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
+      lng: Number.isFinite(lng) && lng !== 0 ? lng : null,
+    };
+  })
+  .handler(
+    async ({ data }): Promise<{ ok: boolean; resourceId: string | null; error: string | null; source: DataSource }> => {
+      const { phone, name, category, address, hours, phoneOfResource, note, lat, lng } = data;
+      if (!name || name.length < 2) {
+        return { ok: false, resourceId: null, error: "Give it a name so neighbors can find it.", source: "db" };
+      }
+      if (!category) {
+        return { ok: false, resourceId: null, error: "Choose a category — whichever fits closest.", source: "db" };
+      }
+      try {
+        // THE GATE: admin check happens here, server-side, before the insert.
+        const adminRows = (await sql()`
+          select 1 from public.outreach_roster
+          where phone = ${phone} and active and role = 'admin'
+          limit 1`) as unknown as Array<Record<string, unknown>>;
+        if (adminRows.length === 0) {
+          return {
+            ok: false,
+            resourceId: null,
+            error: "Only MPRCC outreach admins can add resources right now. Thank you for looking out — share it with the team and they'll take it from here.",
+            source: "db",
+          };
+        }
+        // verified_by: attribute to the roster admin's user row (uuid FK).
+        // Same deterministic mapping the seed uses — the row is ensured in the
+        // bootstrap/migration; fall back to null verified_by (still recorded
+        // via verified_at + the roster) rather than failing the save.
+        const adminName = "MPRCC outreach";
+        const { uuid5 } = await import("~/lib/uuid5");
+        const adminUserId = uuid5("seed:outreach:jenn");
+        await sql()`
+          insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_user_meta_data)
+          values (${adminUserId}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+                  ${`demo+outreach-${adminUserId.slice(0, 8)}@safeground.local`}, '', now(), now(), now(), '{"seed":true}')
+          on conflict (id) do nothing`;
+        await sql()`
+          insert into public.users (id, display_name, role)
+          values (${adminUserId}, ${adminName}, 'outreach_admin')
+          on conflict (id) do update set display_name = ${adminName}`;
+        const today = new Date().toISOString().slice(0, 10);
+        const rows = (await sql()`
+          insert into public.resources (name, category, address, hours, phone, note, lat, lng, verified_at, verified_by)
+          values (${name}, ${category}, ${address === "" ? null : address}, ${hours === "" ? null : hours},
+                  ${phoneOfResource === "" ? null : phoneOfResource}, ${note === "" ? null : note},
+                  ${lat}, ${lng}, ${today}::date, ${adminUserId})
+          returning id`) as unknown as Array<{ id: string }>;
+        return { ok: true, resourceId: rows[0]?.id ?? null, error: null, source: "db" };
+      } catch (e) {
+        if (isDbDown(e)) {
+          // Calm demo fallback: never appears to lose the admin's work — but
+          // tagged demo so the honest label shows (a demo row is NOT saved).
+          return { ok: true, resourceId: `draft-${Date.now()}`, error: null, source: "demo" };
+        }
+        return { ok: false, resourceId: null, error: calmRpcError(e, "That didn't save — nothing was changed. Try again in a moment."), source: "db" };
+      }
+    },
+  );

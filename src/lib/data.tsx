@@ -10,7 +10,9 @@ import {
   BowlIcon,
   CatIcon,
   DropIcon,
+  HeartIcon,
   MoonBlanketIcon,
+  NavigateIcon,
   PersonIcon,
   PlusIcon,
   ScalesIcon,
@@ -28,7 +30,9 @@ export type CategoryId =
   | "clinics"
   | "charging"
   | "legal"
-  | "daycenters";
+  | "daycenters"
+  | "transportation"
+  | "emergency";
 
 export interface Category {
   id: CategoryId;
@@ -54,8 +58,9 @@ export interface DemoResource {
   verifiedAt: string; // ISO date, e.g. "2026-08-28"
   verifiedBy: string; // outreach team or "outreach"
   openNow: boolean;
-  lat: number;
-  lng: number;
+  /** Map pin — null/absent when the location isn't confirmed (no invented pins). */
+  lat?: number;
+  lng?: number;
 }
 
 export type SweepStatus = "reported" | "active" | "planned" | "resolved";
@@ -85,6 +90,9 @@ export const CATEGORIES: Category[] = [
   { id: "charging", label: "Charging", name: "Charging & Wi-Fi", icon: <BoltIcon size={24} />, wash: "bg-sg-gold-wash" },
   { id: "legal", label: "Legal", name: "Legal aid", icon: <ScalesIcon size={24} />, wash: "bg-sg-sky-wash" },
   { id: "daycenters", label: "Day centers", name: "Day centers", icon: <SunIcon size={24} />, wash: "bg-sg-gold-wash" },
+  { id: "transportation", label: "Rides", name: "Transportation & rides", icon: <NavigateIcon size={24} />, wash: "bg-sg-sky-wash" },
+  // Calm burnt-clay (never alarm red) — mobile crisis teams, no police unless asked.
+  { id: "emergency", label: "Crisis help", name: "Crisis response", icon: <HeartIcon size={24} />, wash: "bg-sg-clay-wash" },
 ];
 
 export const CATEGORY_MAP: Record<CategoryId, Category> = Object.fromEntries(
@@ -374,8 +382,10 @@ export function demoNearMePoint() {
   return { lat: 37.8135, lng: -122.2731 };
 }
 
-/** Rough haversine-ish distance in miles for demo points (Build A stands in for real geocoding). */
-export function approxDistanceMi(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+/** Rough haversine-ish distance in miles for demo points (Build A stands in for real geocoding).
+ * Rows without a confirmed pin get undefined (never a fake distance). */
+export function approxDistanceMi(a: { lat: number; lng: number }, b: { lat?: number; lng?: number }): number | undefined {
+  if (b.lat === undefined || b.lng === undefined) return undefined;
   const dLat = (b.lat - a.lat) * 69;
   const dLng = (b.lng - a.lng) * 69 * Math.cos((a.lat * Math.PI) / 180);
   return Math.sqrt(dLat * dLat + dLng * dLng);
