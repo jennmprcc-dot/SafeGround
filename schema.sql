@@ -1065,3 +1065,45 @@ comment on table public.outreach_roster is
   'sg_outreach_roster_set (admin-only); reads are public.';
 comment on function public.is_outreach() is
   'Role gate used by outreach policies. Roles are provisioned manually by the lead; never self-serve.';
+-- ---------------------------------------------------------------------------
+-- push_tokens — Firebase web-push registration storage (owner green-lit 2026-09-06)
+--
+-- One row per (phone, device token). Phone is the sg_norm_phone-digit identity
+-- used everywhere in this app; token is the FCM registration token the browser
+-- receives after the user taps "Allow". Storing it server-side is what lets
+-- MPRCC staff send the peer-support-request push to the two admins and let
+-- the owner test notifications end-to-end. RLS: create/select/update are
+-- confined to the row's own phone (the app is phone-identified, no session);
+-- the server send route reads tokens service-side, never through the
+-- anon-key REST API. deleting a row = revoking push for that device forever;
+-- the send route ignores unregistered/missing tokens (FCM returns
+-- UNREGISTERED on a stale one, and attachToRegistered+send treats it as absent).
+-- ---------------------------------------------------------------------------
+create table public.push_tokens (
+  phone        text not null check (char_length(phone) between 7 and 20),
+  token        text not null check (char_length(token) between 20 and 512),
+  device_label text check (device_label is null or char_length(device_label) between 1 and 60),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  primary key (phone, token)
+);
+alter table public.push_tokens enable row level security;
+-- The token is the device proof for its OWNER only: anyone may insert their
+-- own token (phone-identified, matching the row's phone), select/update rows
+-- whose phone is their own — never another phone's tokens, never the anon
+-- role reading all tokens. Staff sends happen service-side (server role).
+create policy "push tokens own insert" on public.push_tokens for insert
+  with check (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create policy "push tokens own select" on public.push_tokens for select
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create policy "push tokens own update" on public.push_tokens for update
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create policy "push tokens owner delete" on public.push_tokens for delete
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create index idx_push_tokens_phone on public.push_tokens (phone, updated_at desc);
+comment on table public.push_tokens is
+  'Firebase web-push tokens (phone identity). One row per (phone, token); '
+  'phone-bound RLS: a row is only ever visible/writable to the phone it '
+  'belongs to. No background location, no SMS, no auto-contact — push is the '
+  'dispatch channel ONLY for consenting parties and the owner test button '
+  '(owner-directed 2026-09-06).';
