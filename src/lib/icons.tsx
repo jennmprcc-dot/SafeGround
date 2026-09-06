@@ -297,3 +297,18 @@ export function CatIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Two hands holding — the calm "help from my people" glyph. No siren, no bell,
+ * no alarm triangle (DESIGN_SYSTEM §3: every icon ships with a text label). */
+export function HandsIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 5.5c-1.6-2.3-4.8-2.4-6.3-.2C4.3 7.3 5 10 7.2 11.2c1.1.6 2.4.7 3.5.3" />
+      <path d="M12 5.5c1.6-2.3 4.8-2.4 6.3-.2 1.4 2 .7 4.7-1.5 5.9-1.1.6-2.4.7-3.5.3" />
+      <path d="M12 16.5c-1.6-2.3-4.8-2.4-6.3-.2-1.4 2-.7 4.7 1.5 5.9 1.1.6 2.4.7 3.5.3" />
+      <path d="M12 16.5c1.6-2.3 4.8-2.4 6.3-.2 1.4 2 .7 4.7-1.5 5.9-1.1.6-2.4.7-3.5.3" />
+      <path d="M8 10.5c0 1.2.8 2.1 2 2.7 1.2.6 2.8.6 4 0 1.2-.6 2-1.5 2-2.7" />
+      <path d="M8 20.5c0 1.2.8 2.1 2 2.7 1.2.6 2.8.6 4 0 1.2-.6 2-1.5 2-2.7" />
+    </svg>
+  );
+}

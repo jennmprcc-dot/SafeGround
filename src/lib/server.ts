@@ -23,6 +23,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
 import { DEMO_RESOURCES, DEMO_SWEEPS } from "~/lib/data";
 import type { CategoryId } from "~/lib/data";
+import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertRow, AlertSource } from "~/lib/alerts";
+import { DEMO_SENDER } from "~/lib/alerts";
 
 /* ── Public row shapes (serializable) ──────────────────────────── */
 
@@ -755,4 +757,299 @@ export const ensureUser = createServerFn({ method: "POST" })
     } catch {
       return { ok: false, source: "demo" };
     }
+  });
+
+/* ── Wave 2a: Emergency alerts (owner-directed 2026-09-06) ──────────
+ * All writes go through the RPCs (send_emergency_alert / sg_claim_alert /
+ * resolve_emergency_alert) — the schema's only write paths for this table
+ * (no direct INSERT/UPDATE policies on phone-identified rows). Reads run
+ * service-role but are gated HERE on the viewer's phone: the exact point is
+ * stripped from any viewer who isn't the sender, an on-duty peer-team member
+ * (roster), or a notified HomeTeam supporter. This mirrors the RLS promises
+ * for auth-based roles and is the app layer's second guard (the UI also
+ * refuses to render exact unless canSeeExact). */
+
+/** True when the error means "database unreachable", not an RPC rule rejection. */
+function isDbDown(e: unknown): boolean {
+  const m = String((e as { message?: string })?.message ?? e);
+  return /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|getaddrinfo|connect ETIMEDOUT|socketerror|connection refused|not reachable|timed out/i.test(m);
+}
+
+/** Calm, trauma-informed copy for an RPC rejection — pass the server's own words through. */
+function calmRpcError(e: unknown, fallback: string): string {
+  const m = String((e as { message?: string })?.message ?? "").trim();
+  if (!m || /connection|ECONNREFUSED|ENOTFOUND/i.test(m)) return fallback;
+  // RPC raise-exception messages are already gentle; keep them whole.
+  return m.length > 220 ? `${m.slice(0, 220)}…` : m;
+}
+
+interface DbAlertRow {
+  id: string;
+  kind: string;
+  note: string | null;
+  location_shared: string;
+  fuzz_lat: number | null;
+  fuzz_lng: number | null;
+  exact_lat: number | null;
+  exact_lng: number | null;
+  audience: string[];
+  sender_name: string | null;
+  sender_phone: string;
+  claimed_by: string | null;
+  claimed_name: string | null;
+  claimed_at: string | Date | null;
+  resolved_at: string | Date | null;
+  resolved_by_role: string | null;
+  outcome_note: string | null;
+  expires_at: string | Date;
+  created_at: string | Date;
+}
+
+/** Map a DB alert row → the serializable AlertRow, honoring per-viewer privacy. */
+function mapAlert(r: DbAlertRow, viewer: { phone: string; staff: boolean; admin: boolean; hometeam: boolean }): AlertRow {
+  const own = r.sender_phone === viewer.phone;
+  const notifiedHometeam = viewer.hometeam && r.audience.includes("hometeam");
+  const canSeeExact = own || viewer.staff || notifiedHometeam;
+  const resolved = r.resolved_at != null;
+  // outcome_note is admin + sender only (staff_limited never sees it).
+  const outcomeVisible = !resolved || own || viewer.admin;
+  const c = (d: string | Date | null) => (d == null ? null : new Date(d).toISOString());
+  return {
+    id: r.id,
+    kind: r.kind as AlertKind,
+    note: r.note,
+    location: r.location_shared as AlertLocation,
+    fuzzLat: r.fuzz_lat,
+    fuzzLng: r.fuzz_lng,
+    exactLat: canSeeExact ? r.exact_lat : null,
+    exactLng: canSeeExact ? r.exact_lng : null,
+    canSeeExact,
+    audience: r.audience as AlertAudienceGroup[],
+    senderName: r.sender_name ?? (own ? "You" : "a neighbor"),
+    senderPhone: r.sender_phone,
+    claimedBy: r.claimed_by,
+    claimedByName: r.claimed_name,
+    claimedAt: c(r.claimed_at),
+    resolved,
+    resolvedAt: c(r.resolved_at),
+    resolvedByRole: r.resolved_by_role as AlertRow["resolvedByRole"],
+    outcomeNote: outcomeVisible ? r.outcome_note : null,
+    expiresAt: new Date(r.expires_at).toISOString(),
+    createdAt: new Date(r.created_at).toISOString(),
+    source: "db",
+  };
+}
+
+function demoAlertRows(phone: string): AlertRow[] {
+  const now = Date.now();
+  const mine = phone === DEMO_SENDER.phone;
+  const threeH = new Date(now - 3 * 3_600_000).toISOString();
+  const twoH = new Date(now - 2 * 3_600_000).toISOString();
+  const expires = new Date(now + 21 * 3_600_000).toISOString();
+  const active: AlertRow = {
+    id: "demo-alert-active",
+    kind: "help_needed",
+    note: "On the bench by the library — the phone is at 8%. Just want someone to know I'm here.",
+    location: "fuzzed",
+    fuzzLat: 37.813,
+    fuzzLng: -122.273,
+    exactLat: null,
+    exactLng: null,
+    canSeeExact: false,
+    audience: ["friends", "peers", "hometeam"],
+    senderName: mine ? "You" : "Sam",
+    senderPhone: DEMO_SENDER.phone,
+    claimedBy: null,
+    claimedByName: null,
+    claimedAt: null,
+    resolved: false,
+    resolvedAt: null,
+    resolvedByRole: null,
+    outcomeNote: null,
+    expiresAt: expires,
+    createdAt: threeH,
+    source: "demo",
+  };
+  const resolved: AlertRow = {
+    id: "demo-alert-resolved",
+    kind: "unsafe_place",
+    note: "A patrol car drove through the underpass twice tonight.",
+    location: "none",
+    fuzzLat: null,
+    fuzzLng: null,
+    exactLat: null,
+    exactLng: null,
+    canSeeExact: false,
+    audience: ["friends", "peers"],
+    senderName: mine ? "You" : "Sam",
+    senderPhone: DEMO_SENDER.phone,
+    claimedBy: null,
+    claimedByName: null,
+    claimedAt: null,
+    resolved: true,
+    resolvedAt: twoH,
+    resolvedByRole: "sender",
+    outcomeNote: "Made it to the library, all good.",
+    expiresAt: new Date(now - 1 * 3_600_000).toISOString(),
+    createdAt: threeH,
+    source: "demo",
+  };
+  return [active, resolved];
+}
+
+/** Send an emergency alert. Location NEVER pre-selected — the inbound payload
+ * must carry an explicit 'none' | 'fuzzed' | 'exact' (the RPC hard-rejects
+ * NULL/empty too; we validate on the client AND here). */
+export const sendEmergencyAlert = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as {
+      senderPhone?: unknown; kind?: unknown; note?: unknown;
+      location?: unknown; fuzzLat?: unknown; fuzzLng?: unknown;
+      exactLat?: unknown; exactLng?: unknown; audience?: unknown;
+    };
+    const kind = v.kind === "unsafe_place" || v.kind === "police_nearby" || v.kind === "help_needed" ? (v.kind as AlertKind) : null;
+    const location = v.location === "none" || v.location === "fuzzed" || v.location === "exact" ? (v.location as AlertLocation) : null;
+    const audience = Array.isArray(v.audience)
+      ? (v.audience as unknown[]).filter((x): x is AlertAudienceGroup => x === "friends" || x === "peers" || x === "hometeam").slice(0, 3)
+      : [];
+    const fuzzLat = Number(v.fuzzLat);
+    const fuzzLng = Number(v.fuzzLng);
+    const exactLat = Number(v.exactLat);
+    const exactLng = Number(v.exactLng);
+    return {
+      senderPhone: String(v.senderPhone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+      kind,
+      note: typeof v.note === "string" ? v.note.replace(/\s+/g, " ").trim().slice(0, 500) : "",
+      location,
+      fuzzLat: Number.isFinite(fuzzLat) && fuzzLat !== 0 ? fuzzLat : null,
+      fuzzLng: Number.isFinite(fuzzLng) && fuzzLng !== 0 ? fuzzLng : null,
+      exactLat: Number.isFinite(exactLat) && exactLat !== 0 ? exactLat : null,
+      exactLng: Number.isFinite(exactLng) && exactLng !== 0 ? exactLng : null,
+      audience,
+    };
+  })
+  .handler(
+    async ({ data }): Promise<{ ok: boolean; alertId: string | null; error: string | null; source: AlertSource }> => {
+      const { senderPhone, kind, note, location, fuzzLat, fuzzLng, exactLat, exactLng, audience } = data;
+      // Never-pre-selected guard (client + server): location must be explicit.
+      if (!location) {
+        return { ok: false, alertId: null, error: "Please choose how much location to share — none, an approximate area, or the exact spot.", source: "db" };
+      }
+      if (!kind) {
+        return { ok: false, alertId: null, error: "Please choose what kind of help this is — Unsafe place, Police nearby, or Help needed.", source: "db" };
+      }
+      if (audience.length === 0) {
+        return { ok: false, alertId: null, error: "Please choose at least one group to share this with — friends, peers, or HomeTeam.", source: "db" };
+      }
+      try {
+        const rows = (await sql()`
+          select public.send_emergency_alert(
+            ${senderPhone}, ${kind}, ${note === "" ? null : note},
+            ${fuzzLat}, ${fuzzLng}, ${location},
+            ${audience}::text[], ${exactLat}, ${exactLng}
+          ) as id`) as unknown as Array<{ id: string }>;
+        return { ok: true, alertId: rows[0]?.id ?? null, error: null, source: "db" };
+      } catch (e) {
+        if (isDbDown(e)) {
+          // Calm demo fallback: keep the sender's intent; clearly labeled draft.
+          return { ok: true, alertId: `draft-${Date.now()}`, error: null, source: "demo" };
+        }
+        return { ok: false, alertId: null, error: calmRpcError(e, "That didn't go through — nothing was sent. No rush to try again."), source: "db" };
+      }
+    },
+  );
+
+/** Alerts this phone may see (sender's own, plus anything the on-duty team or
+ * a notified HomeTeam supporter may act on). Exact coords are STRIPPED for
+ * viewers who aren't entitled to them — the response itself carries no leak. */
+export const listAlertsFor = createServerFn({ method: "GET" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ rows: AlertRow[]; source: AlertSource }> => {
+    const phone = data.phone;
+    try {
+      const who = (await sql()`
+        select
+          coalesce((select bool_or(active and role = 'admin') from public.outreach_roster where phone = ${phone}), false) as is_admin,
+          coalesce((select bool_or(active) from public.outreach_roster where phone = ${phone}), false) as is_staff,
+          coalesce((select bool_or(status = 'active') from public.hometeam_members where phone = ${phone}), false) as is_hometeam`
+      ) as unknown as Array<{ is_admin: boolean; is_staff: boolean; is_hometeam: boolean }>;
+      const viewer = { phone, staff: Boolean(who[0]?.is_staff), admin: Boolean(who[0]?.is_admin), hometeam: Boolean(who[0]?.is_hometeam) };
+      const rows = (await sql()`
+        select ea.id, ea.kind, ea.note, ea.location_shared, ea.fuzz_lat, ea.fuzz_lng,
+               ea.exact_lat, ea.exact_lng, ea.audience, ea.sender_phone,
+               coalesce(hs.display_name, rs.display_name) as sender_name,
+               ea.claimed_by, coalesce(hc.display_name, rc.display_name) as claimed_name,
+               ea.claimed_at, ea.resolved_at, ea.resolved_by_role, ea.outcome_note,
+               ea.expires_at, ea.created_at
+        from public.emergency_alerts ea
+        left join public.hometeam_members hs on hs.phone = ea.sender_phone
+        left join public.outreach_roster rs on rs.phone = ea.sender_phone and rs.active
+        left join public.hometeam_members hc on hc.phone = ea.claimed_by
+        left join public.outreach_roster rc on rc.phone = ea.claimed_by and rc.active
+        where ea.sender_phone = ${phone}
+           or (${viewer.staff} and ea.resolved_at is null and ea.expires_at > now())
+           or (${viewer.admin} and ea.resolved_at is not null)
+           or (${viewer.hometeam} and array['hometeam']::text[] <@ ea.audience
+               and ea.resolved_at is null and ea.expires_at > now())
+        order by ea.created_at desc
+        limit 60`) as unknown as DbAlertRow[];
+      return { rows: rows.map((r) => mapAlert(r, viewer)), source: "db" };
+    } catch {
+      return { rows: demoAlertRows(phone), source: "demo" };
+    }
+  });
+
+/** "I'm on it" — server-atomic first-claim-wins via sg_claim_alert. */
+export const claimEmergencyAlert = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as { alertId?: unknown; phone?: unknown };
+    return { alertId: String(v.alertId ?? "").slice(0, 64), phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) };
+  })
+  .handler(async ({ data }): Promise<{ ok: boolean; alreadyHelping: boolean; claimedBy: string | null; error: string | null; source: AlertSource }> => {
+    const { alertId, phone } = data;
+    try {
+      const rows = (await sql()`
+        select claimed_by, claimed_at from public.sg_claim_alert(${alertId}, ${phone})
+      `) as unknown as Array<{ claimed_by: string | null; claimed_at: string | Date | null }>;
+      const claimedBy = rows[0]?.claimed_by ?? null;
+      const winner = claimedBy === phone;
+      return { ok: winner, alreadyHelping: !winner && claimedBy != null, claimedBy, error: null, source: "db" };
+    } catch (e) {
+      if (isDbDown(e)) {
+        // Calm demo fallback: treat as claimed-by-me locally (never touches the DB).
+        return { ok: true, alreadyHelping: false, claimedBy: phone, error: null, source: "demo" };
+      }
+      return { ok: false, alreadyHelping: false, claimedBy: null, error: calmRpcError(e, "That didn't go through — try again in a moment."), source: "db" };
+    }
+  });
+
+/** Sender "I'm OK — all clear" (primary) or quiet close-without-note. Records
+ * resolved_by_role=sender in the DB (or staff, admin-only, when the sender can't). */
+export const resolveEmergencyAlert = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const v = (input ?? {}) as { alertId?: unknown; phone?: unknown; note?: unknown };
+    return {
+      alertId: String(v.alertId ?? "").slice(0, 64),
+      phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
+      note: typeof v.note === "string" ? v.note.replace(/\s+/g, " ").trim().slice(0, 1000) : "",
+    };
+  })
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; source: AlertSource }> => {
+    const { alertId, phone, note } = data;
+    try {
+      await sql()`select public.resolve_emergency_alert(${alertId}, ${phone}, ${note === "" ? null : note})`;
+      return { ok: true, error: null, source: "db" };
+    } catch (e) {
+      if (isDbDown(e)) return { ok: true, error: null, source: "demo" };
+      return { ok: false, error: calmRpcError(e, "That didn't go through — nothing changed. Try again when you can."), source: "db" };
+    }
+  });
+
+/** Current active alert SENT BY this phone (drives /alerts/mine). */
+export const getMyActiveAlert = createServerFn({ method: "GET" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ row: AlertRow | null; source: AlertSource }> => {
+    const res = await listAlertsFor({ data: { phone: data.phone } });
+    const mine = res.rows.find((r) => r.senderPhone === data.phone && !r.resolved) ?? null;
+    return { row: mine, source: res.source };
   });

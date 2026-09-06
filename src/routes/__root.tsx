@@ -17,7 +17,14 @@ export const Route = createRootRoute({
       },
       { name: "theme-color", content: "#F7F4EC" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      // Brand + Add-to-Home-Screen (Wave 2a): SafeGround identity straight from
+      // the owner's brand pack; the manifest names the app "SafeGround".
+      { rel: "manifest", href: "/site.webmanifest" },
+      { rel: "icon", type: "image/png", href: "/favicon.png", sizes: "32x32" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
+    ],
   }),
   notFoundComponent: () => (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-sg-paper px-6 text-center">
