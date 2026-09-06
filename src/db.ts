@@ -66,16 +66,29 @@ export function databaseUrl(): string {
   }
   // Repair (2): postgres:[SECRET]@host → postgres:SECRET@host
   url = url.replace(/:\[([^\]]*)\]@/, ":$1@");
-  // Repair (3): IPv6-only direct host → dual-stack Supavisor pooler (same DB).
-  // The user part for the pooler is `postgres.<ref>` (Supabase's pooler auth).
-  // (`postgresql://` scheme, `postgres` user — capture only the user, not the scheme's `//`.)
-  const direct = url.match(/^postgresql:\/\/([^:/]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co(?::\d+)?\//);
-  if (direct) {
-    const [, user, password, ref] = direct;
-    const region = process.env.SUPABASE_DB_REGION || "us-west-2";
-    url =
-      `postgresql://${user}.${ref}:${encodeURIComponent(password)}` +
-      `@aws-0-${region}.pooler.supabase.com:5432/postgres`;
+  // Repair (3): rewrite any non-pooler Supabase host to the dual-stack Supavisor
+  // pooler `aws-0-<region>.pooler.supabase.com:5432` (IPv4-reachable). The direct
+  // `db.<ref>.supabase.co` host resolves AAAA-only (unreachable from IPv4-only
+  // runtimes like the live host); the `<ref>-pooler.supabase.com:6543` transaction
+  // pooler is the other pasted variant. Credentials are kept as-is (`postgres` and
+  // `postgres.<ref>` both authenticate against the pooler). An already-correct
+  // `aws-0-<region>.pooler.supabase.com` string is left untouched. Parsed with
+  // `new URL()` so userinfo, host, port and path are handled exactly — no fragile
+  // hand-rolled regex. Region override: SUPABASE_DB_REGION env var.
+  try {
+    const u = new URL(url);
+    const isRewriteTarget =
+      /^db\.[a-z0-9]+\.supabase\.co$/i.test(u.hostname) ||
+      /^[a-z0-9]+-pooler\.supabase\.com$/i.test(u.hostname);
+    if (isRewriteTarget && (u.protocol === "postgresql:" || u.protocol === "postgres:")) {
+      const region = process.env.SUPABASE_DB_REGION || "us-west-2";
+      u.hostname = `aws-0-${region}.pooler.supabase.com`;
+      u.port = "5432";
+      url = u.toString();
+    }
+  } catch {
+    // Not an absolute URL (no scheme/host) — leave untouched; the pg client will
+    // surface the exact error downstream instead of us guessing at the string.
   }
   return url;
 }
