@@ -183,6 +183,9 @@ function HomePage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-6 px-4 pt-6">
+        <div className="flex justify-center pt-2">
+          <img src="/logo-hero.png" alt="SafeGround" width={96} height={96} className="h-24 w-24 object-contain" />
+        </div>
         <Greeting />
 
         <HeadsUpCard />

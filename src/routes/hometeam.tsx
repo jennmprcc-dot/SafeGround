@@ -124,17 +124,18 @@ function JoinSheet({
   const [afterHours, setAfterHours] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
-
+  const [phoneDraft, setPhoneDraft] = useState(phone);
   useEffect(() => {
     if (open) {
       setName("");
       setAfterHours(false);
       setPhoneError(null);
+      setPhoneDraft(phone);
     }
-  }, [open]);
+  }, [open, phone]);
 
   const save = async () => {
-    const p = normPhone(phone);
+    const p = normPhone(phoneDraft);
     if (!phoneLooksOk(p)) {
       setPhoneError("That number looks incomplete — please check it when you're ready.");
       return;
@@ -155,7 +156,15 @@ function JoinSheet({
     <BottomSheet open={open} onClose={onClose} title="Join the HomeTeam">
       <div className="flex flex-col gap-4 pb-2">
         <p className="text-small text-sg-ink-soft">Neighbors share what they need, and supporters step in — only what's shared, only when they ask.</p>
-        <TextField label="Your phone" value={formatPhone(phone)} disabled helper="Used only to match you as a supporter — never shown to strangers." error={phoneError ?? undefined} />
+        <TextField
+          label="Your phone"
+          value={phoneDraft}
+          onChange={(e) => setPhoneDraft(e.target.value)}
+          inputMode="tel"
+          placeholder="(415) 555-0142"
+          helper="Used only to match you as a supporter — never shown to strangers."
+          error={phoneError ?? undefined}
+        />
         <TextField
           label="Your name"
           value={name}
