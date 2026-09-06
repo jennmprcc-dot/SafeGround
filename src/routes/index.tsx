@@ -50,7 +50,6 @@ function useHomeStats(): { activeSweeps: number; resourceCount: number; openCoun
 }
 
 function HeadsUpCard() {
-  const { push } = useToasts();
   const { activeSweeps, source, loading } = useHomeStats();
   if (loading) {
     return (
@@ -97,9 +96,9 @@ function HeadsUpCard() {
             {source === "db" ? "Live heads-ups from the outreach database." : "Demo data — shown in your saved area."}
           </p>
           <div className="mt-3">
-            <Button variant="secondary" onClick={() => push({ kind: "info", message: "Sweep heads-ups are being built next — check back soon." })}>
-              See sweeps
-            </Button>
+            <Link to="/sweeps" className="block">
+              <Button variant="secondary">See sweeps</Button>
+            </Link>
           </div>
         </div>
       </div>
@@ -162,7 +161,7 @@ function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
             onClick={() => {
               signIn();
               onClose();
-              push({ kind: "info", message: "You're signed in — check-in comes in the next build wave." });
+              push({ kind: "info", message: "You're signed in — check in with the people you trust." });
             }}
           >
             Sign in
@@ -222,7 +221,7 @@ function HomePage() {
           >
             Talk to someone
           </button>
-          <p className="text-small text-sg-ink-soft">Demo data · Sweeps and check-ins are sample content for now.</p>
+          <p className="text-small text-sg-ink-soft">No background location, ever — you choose what's shared.</p>
         </footer>
       </div>
 

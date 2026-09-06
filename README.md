@@ -14,7 +14,12 @@ row-level security. The UX is trauma-informed and mobile-first.
 
 - **TanStack Start** (React 19 + Vite + Tailwind CSS v4)
 - **Supabase-ready data layer** — see `schema.sql` (tables: users, sweeps,
-  supply requests, resources, check-ins, with RLS policies)
+  supply requests, resources, check-ins, trusted peers, with RLS policies)
+- Server-side DB access uses **`pg`** (`node-postgres`) over the Supavisor
+  pooler with TLS on the wire (`ssl.rejectUnauthorized: false` — the sandbox
+  can't validate the pooler cert SAN; the service credential + network wall
+  remain the security boundary). `@neondatabase/serverless` was removed — the
+  neon driver fails TLS on this sandbox.
 - Free-tier integrations via env vars: Mapbox, HuggingFace
 - Served by the platform's built-in free hosting (`bun run publish`)
 
@@ -33,7 +38,7 @@ These are **injected via the platform Secrets UI, never committed**:
 
 | Var | Purpose |
 | --- | ------- |
-| `DATABASE_URL` | Postgres / Supabase connection |
+| `DATABASE_URL` | Postgres / Supabase connection. May be the direct `db.<ref>.supabase.co` host — `src/db.ts` rewrites it to the dual-stack Supavisor pooler (`aws-0-<region>.pooler.supabase.com`) automatically. Region override: `SUPABASE_DB_REGION`. |
 | `supabase_url` | Supabase project URL |
 | `supabase_anon_key` | Supabase anonymous key |
 | `TWILLIO_ACCOUNT_SID` | Twilio account SID (SMS dispatch). NOTE: spelled with two L's ("TWILLIO") — that's the exact name in Secrets, keep it. |
@@ -43,15 +48,22 @@ These are **injected via the platform Secrets UI, never committed**:
 
 `.env*` files are gitignored. Never commit real secrets.
 
-SMS dispatch: when a neighbor submits a request (supply request, chat
-escalation) it lands in the MPRCC outreach-queue and texts the dispatch
-numbers above with a short, calm notification. In-app push is the primary
-free channel; SMS via Twilio is the secondary layer (uses the `TWILLIO_*`
-keys above, exact spelling).
+Schema + demo seed are applied with `bun scripts/apply-schema.ts --both`
+(idempotent). The same bootstrap is exposed as a gated API route
+(`POST /api/admin/bootstrap`, env `ALLOW_DB_BOOTSTRAP=1`) for the live host.
+
+> **Twilio / SMS is DEFERRED** until budget exists (per the business plan:
+> $0 operating budget, hard constraint). In-app push (firebase) is the only
+> dispatch channel in flight; the `TWILLIO_*` keys are reserved for a later
+> wave and are not used by the current build.
 
 ## Repo layout
 
 - `src/` — the TanStack Start app (routes, components, styles)
+- `src/db.ts` — `pg` pool + `sql()` tagged-template helper (URL repair logic)
+- `src/lib/server.ts` — server functions (resources, sweeps, check-ins)
+- `src/lib/bootstrap.ts` — idempotent schema apply + demo seed
+- `scripts/apply-schema.ts`, `scripts/seed.ts` — one-shot ops
 - `schema.sql` — Supabase schema + RLS policies
 - `PRD.md` — product requirements
 - `DESIGN_SYSTEM.md` — design system (colors, spacing, typography)
@@ -62,6 +74,8 @@ keys above, exact spelling).
 
 ## Status
 
-MVP baseline: Home + Resource Navigator (list + map views). Sweep alerts,
-safe-sleeping check-ins, supply requests, peer-support chat, and the outreach
-dashboard follow in waves per the business plan.
+MVP baseline: Home + Resource Navigator (list + map views) + Sweep Alerts
+(map/list/report/outreach queue) + Safe-Sleeping Check-Ins (manual check-in,
+trusted peers, fuzzed find-my-friend map, 12h overdue gentles). Supply
+requests, peer-support chat, and the outreach dashboard follow in Wave 2 per
+the business plan.

@@ -247,8 +247,8 @@ export async function seedDemoData(): Promise<SeedResult> {
   return {
     resourcesInserted: DEMO_RESOURCES.length,
     sweepsInserted: DEMO_SWEEPS.length,
-    resourcesTotal: r1[0]?.n ?? 0,
-    sweepsTotal: r2[0]?.n ?? 0,
+    resourcesTotal: Number(r1[0]?.n ?? 0),
+    sweepsTotal: Number(r2[0]?.n ?? 0),
   };
 }
 
