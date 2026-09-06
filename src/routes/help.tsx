@@ -1,10 +1,13 @@
 /**
- * Resource Navigator (WIREFRAMES §2 / PRD F1).
- * Anonymous-first: list view default + offline-safe; map is a graceful
- * fallback pane when no key (Mapbox placeholder wired in a later wave).
- * Copy verbatim; privacy: location only on the explicit "once" tap.
+ * Resource Navigator (WIREFRAMES §2 / PRD F1) — resources-real wave.
+ * Anonymous-first: list + REAL map (Leaflet + OpenStreetMap tiles — keyless,
+ * free tier, no token needed). Tapping a card/pin opens full details (address,
+ * phone, hours, note) with "Get directions" opening the phone's own Maps.
+ * Admins (Jenn + Bambi) get an "Add resource" control; the save is gated
+ * server-side (outreach_roster role='admin'), never just a hidden button.
+ * Copy calm/trauma-informed; privacy: no location request unless tapped.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
@@ -23,6 +26,8 @@ import {
   StatusBadge,
 } from "~/components/ui";
 import { ResourceSheet } from "~/components/resourceSheet";
+import { ResourceMapPane } from "~/components/resourceMap";
+import { ResourceAddSheet } from "~/components/resourceAddSheet";
 import {
   CATEGORIES,
   CATEGORY_MAP,
@@ -31,9 +36,10 @@ import {
   withDemoDistances,
 } from "~/lib/data";
 import type { CategoryId, DemoResource } from "~/lib/data";
-import { listResources } from "~/lib/server";
+import { listResources, isAdminPhone } from "~/lib/server";
 import type { ResourceRow, DataSource } from "~/lib/server";
-import { ChevronRightIcon } from "~/lib/icons";
+import { getAlertIdentity } from "~/lib/alertIdentity";
+import { PlusIcon, ChevronRightIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 
 /* Live fetch from the database via the listResources server fn (demo fallback
@@ -96,8 +102,8 @@ function adapt(row: ResourceRow): DemoResource {
     verifiedAt: row.verifiedAt ?? "",
     verifiedBy: "outreach",
     openNow: row.openNow,
-    lat: row.lat,
-    lng: row.lng,
+    lat: row.lat ?? undefined,
+    lng: row.lng ?? undefined,
   };
 }
 
@@ -154,85 +160,6 @@ function ViewTabs({
   );
 }
 
-/* ── Map pane: graceful fallback when no key / offline ──────────── */
-function MapPane({
-  near,
-  all,
-  onShowList,
-  onPick,
-  paneRef,
-}: {
-  near: { lat: number; lng: number } | null;
-  all: ResourceRow[];
-  onShowList: () => void;
-  onPick: (r: DemoResource) => void;
-  paneRef: RefObject<HTMLDivElement | null>;
-}) {
-  const [pins, setPins] = useState<DemoResource[]>([]);
-  useEffect(() => {
-    setPins(withDemoDistances(all.map(adapt), near ?? demoNearMePoint()).sort((a, b) => (a.distanceMi ?? 0) - (b.distanceMi ?? 0)).slice(0, 4));
-  }, [near, all]);
-
-  return (
-    <div ref={paneRef} tabIndex={-1} role="tabpanel" id="view-pane" aria-label="Map view" className="outline-none">
-      <div className="relative flex h-[320px] flex-col overflow-hidden rounded-[16px] border border-sg-line bg-sg-sky-wash">
-        {/* Calm abstract "map" backdrop — grid + water, no data, no surveillance feel */}
-        <div aria-hidden className="absolute inset-0 opacity-60" style={{ backgroundImage: "radial-gradient(circle at 20% 30%, rgba(42,107,138,0.18) 0 1px, transparent 1px), radial-gradient(circle at 70% 60%, rgba(42,107,138,0.14) 0 1px, transparent 1px), linear-gradient(180deg, #e0eff5, #d6e9f2)", backgroundSize: "26px 26px, 40px 40px, 100% 100%" }} />
-        {/* A few demo pins (sky tiles with category glyph): calm, never real-looking */}
-        <div className="absolute inset-0 flex flex-wrap items-start justify-around p-4 pt-8" aria-hidden>
-          {pins.map((r) => (
-            <span key={r.id} className="mt-2 flex h-7 w-7 items-center justify-center rounded-[8px] border-2 border-white bg-sg-sky text-white shadow-md" style={pins.length > 5 ? { transform: "translateX(-8px)" } : undefined}>
-              {categoryOf(r.category).icon && <span className="[&_svg]:h-4 [&_svg]:w-4">{categoryOf(r.category).icon}</span>}
-            </span>
-          ))}
-        </div>
-        {/* Legend chip */}
-        <span className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-sg-card px-3 py-1.5 text-small font-medium text-sg-ink shadow-md">
-          <span className="h-2.5 w-2.5 rounded-[4px] bg-sg-sky" aria-hidden />
-          Resource
-        </span>
-        {/* Zoom controls */}
-        <div className="absolute bottom-3 right-3 flex flex-col overflow-hidden rounded-[12px] border border-sg-line bg-sg-card shadow-md">
-          <button type="button" aria-label="Zoom in" className="flex h-12 w-12 items-center justify-center text-sg-ink hover:bg-sg-paper">+</button>
-          <button type="button" aria-label="Zoom out" className="flex h-12 w-12 items-center justify-center border-t border-sg-line text-sg-ink hover:bg-sg-paper">−</button>
-        </div>
-        {/* Fallback panel — design-exact copy (WIREFRAMES §2c, DESIGN_SYSTEM §4.4) */}
-        <div className="absolute inset-x-4 bottom-16 rounded-[12px] bg-sg-card p-3 shadow-md">
-          <p className="text-small text-sg-ink-soft">The map needs a connection — the list below has everything.</p>
-          <Button variant="text" onClick={onShowList} className="!min-h-[40px] px-0">
-            Show list
-          </Button>
-        </div>
-      </div>
-      {/* Peek sheet: nearest few as rows */}
-      <div className="mt-3 flex flex-col rounded-t-[16px] border border-sg-line bg-sg-card">
-        <div className="flex items-center justify-center pt-2" aria-hidden>
-          <span className="h-1 w-10 rounded-full bg-sg-line" />
-        </div>
-        <ul className="flex flex-col">
-          {pins.length === 0 ? (
-            <li className="px-4 py-4 text-small text-sg-ink-soft">Loading nearby places…</li>
-          ) : (
-            pins.map((r) => (
-              <ListRow key={r.id} onClick={() => onPick(r)}>
-                <IconTile wash={categoryOf(r.category).wash}>{categoryOf(r.category).icon}</IconTile>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body font-medium text-sg-ink">{r.name}</span>
-                  <span className="block text-small text-sg-ink-soft">
-                    {CATEGORY_MAP[r.category].name} · {r.distanceMi?.toFixed(1)} mi
-                    {r.openNow ? " · open now" : ""}
-                  </span>
-                </span>
-                <ChevronRightIcon size={18} className="shrink-0 text-sg-ink-soft" aria-hidden />
-              </ListRow>
-            ))
-          )}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 /* ── Navigator page ─────────────────────────────────────────────── */
 function NavigatorPage() {
   const { resources, loading, offline, source, retry } = useResources();
@@ -242,12 +169,34 @@ function NavigatorPage() {
   const [view, setView] = useState<"list" | "map">("list");
   const [near, setNear] = useState<{ lat: number; lng: number } | null>(null);
   const [openResource, setOpenResource] = useState<DemoResource | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const paneRef = useRef<HTMLDivElement | null>(null);
 
-  /* Roving focus per ARIA tabs pattern: after switching views, focus moves
-   * to the pane (Map) or back to the selected tab (List). preventScroll —
-   * never yank the reader's position around. */
+  /* Phone identity (same as alerts/hometeam). Admin check is a UI hint —
+   * the server re-checks the roster authoritatively on every save. */
+  useEffect(() => {
+    const ident = getAlertIdentity();
+    if (!ident?.phone) {
+      setIsAdmin(false);
+      return;
+    }
+    let alive = true;
+    isAdminPhone({ data: { phone: ident.phone } })
+      .then((r) => {
+        if (alive) setIsAdmin(r.isAdmin);
+      })
+      .catch(() => {
+        if (alive) setIsAdmin(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /* Roving focus per ARIA tabs pattern. preventScroll — never yank the
+   * reader's position around. */
   useEffect(() => {
     const id = window.setTimeout(() => {
       if (view === "map") {
@@ -285,12 +234,42 @@ function NavigatorPage() {
     } else done();
   };
 
+  /* Get directions — opens the phone's own Maps app (geo: on Android,
+   * maps.apple.com on iOS), falling back to a web maps URL for desktop. */
+  const openDirections = useCallback((r: DemoResource) => {
+    const q = r.address ? r.address : r.name;
+    const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroid = typeof navigator !== "undefined" && /Android/.test(navigator.userAgent);
+    const url = isIOS
+      ? `maps.apple.com/?daddr=${encodeURIComponent(q)}`
+      : isAndroid
+        ? `geo:0,0?q=${encodeURIComponent(q)}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
+    if (typeof window !== "undefined") window.open(url, "_blank", "noopener");
+    push({ kind: "info", message: "Opening directions in your Maps app." });
+  }, [push]);
+
+  const refresh = retry;
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
-        <header>
-          <h1 className="text-h1">Find help</h1>
-          <p className="mt-0.5 text-small text-sg-ink-soft">Find food, rest, and care — no account needed.</p>
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-h1">Find help</h1>
+            <p className="mt-0.5 text-small text-sg-ink-soft">Find food, rest, and care — no account needed.</p>
+          </div>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="mt-1 inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-[12px] bg-sg-sage px-3.5 text-btn font-semibold text-white shadow-sm transition-colors hover:bg-sg-sage-deep"
+              aria-label="Add a resource — outreach admins only"
+            >
+              <PlusIcon size={18} aria-hidden />
+              Add
+            </button>
+          ) : null}
         </header>
 
         <SearchField value={query} onChange={setQuery} placeholder="Search name or place…" />
@@ -308,7 +287,15 @@ function NavigatorPage() {
         {offline && <OfflineBanner message="No connection — showing saved list. It's all here." onRetry={retry} />}
 
         {view === "map" ? (
-          <MapPane near={near} all={resources} onShowList={() => setView("list")} onPick={setOpenResource} paneRef={paneRef} />
+          <ResourceMapPane
+            resources={filtered.map((r) => ({ id: r.id, name: r.name, category: r.category, lat: r.lat ?? null, lng: r.lng ?? null }))}
+            selectedId={openResource?.id ?? null}
+            paneRef={paneRef}
+            onPick={(id) => {
+              const row = adapted.find((r) => r.id === id);
+              if (row) setOpenResource(row);
+            }}
+          />
         ) : (
           <section id="view-pane" role="tabpanel" aria-label="List view" className="outline-none">
             <div className="mb-2 flex items-baseline justify-between px-1">
@@ -349,7 +336,7 @@ function NavigatorPage() {
                         <span className="mt-0.5 flex flex-wrap items-center gap-x-1 text-small text-sg-ink-soft">
                           <span>{cat.name}</span>
                           {r.distanceMi !== undefined ? <span>· {r.distanceMi.toFixed(1)} mi</span> : null}
-                          <span>· {r.openNow ? "Open till " + r.hours.split("·").pop()?.trim() : "Open " + r.hours.split("·")[0].trim()}</span>
+                          {r.hours ? <span>· {r.hours.split("·")[0].trim()}</span> : null}
                           {r.verifiedAt ? <VerifiedMark label="Verified" /> : null}
                         </span>
                       </span>
@@ -358,7 +345,7 @@ function NavigatorPage() {
                         <ChevronRightIcon size={18} className="mt-1 text-sg-ink-soft" aria-hidden />
                       </span>
                     </ListRow>
-                  );
+                    );
                 })}
               </ul>
             )}
@@ -369,12 +356,16 @@ function NavigatorPage() {
       <ResourceSheet
         resource={openResource}
         onClose={() => setOpenResource(null)}
-        onDirections={(r) => {
-          const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(r.name + ", " + CATEGORY_MAP[r.category].name)}`;
-          if (typeof window !== "undefined") window.open(url, "_blank", "noopener");
-          push({ kind: "info", message: "Opening directions in maps." });
-        }}
+        onDirections={openDirections}
       />
+      {isAdmin ? (
+        <ResourceAddSheet
+          open={addOpen}
+          phone={getAlertIdentity()?.phone ?? ""}
+          onClose={() => setAddOpen(false)}
+          onSaved={refresh}
+        />
+      ) : null}
     </AppShell>
   );
 }

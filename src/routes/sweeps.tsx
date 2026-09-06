@@ -474,7 +474,7 @@ function SweepsPage() {
                     <span className="mt-0.5 block text-small text-sg-ink-soft">
                       {s.reportedMinutesAgo < 60 ? `${Math.max(1, s.reportedMinutesAgo)} min ago` : `${Math.round(s.reportedMinutesAgo / 60)}h ago`} ·{" "}
                       {s.verified ? "verified by outreach" : "awaiting verification"} ·{" "}
-                      {approxDistanceMi(demoNearMePoint(), s).toFixed(1)} mi
+                      {(approxDistanceMi(demoNearMePoint(), s) ?? 0).toFixed(1)} mi
                     </span>
                   </span>
                 </ListRow>
