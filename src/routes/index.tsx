@@ -196,6 +196,11 @@ function HomePage() {
               See sweep heads-ups
             </Button>
           </Link>
+          <Link to="/alerts/new" className="block">
+            <Button variant="secondary" full>
+              Get help from my people
+            </Button>
+          </Link>
           {signedIn ? (
             <Link to="/checkin" className="block">
               <Button variant="secondary" full>
