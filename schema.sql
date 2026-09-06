@@ -103,8 +103,11 @@ create table public.supply_requests (
   fulfilled_at        timestamptz,
   cancelled_at        timestamptz,
   created_at          timestamptz not null default now(),
-  -- R-P10: anonymized (blurred) after fulfillment +30d
-  anonymize_at        timestamptz generated always as (coalesce(fulfilled_at, created_at) + interval '30 days') stored
+  -- R-P10: anonymized (blurred) after fulfillment +30d.
+  -- NOTE: set by the BEFORE INSERT/UPDATE trigger `trg_requests_anonymize`
+  -- (a generated column can't express `timestamptz + interval` — Postgres
+  -- classifies it `stable`, and generated columns require `immutable`).
+  anonymize_at        timestamptz
 );
 
 -- ---------------------------------------------------------------------------
@@ -126,10 +129,77 @@ create table public.check_ins (
   fuzz_lng        double precision check (fuzz_lng between -180 and 180),
   note            text check (char_length(note) <= 140),
   -- Visibility: 24h default (R-P10); NULL/share_paused hides instantly (R-P5).
-  visible_until   timestamptz generated always as (checked_in_at + interval '24 hours') stored,
+  -- NOTE: set by the BEFORE INSERT trigger `trg_checkins_timestamps`
+  -- (a generated column can't express `timestamptz + interval` — Postgres
+  -- classifies it `stable`, and generated columns require `immutable`).
+  visible_until   timestamptz,
   share_paused    boolean not null default false,
   created_at      timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------------------
+-- trusted_peers — Build B privacy wiring (R-P4)
+--
+-- The pairing table that answers "who may see my check-ins". The check-in
+-- relationship is MUTUAL by design: I can see a peer's check-in only if both
+-- of us have each other as trusted peers. This implements the wireframes'
+-- phrase "people sharing with you" in both directions, keeps remove-instant
+-- and invite-pending from leaking the exact point, and makes "share_paused
+-- hides instantly" enforceable in a single policy.
+-- ---------------------------------------------------------------------------
+create table public.trusted_peers (
+  requester_id  uuid not null references public.users (id) on delete cascade,
+  peer_id       uuid not null references public.users (id) on delete cascade,
+  status        text not null default 'pending'
+                check (status in ('pending', 'accepted')),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  primary key (requester_id, peer_id),
+  check (requester_id <> peer_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- Triggers — the stable-kind columns + server-side fuzzing (R-P4)
+-- ---------------------------------------------------------------------------
+
+-- Requests: anonymize_at = coalesce(fulfilled_at, created_at) + 30 days.
+create or replace function public.trg_fn_requests_anonymize()
+returns trigger language plpgsql set search_path = public
+as $sg$
+begin
+  new.anonymize_at := coalesce(new.fulfilled_at, new.created_at) + interval '30 days';
+  return new;
+end;
+$sg$;
+
+drop trigger if exists trg_requests_anonymize on public.supply_requests;
+create trigger trg_requests_anonymize
+  before insert or update of fulfilled_at, created_at on public.supply_requests
+  for each row execute function public.trg_fn_requests_anonymize();
+
+-- Check-ins: visible_until = checked_in_at + 24h; fuzz to ~150m if the
+-- caller wrote exact coords but no fuzz (Round-half-away-from-zero, and the
+-- fuzz is derived from the exact point INSIDE the DB — exact coords never
+-- leave the server).
+create or replace function public.trg_fn_checkins_timestamps()
+returns trigger language plpgsql set search_path = public
+as $sg$
+begin
+  new.visible_until := new.checked_in_at + interval '24 hours';
+  if new.fuzz_lat is null and new.exact_lat is not null then
+    new.fuzz_lat := round(new.exact_lat * 1000) / 1000;
+  end if;
+  if new.fuzz_lng is null and new.exact_lng is not null then
+    new.fuzz_lng := round(new.exact_lng * 1000) / 1000;
+  end if;
+  return new;
+end;
+$sg$;
+
+drop trigger if exists trg_checkins_timestamps on public.check_ins;
+create trigger trg_checkins_timestamps
+  before insert on public.check_ins
+  for each row execute function public.trg_fn_checkins_timestamps();
 
 -- ---------------------------------------------------------------------------
 -- Helper: is_outreach() — used by every outreach-gated policy.
@@ -153,6 +223,7 @@ alter table public.resources       enable row level security;
 alter table public.sweeps          enable row level security;
 alter table public.supply_requests enable row level security;
 alter table public.check_ins       enable row level security;
+alter table public.trusted_peers   enable row level security;
 
 -- users: own row only (everyone else sees nothing — even existence is private)
 create policy "users read own row"               on public.users for select using (auth.uid() = id);
@@ -180,11 +251,31 @@ create policy "supply owner create"              on public.supply_requests for i
 create policy "supply outreach claim/fulfil"     on public.supply_requests for update
   using (public.is_outreach() or auth.uid() = requested_by);
 
+-- trusted_peers: (R-P4) my side is mine to view/update; invites create a
+-- pending row for the invitee; and select is gated on BOTH rows being
+-- mutually accepted — "people sharing with you" in both directions.
+create policy "peers read only mutual accepted"   on public.trusted_peers for select
+  using (
+    (requester_id = auth.uid() or peer_id = auth.uid())
+    and status = 'accepted'
+    and exists (
+      select 1 from public.trusted_peers opp
+      where opp.requester_id = peer_id and opp.peer_id = requester_id
+        and opp.status = 'accepted'
+    )
+  );
+create policy "peers invite pending"              on public.trusted_peers for insert
+  with check (peer_id = auth.uid() and status = 'pending');
+create policy "peers update own side"             on public.trusted_peers for update
+  using (requester_id = auth.uid());
+
 -- ---------------------------------------------------------------------------
 -- check_ins — the heart of R-P4 / R-P5 / R-P10
 --   owner:       full row, including exact point
---   peers:       fuzzed fields ONLY — exact_lat/exact_lng are deniable columns
---                (RLS has no clause that would ever return them to a peer)
+--   peers:       fuzzed fields ONLY via the peer_check_ins view — exact_lat/
+--                exact_lng are deniable columns (no RLS clause returns them
+--                to a peer; the view selects only fuzz_*), and only MUTUAL
+--                trusted peers (above) see anything at all
 --   outreach:    none — outreach needs counts, not coordinates
 -- ---------------------------------------------------------------------------
 create policy "checkin owner full read"          on public.check_ins for select
@@ -193,7 +284,8 @@ create policy "checkin owner insert"             on public.check_ins for insert
   with check (auth.uid() = user_id);
 
 -- Peer visibility is enforcement via a secured view (peers never run SELECT
--- against the table itself). Fuzz columns rounded server-side, never client-side.
+-- against the table itself). Fuzz columns rounded server-side (trigger), never
+-- client-side.
 create or replace view public.peer_check_ins
 with (security_invoker = true) as
 select
@@ -215,13 +307,21 @@ join public.users u on u.id = ci.user_id
 where not ci.share_paused
   and ci.visible_until > now();
 
--- Peers see rows ONLY through the sharing relationship. Without a
--- trusted_peers table in this artifact's wave, enforce "only peers" via a
--- placeholder policy that returns nothing for anon/other users — the wiring
--- table + pair policy ships with Build B (check_ins wave) and is additive:
--- create table trusted_peers (...); alter view peer_check_ins add join ...
+-- Peers see rows ONLY through the mutual trusted-peers relationship. Exact
+-- columns are never exposed — the view selects only fuzz_*.
 create policy "checkin peer view fuzzed only"     on public.check_ins for select
-  using (false);  -- replaced by trusted-peer policy in Build B; exact cols NEVER exposed
+  using (
+    exists (
+      select 1
+      from public.trusted_peers a
+      join public.trusted_peers b
+        on b.requester_id = a.peer_id and b.peer_id = a.requester_id
+      where a.requester_id = check_ins.user_id
+        and a.peer_id = auth.uid()
+        and a.status = 'accepted'
+        and b.status = 'accepted'
+    )
+  );
 
 -- ---------------------------------------------------------------------------
 -- Indexes (query paths that matter for the MVP plus the 24h TTL cleanup)
@@ -233,6 +333,8 @@ create index idx_sweeps_event_at         on public.sweeps (event_at);
 create index idx_requests_status         on public.supply_requests (status);
 create index idx_checkins_user_time      on public.check_ins (user_id, checked_in_at desc);
 create index idx_checkins_expiry         on public.check_ins (visible_until);
+create index idx_peers_requester         on public.trusted_peers (requester_id, peer_id);
+create index idx_peers_peer              on public.trusted_peers (peer_id, requester_id);
 
 -- ---------------------------------------------------------------------------
 -- Comments — the privacy contract, in the schema itself

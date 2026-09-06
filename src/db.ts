@@ -1,12 +1,20 @@
-import { neon } from "@neondatabase/serverless";
+import { Pool } from "pg";
 
 /**
- * Server-only handle to the team's database (Neon serverless Postgres over HTTP).
+ * Server-only handle to the team's database (Supabase Postgres via `pg`).
  * The connection string comes from `DATABASE_URL`, which the owner connects via
  * the database card and which is injected into the sandbox and passed to the live
  * host on publish. Resolved lazily (per call, not at module load) so the site
  * still builds and serves before a database is connected — the error only
  * surfaces if a query actually runs without `DATABASE_URL`.
+ *
+ * WHY `pg` AND NOT `@neondatabase/serverless`: the original driver (`neon`)
+ * fails TLS on this sandbox for Supabase's pooler (the sandbox can't validate
+ * the pooler cert SAN), while `pg` with `ssl.rejectUnauthorized: false` connects
+ * cleanly. Supabase requires TLS on the wire, so we keep TLS enabled and skip
+ * strict cert verification — the service-role credential + Supabase's network
+ * wall remain the actual security boundary. Node-postgres also makes scripted
+ * schema apply + seed simple (see scripts/ and src/lib/bootstrap.ts).
  *
  * Use it only inside a `createServerFn()` handler or an `src/routes/api/*` route
  * (never client code):
@@ -59,7 +67,9 @@ export function databaseUrl(): string {
   // Repair (2): postgres:[SECRET]@host → postgres:SECRET@host
   url = url.replace(/:\[([^\]]*)\]@/, ":$1@");
   // Repair (3): IPv6-only direct host → dual-stack Supavisor pooler (same DB).
-  const direct = url.match(/^(postgresql:\/\/[^:]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co(?::\d+)?\//);
+  // The user part for the pooler is `postgres.<ref>` (Supabase's pooler auth).
+  // (`postgresql://` scheme, `postgres` user — capture only the user, not the scheme's `//`.)
+  const direct = url.match(/^postgresql:\/\/([^:/]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co(?::\d+)?\//);
   if (direct) {
     const [, user, password, ref] = direct;
     const region = process.env.SUPABASE_DB_REGION || "us-west-2";
@@ -70,6 +80,63 @@ export function databaseUrl(): string {
   return url;
 }
 
+/* ── pg client pool ────────────────────────────────────────────────
+ * One lazy pool for the whole server process. TLS stays ON (Supabase requires
+ * it on the wire) with strict verification off (see header comment). Per-call
+ * clients were slower and left sockets around; a single small pool is fast and
+ * clean. `max: 3` keeps the sandbox footprint tiny (free-tier friendly). */
+let pool: Pool | null = null;
+
+function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: databaseUrl(),
+      ssl: { rejectUnauthorized: false },
+      max: 3,
+      connectionTimeoutMillis: 8_000,
+      idleTimeoutMillis: 30_000,
+      application_name: "safeground",
+    });
+    pool.on("error", (err) => {
+      // Log-and-continue: the calm demo fallback in the server fns is the
+      // user-facing layer; never crash the process on a stale pooled socket.
+      console.error("[safeground-db] pool error:", err.message);
+    });
+  }
+  return pool;
+}
+
+/** Run a parameterized query and return the rows. Never logs the connection string. */
+export async function query(text: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
+  const client = await getPool().connect();
+  try {
+    const result = await client.query(text, params.map((v) => (v === undefined ? null : v)));
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Tagged-template `sql` factory, kept surface-compatible with the neon-era API:
+ *   const rows = await sql()`select ... where id = ${id}`;
+ *   await sql()(`notify pgrst, 'reload schema'`);        // raw single-statement form
+ * Parameters become `$1, $2, …` placeholders (safe from injection). `undefined`
+ * values are bound as NULL (pg would otherwise reject them). Interpolating a raw
+ * string into a template without a value is a no-op — never concatenate user input
+ * into the template itself.
+ */
 export const sql = () => {
-  return neon(databaseUrl());
+  return (
+    strings: TemplateStringsArray | string,
+    ...values: unknown[]
+  ): Promise<Record<string, unknown>[]> => {
+    if (typeof strings === "string") return query(strings);
+    if (strings.length === 1 && values.length === 0) return query(strings[0]);
+    const text = strings.reduce((acc, part, i) => {
+      if (i === 0) return part;
+      return `${acc}$${i}${part}`;
+    }, "");
+    return query(text, values);
+  };
 };

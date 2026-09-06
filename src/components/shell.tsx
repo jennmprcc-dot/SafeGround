@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { cn } from "~/lib/cn";
 import { useAuth } from "~/lib/auth";
-import { ACTIVE_SWEEP_COUNT } from "~/lib/data";
+import { listSweeps, getMyCheckIn, demoUserId } from "~/lib/server";
 import { BellMoonIcon, CheckIcon, HomeIcon, InfoIcon, MenuIcon, MoonIcon, NightLampIcon } from "~/lib/appIcons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
 import type { ToastState } from "~/components/ui";
@@ -79,8 +79,36 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
 
 function BottomNav() {
   const { pathname } = useLocation();
-  const [selfOverdue] = useState(false); // Build B wires the real overdue flag
-  const badgedSweeps = ACTIVE_SWEEP_COUNT > 9 ? "9+" : String(ACTIVE_SWEEP_COUNT);
+  const { signedIn, displayName } = useAuth();
+  const [sweepCount, setSweepCount] = useState<number | null>(null);
+  const [selfOverdue, setSelfOverdue] = useState(false);
+
+  // Live badges: sweep count (public read) + self-overdue dot (own check-in).
+  // Both degrade calmly to no badge when the DB is unreachable.
+  useEffect(() => {
+    let alive = true;
+    listSweeps()
+      .then((r) => {
+        if (alive) setSweepCount(r.rows.filter((s) => s.status === "active" || s.status === "planned").length);
+      })
+      .catch(() => undefined);
+    if (!signedIn) {
+      setSelfOverdue(false);
+      return;
+    }
+    const userId = demoUserId(displayName, deviceToken());
+    getMyCheckIn({ data: { userId } })
+      .then((r) => {
+        if (alive) setSelfOverdue(r.row?.overdue ?? false);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [signedIn, displayName]);
+
+  const active = sweepCount ?? 0;
+  const badgedSweeps = active > 9 ? "9+" : String(active);
 
   return (
     <nav
@@ -89,25 +117,25 @@ function BottomNav() {
     >
       <div className="mx-auto flex max-w-[640px]">
         {TABS.map((tab) => {
-          const active = tab.to === "/" ? pathname === "/" : pathname.startsWith(tab.to);
+          const isActive = tab.to === "/" ? pathname === "/" : pathname.startsWith(tab.to);
           return (
             <Link
               key={tab.to}
               to={tab.to}
-              aria-current={active ? "page" : undefined}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 pt-1.5 text-small transition-colors",
-                active ? "text-sg-card" : "text-sg-card/70 hover:text-sg-card",
+                isActive ? "text-sg-card" : "text-sg-card/70 hover:text-sg-card",
               )}
             >
-              {active ? <span className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-sg-sage" aria-hidden /> : null}
+              {isActive ? <span className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-sg-sage" aria-hidden /> : null}
               {tab.to === "/" && <HomeIcon size={22} />}
               {tab.to === "/help" && <FindIcon size={22} />}
               {tab.to === "/sweeps" && <BellMoonIcon size={22} />}
               {tab.to === "/checkin" && <MoonIcon size={22} />}
               <span>{tab.label}</span>
-              {tab.to === "/sweeps" && ACTIVE_SWEEP_COUNT > 0 ? (
-                <span className="absolute right-1/2 top-0.5 flex h-4 min-w-4 translate-x-1/2 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white" aria-label={`${ACTIVE_SWEEP_COUNT} active sweeps`}>
+              {tab.to === "/sweeps" && active > 0 ? (
+                <span className="absolute right-1/2 top-0.5 flex h-4 min-w-4 translate-x-1/2 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white" aria-label={`${active} active sweeps`}>
                   {badgedSweeps}
                 </span>
               ) : null}
@@ -218,6 +246,17 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
 }
 
 /* ── Shell wrapper ──────────────────────────────────────────────── */
+
+/** Stable per-device token for the demo auth wave (never leaves the browser). */
+export function deviceToken(): string {
+  if (typeof localStorage === "undefined") return "";
+  let token = localStorage.getItem("sg.device") ?? "";
+  if (!token) {
+    token = `dev-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    localStorage.setItem("sg.device", token);
+  }
+  return token;
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
