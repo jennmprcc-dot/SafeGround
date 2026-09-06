@@ -8,14 +8,23 @@
  * If a Mapbox token is added later, only the tile URL changes:
  *   https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token=TOKEN
  *
+ * SSR SAFETY: leaflet touches `window` at module scope, so it must NEVER be
+ * imported at the top level of a server-rendered path. It is loaded here via
+ * dynamic import inside useEffect (client-only). The type imports below are
+ * erased at compile time and are SSR-safe. Until the client bundle loads,
+ * the pane renders the calm sky-wash placeholder.
+ *
  * Calm/trauma-informed: soft circular category pins, gentle attribution,
  * tap = open the same detail sheet the list uses. No user location is ever
  * requested by the map itself (privacy: location sharing stays user-initiated).
  */
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import L from "leaflet";
+import type { DivIcon, LayerGroup, Map as LeafletMap } from "leaflet";
 import type { CategoryId } from "~/lib/data";
+
+/** The leaflet module namespace, only ever loaded on the client. */
+type LeafletNS = typeof import("leaflet");
 
 /** Marbled sky-wash to show while tiles load (or offline) — calm, on-brand. */
 const WASH =
@@ -31,7 +40,7 @@ export interface MapResource {
 
 /** Small inline SVG (data URI) — soft sage disc, white pin glyph. Category
  * could tint this later; one calm color keeps the map quiet. */
-function pinIcon(_category: CategoryId): L.DivIcon {
+function pinIcon(L: LeafletNS, _category: CategoryId): DivIcon {
   return L.divIcon({
     className: "sg-map-pin",
     html:
@@ -61,48 +70,70 @@ export function ResourceMapPane({
   height?: number;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const layerRef = useRef<L.LayerGroup | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const layerRef = useRef<LayerGroup | null>(null);
+  const leafletRef = useRef<LeafletNS | null>(null);
+  const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
 
-  /* Init once. */
+  /* Init once, client-only: dynamically import leaflet inside the effect so
+   * the SSR bundle never evaluates leaflet-src.js ("window is not defined"). */
   useEffect(() => {
+    let cancelled = false;
     const host = hostRef.current;
     if (!host || mapRef.current) return;
-    try {
-      const map = L.map(host, {
-        center: [37.99, -122.53],
-        zoom: 10,
-        scrollWheelZoom: false,
-        attributionControl: true,
-      });
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(map);
-      mapRef.current = map;
-      layerRef.current = L.layerGroup().addTo(map);
-    } catch {
-      setFailed(true);
-    }
+    (async () => {
+      try {
+        const L = await import("leaflet");
+        /* Leaflet CSS via dynamic import stays out of the SSR bundle too.
+         * Non-fatal if it fails — the custom div pins still render. */
+        try {
+          await import("leaflet/dist/leaflet.css");
+        } catch {
+          /* styling is best-effort */
+        }
+        if (cancelled || mapRef.current) return;
+        const el = hostRef.current;
+        if (!el) return;
+        const map = L.map(el, {
+          center: [37.99, -122.53],
+          zoom: 10,
+          scrollWheelZoom: false,
+          attributionControl: true,
+        });
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+        leafletRef.current = L;
+        mapRef.current = map;
+        layerRef.current = L.layerGroup().addTo(map);
+        setReady(true);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
     return () => {
+      cancelled = true;
       mapRef.current?.remove();
       mapRef.current = null;
       layerRef.current = null;
+      leafletRef.current = null;
     };
   }, []);
 
   /* Sync markers with the filtered resource set. */
   useEffect(() => {
+    const L = leafletRef.current;
     const map = mapRef.current;
     const layer = layerRef.current;
-    if (!map || !layer) return;
+    if (!L || !map || !layer) return;
     layer.clearLayers();
     const withPoints = resources.filter((r) => r.lat != null && r.lng != null);
     for (const r of withPoints) {
-      const marker = L.marker([r.lat as number, r.lng as number], { icon: pinIcon(r.category) })
+      const marker = L.marker([r.lat as number, r.lng as number], { icon: pinIcon(L, r.category) })
         .bindTooltip(r.name, { direction: "top", offset: [0, -26] })
         .on("click", () => pickRef.current?.(r.id));
       marker.addTo(layer);
@@ -113,7 +144,7 @@ export function ResourceMapPane({
         { padding: [36, 36], maxZoom: 14 },
       );
     }
-  }, [resources]);
+  }, [resources, ready]);
 
   /* Focus on the selected resource (from the list) with a gentle pan. */
   useEffect(() => {
