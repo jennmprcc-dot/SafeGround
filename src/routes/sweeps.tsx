@@ -1,15 +1,38 @@
 /**
  * Sweep Alerts — Build B. Placeholder page keeps the bottom-nav tab calm
- * and reachable with the demo count. Full map/list/report wave lands next.
+ * and reachable with live counts from the database (demo fallback when the
+ * DB is unreachable — clearly labeled). Full map/list/report wave lands next.
  */
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState } from "~/components/ui";
-import { DEMO_SWEEPS, ACTIVE_SWEEP_COUNT } from "~/lib/data";
+import { listSweeps } from "~/lib/server";
+import type { DataSource } from "~/lib/server";
 import { BellMoonIcon } from "~/lib/icons";
 
 function SweepsPage() {
-  const active = DEMO_SWEEPS.filter((s) => s.status === "active" || s.status === "planned").length;
+  const [state, setState] = useState<{ active: number; source: DataSource; loading: boolean }>({
+    active: 0,
+    source: "demo",
+    loading: true,
+  });
+  useEffect(() => {
+    let alive = true;
+    listSweeps()
+      .then((r) => {
+        if (!alive) return;
+        const active = r.rows.filter((s) => s.status === "active" || s.status === "planned").length;
+        setState({ active, source: r.source, loading: false });
+      })
+      .catch(() => {
+        if (alive) setState({ active: 0, source: "demo", loading: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
@@ -24,10 +47,12 @@ function SweepsPage() {
               <BellMoonIcon size={24} />
             </span>
             <div>
-              <p className="text-small font-semibold text-sg-clay">Heads-up · demo</p>
-              <h2 className="text-h2">{active} sweep heads-ups in your area</h2>
+              <p className="text-small font-semibold text-sg-clay">Heads-up</p>
+              <h2 className="text-h2">
+                {state.loading ? "Checking for heads-ups…" : `${state.active} sweep heads-ups in your area`}
+              </h2>
               <p className="mt-1 text-body text-sg-ink-soft">
-                Sweep map and reports are the next build wave — what's shown here is sample data so you can see the shape.
+                Sweep map and reports are the next build wave — the count here comes from the live database.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={() => undefined} disabledReason="Report flow comes with the next wave">
@@ -49,7 +74,9 @@ function SweepsPage() {
         />
 
         <p className="text-small text-sg-ink-soft">
-          Demo data (active count {ACTIVE_SWEEP_COUNT}) · real listings arrive when the database connects.
+          {state.source === "db"
+            ? "Live data from the outreach database · report flow arrives in the next wave."
+            : "Demo data · the live sweep count appears when the database connects."}
         </p>
       </div>
     </AppShell>

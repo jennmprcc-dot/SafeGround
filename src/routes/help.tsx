@@ -26,30 +26,79 @@ import { ResourceSheet } from "~/components/resourceSheet";
 import {
   CATEGORIES,
   CATEGORY_MAP,
-  DEMO_RESOURCES,
   categoryOf,
   demoNearMePoint,
   withDemoDistances,
 } from "~/lib/data";
 import type { CategoryId, DemoResource } from "~/lib/data";
+import { listResources } from "~/lib/server";
+import type { ResourceRow, DataSource } from "~/lib/server";
 import { ChevronRightIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 
-/* Simulated fetch: brief load → typed demo list. Offline-safe (client-side). */
-function useResources(): { resources: DemoResource[]; loading: boolean; offline: boolean; retry: () => void } {
+/* Live fetch from the database via the listResources server fn (demo fallback
+ * inside the fn keeps this offline-safe; `source` drives the honest label). */
+function useResources(): {
+  resources: ResourceRow[];
+  loading: boolean;
+  offline: boolean;
+  source: DataSource;
+  retry: () => void;
+} {
+  const [resources, setResources] = useState<ResourceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
+  const [source, setSource] = useState<DataSource>("demo");
   const [tick, setTick] = useState(0);
   useEffect(() => {
+    let alive = true;
     setLoading(true);
     setOffline(false);
-    const t = setTimeout(() => {
-      setLoading(false);
-      if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
-    }, 350);
-    return () => clearTimeout(t);
+    listResources()
+      .then((res) => {
+        if (!alive) return;
+        setResources(res.rows);
+        setSource(res.source);
+        setLoading(false);
+        if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setResources([]);
+        setSource("demo");
+        setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
   }, [tick]);
-  return { resources: DEMO_RESOURCES, loading, offline, retry: () => setTick((t) => t + 1) };
+  return { resources, loading, offline, source, retry: () => setTick((t) => t + 1) };
+}
+
+/** ResourceRow (DB shape, nullable fields) → the DemoResource view the existing
+ * UI consumes. Absent fields render as "Not confirmed yet — call ahead if you
+ * can" via the unconfirmed mechanism — never blank, never invented. */
+function adapt(row: ResourceRow): DemoResource {
+  const unconfirmed: DemoResource["unconfirmed"] = [];
+  if (!row.address) unconfirmed.push("address");
+  if (!row.hours) unconfirmed.push("hours");
+  if (!row.phone) unconfirmed.push("phone");
+  if (!row.note) unconfirmed.push("note");
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    address: row.address ?? "",
+    hours: row.hours ?? "",
+    phone: row.phone ?? undefined,
+    note: row.note ?? "",
+    unconfirmed: unconfirmed.length > 0 ? unconfirmed : undefined,
+    verifiedAt: row.verifiedAt ?? "",
+    verifiedBy: "outreach",
+    openNow: row.openNow,
+    lat: row.lat,
+    lng: row.lng,
+  };
 }
 
 /* ── List | Map toggle (ARIA tabs, arrow-key navigable) ─────────── */
@@ -108,19 +157,21 @@ function ViewTabs({
 /* ── Map pane: graceful fallback when no key / offline ──────────── */
 function MapPane({
   near,
+  all,
   onShowList,
   onPick,
   paneRef,
 }: {
   near: { lat: number; lng: number } | null;
+  all: ResourceRow[];
   onShowList: () => void;
   onPick: (r: DemoResource) => void;
   paneRef: RefObject<HTMLDivElement | null>;
 }) {
   const [pins, setPins] = useState<DemoResource[]>([]);
   useEffect(() => {
-    setPins(withDemoDistances(DEMO_RESOURCES, near ?? demoNearMePoint()).sort((a, b) => (a.distanceMi ?? 0) - (b.distanceMi ?? 0)).slice(0, 4));
-  }, [near]);
+    setPins(withDemoDistances(all.map(adapt), near ?? demoNearMePoint()).sort((a, b) => (a.distanceMi ?? 0) - (b.distanceMi ?? 0)).slice(0, 4));
+  }, [near, all]);
 
   return (
     <div ref={paneRef} tabIndex={-1} role="tabpanel" id="view-pane" aria-label="Map view" className="outline-none">
@@ -184,14 +235,13 @@ function MapPane({
 
 /* ── Navigator page ─────────────────────────────────────────────── */
 function NavigatorPage() {
-  const { resources, loading, offline, retry } = useResources();
+  const { resources, loading, offline, source, retry } = useResources();
   const { push } = useToasts();
   const [selected, setSelected] = useState<CategoryId[]>([]);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"list" | "map">("list");
   const [near, setNear] = useState<{ lat: number; lng: number } | null>(null);
   const [openResource, setOpenResource] = useState<DemoResource | null>(null);
-  const [updatedMinutesAgo] = useState(20);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const paneRef = useRef<HTMLDivElement | null>(null);
 
@@ -209,8 +259,9 @@ function NavigatorPage() {
     return () => window.clearTimeout(id);
   }, [view]);
 
+  const adapted = useMemo(() => resources.map(adapt), [resources]);
   const filtered = useMemo(() => {
-    let list = resources;
+    let list = adapted;
     if (selected.length > 0) list = list.filter((r) => selected.includes(r.category));
     const q = query.trim().toLowerCase();
     if (q) {
@@ -219,7 +270,7 @@ function NavigatorPage() {
     if (near) list = withDemoDistances(list, near).sort((a, b) => (a.distanceMi ?? 0) - (b.distanceMi ?? 0));
     else list = [...list].sort((a, b) => a.name.localeCompare(b.name));
     return list;
-  }, [resources, selected, query, near]);
+  }, [adapted, selected, query, near]);
 
   const openNow = filtered.filter((r) => r.openNow).length;
   const chips = CATEGORIES.map((c) => ({ value: c.id, label: c.label, icon: c.icon }));
@@ -257,14 +308,16 @@ function NavigatorPage() {
         {offline && <OfflineBanner message="No connection — showing saved list. It's all here." onRetry={retry} />}
 
         {view === "map" ? (
-          <MapPane near={near} onShowList={() => setView("list")} onPick={setOpenResource} paneRef={paneRef} />
+          <MapPane near={near} all={resources} onShowList={() => setView("list")} onPick={setOpenResource} paneRef={paneRef} />
         ) : (
           <section id="view-pane" role="tabpanel" aria-label="List view" className="outline-none">
             <div className="mb-2 flex items-baseline justify-between px-1">
               <p className="text-small text-sg-ink-soft">
                 {filtered.length} {filtered.length === 1 ? "place" : "places"} · open now: {openNow}
               </p>
-              <p className="text-small text-sg-ink-soft">Updated {updatedMinutesAgo} min ago</p>
+              <p className="text-small text-sg-ink-soft">
+                {source === "db" ? "Live database" : "Demo data"}
+              </p>
             </div>
 
             {loading ? (

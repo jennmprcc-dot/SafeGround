@@ -1,0 +1,21 @@
+/**
+ * One-shot ops script: seed the SAME fictional demo content into live tables.
+ * Idempotent (deterministic UUIDv5 ids + ON CONFLICT DO NOTHING).
+ *
+ *   bun scripts/seed.ts
+ *
+ * Requires the schema (bun scripts/apply-schema.ts) and a working DATABASE_URL.
+ */
+import { seedDemoData, pingDb } from "~/lib/bootstrap";
+
+async function main() {
+  console.log("[safeground] target:", await pingDb());
+  const r = await seedDemoData();
+  console.log(`[safeground] seed: resources=${r.resourcesTotal} (${r.resourcesInserted} ensured), sweeps=${r.sweepsTotal} (${r.sweepsInserted} ensured)`);
+  process.exit(0);
+}
+
+main().catch((e: Error) => {
+  console.error("[safeground] FAILED:", e.message);
+  process.exit(1);
+});

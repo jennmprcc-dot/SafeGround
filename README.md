@@ -36,8 +36,18 @@ These are **injected via the platform Secrets UI, never committed**:
 | `DATABASE_URL` | Postgres / Supabase connection |
 | `supabase_url` | Supabase project URL |
 | `supabase_anon_key` | Supabase anonymous key |
+| `TWILLIO_ACCOUNT_SID` | Twilio account SID (SMS dispatch). NOTE: spelled with two L's ("TWILLIO") — that's the exact name in Secrets, keep it. |
+| `TWILLIO_AUTH_TOKEN` | Twilio auth token (SMS dispatch). Two L's — same note. |
+| `TWILLIO_PHONE_NUMBER` | The MPRCC Twilio number that texts go out from. Two L's — same note. |
+| `MPRCC_DISPATCH_PHONES` | Comma-separated verified recipient numbers for SMS dispatch (e.g. `+14158797940,+14155249090`). |
 
 `.env*` files are gitignored. Never commit real secrets.
+
+SMS dispatch: when a neighbor submits a request (supply request, chat
+escalation) it lands in the MPRCC outreach-queue and texts the dispatch
+numbers above with a short, calm notification. In-app push is the primary
+free channel; SMS via Twilio is the secondary layer (uses the `TWILLIO_*`
+keys above, exact spelling).
 
 ## Repo layout
 

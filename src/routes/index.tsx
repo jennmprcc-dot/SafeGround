@@ -8,7 +8,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { useAuth } from "~/lib/auth";
 import { Button, Card, LocationOnceButton, useToasts } from "~/components/ui";
-import { ACTIVE_SWEEP_COUNT, DEMO_RESOURCES, resourceOpenCount } from "~/lib/data";
+import { getHomeStats } from "~/lib/server";
+import type { DataSource } from "~/lib/server";
 import { MoonBlanketIcon } from "~/lib/icons";
 
 /* Time-aware greeting — computed client-side so SSR never mismatches (calm default first). */
@@ -28,9 +29,45 @@ function Greeting() {
   );
 }
 
+/* Shared hook: Home aggregates from the live database (demo fallback keeps the
+ * page calm and honest if the database is unreachable — never an error wall). */
+function useHomeStats(): { activeSweeps: number; resourceCount: number; openCount: number; source: DataSource; loading: boolean } {
+  const [state, setState] = useState({ activeSweeps: 0, resourceCount: 0, openCount: 0, source: "demo" as DataSource, loading: true });
+  useEffect(() => {
+    let alive = true;
+    getHomeStats()
+      .then((s) => {
+        if (alive) setState({ ...s, loading: false });
+      })
+      .catch(() => {
+        if (alive) setState({ activeSweeps: 0, resourceCount: 0, openCount: 0, source: "demo", loading: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return state;
+}
+
 function HeadsUpCard() {
   const { push } = useToasts();
-  if (ACTIVE_SWEEP_COUNT === 0) {
+  const { activeSweeps, source, loading } = useHomeStats();
+  if (loading) {
+    return (
+      <Card>
+        <div className="flex items-start gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-sg-sky-wash text-sg-sky" aria-hidden>
+            <MoonBlanketIcon size={24} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-small font-semibold text-sg-ink-soft">Heads-up near you</p>
+            <div className="mt-2 h-6 w-44 animate-pulse rounded-[8px] bg-sg-line" aria-hidden />
+          </div>
+        </div>
+      </Card>
+    );
+  }
+  if (activeSweeps === 0) {
     return (
       <Card>
         <div className="flex items-start gap-3">
@@ -54,9 +91,11 @@ function HeadsUpCard() {
         <div className="min-w-0 flex-1">
           <p className="text-small font-semibold text-sg-clay">Heads-up near you</p>
           <h2 className="text-h2">
-            {ACTIVE_SWEEP_COUNT} active sweeps reported in your saved area
+            {activeSweeps} active sweeps reported in your saved area
           </h2>
-          <p className="mt-1 text-small text-sg-ink-soft">Demo data — shown in your saved area.</p>
+          <p className="mt-1 text-small text-sg-ink-soft">
+            {source === "db" ? "Live heads-ups from the outreach database." : "Demo data — shown in your saved area."}
+          </p>
           <div className="mt-3">
             <Button variant="secondary" onClick={() => push({ kind: "info", message: "Sweep heads-ups are being built next — check back soon." })}>
               See sweeps
@@ -70,14 +109,14 @@ function HeadsUpCard() {
 
 function NearYouCard() {
   const { push } = useToasts();
-  const openCount = resourceOpenCount(DEMO_RESOURCES);
+  const { resourceCount, openCount, source, loading } = useHomeStats();
   return (
     <Card>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-h2">Near you</h2>
           <p className="mt-1 text-body text-sg-ink-soft">
-            {DEMO_RESOURCES.length} places on the list · open now: {openCount}
+            {loading ? "Checking the list…" : `${resourceCount} places on the list · open now: ${openCount}`}
           </p>
         </div>
       </div>
@@ -96,7 +135,9 @@ function NearYouCard() {
           }}
         />
         <p className="mt-3 text-small text-sg-ink-soft">
-          Demo data — places are fictional for now. Real listings arrive when the database connects.
+          {source === "db"
+            ? "Live listings — maintained and verified by outreach teams."
+            : "Demo data — places are fictional for now. Live listings arrive when the database connects."}
         </p>
       </div>
     </Card>
