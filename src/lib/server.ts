@@ -209,7 +209,12 @@ function sha1Hex(input: string): string {
 const SG_DEVICE_NS = "8f2d4a6c-3e5b-4f1a-9c7d-0b2e8f4a61d3"; // safeground-device namespace
 
 export function demoUserId(displayName: string, deviceToken: string): string {
-  const h = sha1Hex(SG_DEVICE_NS.replace(/-/g, "") + displayName.trim().toLowerCase() + "|" + deviceToken);
+  const name = displayName.trim().toLowerCase();
+  // An empty device token (e.g. a missing phone) must NEVER break the UUID
+  // shape — fall back to hashing the namespace + name alone. The UUID
+  // construction below is untouched.
+  const seed = deviceToken.trim() === "" ? SG_DEVICE_NS + name : SG_DEVICE_NS.replace(/-/g, "") + name + "|" + deviceToken;
+  const h = sha1Hex(seed);
   const b = h.slice(0, 32).split("").map((ch, i) => {
     let v = parseInt(ch, 16);
     if (i === 12) v = (v & 0x0f) | 0x50;
@@ -1260,6 +1265,11 @@ export const logNeed = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<{ ok: boolean; requestId: string | null; error: string | null; source: NeedSource }> => {
     const { items, note, pickupPreference, neighborPhone, neighborName, outreachPhone, visibility } = data;
+    // A need with no phone is unattributable — say so plainly and stop BEFORE
+    // demoUserId/auth.users, instead of failing deep in the DB (2026-09-07).
+    if (neighborPhone.replace(/[^0-9]/g, "").length < 10) {
+      return { ok: false, requestId: null, error: "Add your 10-digit phone so the need can reach the HomeTeam — it stays private.", source: "db" };
+    }
     try {
       // Outreach-on-behalf path: staff phone must match the live roster (phone
       // identity, server-verified — no client trust). Last-10-digit match
@@ -1292,14 +1302,20 @@ export const logNeed = createServerFn({ method: "POST" })
                 ${finalVisibility}::text, now(), null, null)
         returning id, created_at`) as unknown as Array<{ id: string; created_at: string | Date }>;
       const row = rows[0];
-      if (!row) return { ok: false, requestId: null, error: null, source: "db" };
+      if (!row) return { ok: false, requestId: null, error: "That didn't go through — try again when you're ready.", source: "db" };
       return { ok: true, requestId: row.id, error: null, source: "db" };
     } catch (e) {
       if (isDbDown(e)) {
         const requestId = `draft-${Date.now()}`;
         return { ok: true, requestId, error: null, source: "demo" };
       }
-      return { ok: false, requestId: null, error: calmRpcError(e, "That didn't go through — try again when you're ready."), source: "db" };
+      // A raw "invalid input syntax for type uuid" means identity derivation
+      // broke — never show the user Postgres internals.
+      const raw = String((e as { message?: string })?.message ?? "");
+      const msg = /invalid input syntax/i.test(raw)
+        ? "Add your 10-digit phone so the need can reach the HomeTeam — it stays private."
+        : calmRpcError(e, "That didn't go through — try again when you're ready.");
+      return { ok: false, requestId: null, error: msg, source: "db" };
     }
   });
 /** Opt out of new needs (pause) — status keeps history, claims nothing new. */

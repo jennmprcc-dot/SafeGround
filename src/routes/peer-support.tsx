@@ -19,6 +19,7 @@ import { Button, Card, ConsentReceipt, TextArea, TextField } from "~/components/
 import {
   formatPhone,
   getAlertIdentity,
+  normPhone,
   phoneLooksOk,
   setAlertIdentity,
 } from "~/lib/alertIdentity";
@@ -166,7 +167,7 @@ function RequestSupportPage() {
               label="Your phone number"
               helper="So a peer can reach you back. Stays on this device + the team's queue."
               value={phoneInput}
-              onChange={(e) => setPhoneInput(e.target.value)}
+              onChange={(e) => setPhoneInput(normPhone(e.target.value))}
               placeholder="e.g. 415 555-0142"
               inputMode="tel"
               error={phoneInput.length > 0 && !phoneOk ? "That number looks incomplete — please check it, no rush." : undefined}
