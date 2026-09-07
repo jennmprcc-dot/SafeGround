@@ -10,7 +10,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { BottomSheet, Button, Card, ConsentReceipt, Dialog, EmptyState, SkeletonRows, StatusBadge, TextArea, TextField, useToasts } from "~/components/ui";
 import { isOutreachPhone, logNeed, joinHomeTeam, claimNeed, markNeedDelivered, listNeeds, getHomeTeamStatus } from "~/lib/server";
-import { formatPhone, normPhone, phoneLooksOk } from "~/lib/alertIdentity";
+import { formatPhone, getAlertIdentity, normPhone, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import type { NeedRow } from "~/lib/hometeam";
 import { NEED_STATUS_LABEL, needBadgeKind, needHelpingLine } from "~/lib/hometeam";
 import { HandsIcon, PlusIcon, CheckIcon, PauseIcon } from "~/lib/icons";
@@ -234,6 +234,8 @@ function LogSheet({
   const [busy, setBusy] = useState(false);
   /** Persistent on-screen confirmation of the need post (owner-directed 2026-09-07). */
   const [posted, setPosted] = useState<SubmitConfirmState | null>(null);
+  /** Inline calm error when the phone is missing/incomplete — blocks submit. */
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -242,6 +244,7 @@ function LogSheet({
       setPickup("");
       setVisibility("open");
       setPosted(null);
+      setPhoneError(null);
     }
   }, [open]);
 
@@ -251,6 +254,15 @@ function LogSheet({
       push({ kind: "error", message: "Add at least one thing, like a tent or a bus pass — no rush." });
       return;
     }
+    // Non-outreach needs are attributed to the typer's own phone; outreach
+    // logs on the neighbor's behalf. Either way a real 10-digit number is
+    // required — no phone means no server call (2026-09-07 dead-end fix).
+    const whoPhone = isOutreach ? neighborPhone : phone;
+    if (!phoneLooksOk(whoPhone)) {
+      setPhoneError("Add your 10-digit phone so the need can reach the HomeTeam — it stays private.");
+      return;
+    }
+    setPhoneError(null);
     setBusy(true);
     const res = await logNeed({
       data: {
@@ -276,7 +288,8 @@ function LogSheet({
       push({ kind: "success", message: "The need is shared with the HomeTeam — thank you." });
       onLogged();
     } else {
-      setPosted({ saved: false, kind: "draft", line: res.error ?? "Saved on this phone for now — try again when you're ready." });
+      // Rejection ALSO gets the persistent card (PR #22) — never a silent end.
+      setPosted({ saved: false, kind: "draft", line: res.error ?? "That didn't go through — nothing changed. Try again when you can." });
       push({ kind: "error", message: res.error ?? "That didn't go through — try again when you're ready." });
     }
   };
@@ -286,9 +299,16 @@ function LogSheet({
       <div className="flex flex-col gap-4 pb-2">
         {isOutreach ? (
           <div className="flex flex-col gap-4">
-            <TextField label="Their phone" value={neighborPhone} onChange={(e) => onNeighborPhoneChange(normPhone(e.target.value))} inputMode="tel" placeholder="10 digits, e.g. 4155550142" helper="Outreach logs on the neighbor's behalf — the need is attributed to them." />
+            <TextField label="Their phone" value={neighborPhone} onChange={(e) => { setPhoneError(null); onNeighborPhoneChange(normPhone(e.target.value)); }} inputMode="tel" placeholder="10 digits, e.g. 4155550142" helper="Outreach logs on the neighbor's behalf — the need is attributed to them." error={phoneError ?? undefined} />
             <TextField label="Their name" value={neighborName} onChange={(e) => onNeighborNameChange(e.target.value)} maxLength={40} helper="First name, the way they'd like it." />
           </div>
+        ) : null}
+        {/* Non-outreach: the phone lives on the page identity strip, so the
+            required-phone error shows here inside the sheet (2026-09-07). */}
+        {!isOutreach && phoneError ? (
+          <p className="rounded-[12px] border border-sg-clay/40 bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
+            {phoneError}
+          </p>
         ) : null}
         <TextField label="What's needed" value={items} onChange={(e) => setItems(e.target.value)} placeholder="tent, warm socks, bus pass" maxLength={200} helper="Comma-separated is fine — e.g. tent, sleeping bag." />
         <TextArea label="Anything else to know (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Where to bring it, what works best — keep it general." maxLength={400} />
@@ -376,8 +396,10 @@ function HomeTeamPage() {
   /** Persistent on-screen confirmation of claim / mark-delivered (owner-directed 2026-09-07). */
   const [actionConfirmed, setActionConfirmed] = useState<SubmitConfirmState | null>(null);
 
-  /** Local supporter identity — phone-only, never shared without action. */
-  const [phone, setPhone] = useState<string>("");
+  /** Local supporter identity — phone-only, never shared without action.
+   * Prefilled from the stored alert identity (the same number used for
+   * check-ins/alerts/peer-support) so it survives reloads (2026-09-07). */
+  const [phone, setPhone] = useState<string>(() => getAlertIdentity()?.phone ?? "");
   const [memberStatus, setMemberStatus] = useState<{ status: "active" | "paused"; name: string | null; ah: boolean | null }>({
     status: "active",
     name: null,
@@ -472,8 +494,13 @@ function HomeTeamPage() {
   );
 
   const needsPhone = (next: string) => {
-    setPhone(normPhone(next));
-    if (neighborPhone === "") setNeighborPhone(normPhone(next));
+    // Normalize on change (digits only) so one-digit-at-a-time entry on real
+    // devices can never submit a half-formed value; persist to localStorage
+    // via the shared alert identity so it prefills next time (2026-09-07).
+    const p = normPhone(next);
+    setPhone(p);
+    if (p.length >= 10) setAlertIdentity(p, memberStatus.name ?? "Neighbor");
+    if (neighborPhone === "") setNeighborPhone(p);
   };
 
   /** The feed sections (calm list, one card per need). */
@@ -575,7 +602,7 @@ function HomeTeamPage() {
             <div className="flex flex-col gap-2">
               <p className="text-small text-sg-ink-soft">To claim or share a need, add the number you'd like to be known by — it stays on this device.</p>
               <div className="flex gap-2">
-                <TextField label="Your phone" value="" onChange={(e) => needsPhone(e.target.value)} placeholder="(415) 555-0100" className="!min-h-[48px]" />
+                <TextField label="Your phone" value={phone} onChange={(e) => needsPhone(e.target.value)} inputMode="tel" placeholder="(415) 555-0100" className="!min-h-[48px]" helper="Required to log a need — needs are attributed to a real number." error={!phoneLooksOk(phone) && phone.length > 0 ? "That number looks incomplete — please check it, no rush." : undefined} />
               </div>
             </div>
           </Card>
