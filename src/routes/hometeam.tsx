@@ -274,7 +274,7 @@ function LogSheet({
       <div className="flex flex-col gap-4 pb-2">
         {isOutreach ? (
           <div className="flex flex-col gap-4">
-            <TextField label="Their phone" value={formatPhone(neighborPhone)} onChange={(e) => onNeighborPhoneChange(normPhone(e.target.value))} helper="Outreach logs on the neighbor's behalf — the need is attributed to them." />
+            <TextField label="Their phone" value={neighborPhone} onChange={(e) => onNeighborPhoneChange(normPhone(e.target.value))} inputMode="tel" placeholder="10 digits, e.g. 4155550142" helper="Outreach logs on the neighbor's behalf — the need is attributed to them." />
             <TextField label="Their name" value={neighborName} onChange={(e) => onNeighborNameChange(e.target.value)} maxLength={40} helper="First name, the way they'd like it." />
           </div>
         ) : null}

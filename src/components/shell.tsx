@@ -13,6 +13,7 @@ import { listSweeps, getMyCheckIn, demoUserId } from "~/lib/server";
 import { BellMoonIcon, CheckIcon, HomeIcon, InfoIcon, MenuIcon, MoonIcon, NightLampIcon } from "~/lib/appIcons";
 import { HeartIcon } from "~/lib/icons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
+import { OPEN_WELCOME_EVENT } from "~/components/welcome";
 import type { ToastState } from "~/components/ui";
 
 /* ── Icons for the shell ────────────────────────────────────────── */
@@ -214,6 +215,17 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             <InfoIcon size={22} aria-hidden />
             About &amp; privacy
           </Link>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              window.dispatchEvent(new Event(OPEN_WELCOME_EVENT));
+            }}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <InfoIcon size={22} aria-hidden />
+            Welcome — what SafeGround is
+          </button>
           <Link
             to="/peer-support-queue"
             onClick={onClose}

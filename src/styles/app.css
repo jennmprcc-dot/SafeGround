@@ -90,3 +90,25 @@
     display: none;
   }
 }
+
+/* QR-only printing from the welcome overlay (WELCOME_PREFACE_SPEC §3.4):
+   hide the app, center just the QR block on the page. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #sg-qr-print,
+  #sg-qr-print * {
+    visibility: visible;
+  }
+  #sg-qr-print {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
+  #sg-qr-print img {
+    width: 320px;
+    height: 320px;
+  }
+}
