@@ -299,7 +299,7 @@ export const REAL_MARIN_RESOURCES: MarinResource[] = [
   // ── DAY CENTERS / PEER SUPPORT ──────────────────────────────────
   {
     id: "marin-mprcc",
-    name: "MPRCC — Marin Peer Recovery Community Collective",
+    name: "MPRCC — Marin Peer Resource Community Collective",
     category: "daycenters",
     address: "Online — mprcc.org (reach out via the site)",
     hours: "Peer-led collective; reach out online",
