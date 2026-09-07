@@ -20,6 +20,7 @@ import { getAlertIdentity, setAlertIdentity, phoneLooksOk, formatPhone } from "~
 import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertSource } from "~/lib/alerts";
 import { ALERT_LIFE_COPY } from "~/lib/alerts";
 import { CheckCircleIcon } from "~/lib/icons";
+import { NoticeConsentOptIn } from "~/components/noticeConsent";
 import { demoNearMePoint } from "~/lib/data";
 import { cn } from "~/lib/cn";
 
@@ -398,6 +399,7 @@ function SendAlertPage() {
               : "They'll see it in their alerts. You can clear it anytime you're okay."}
           </p>
           <div className="mt-2 flex w-full max-w-xs flex-col gap-2">
+            <NoticeConsentOptIn phone={getAlertIdentity()?.phone ?? ""} source="alert-sent" />
             <Link to="/alerts/mine" className="block w-full">
               <Button full>See my alert</Button>
             </Link>

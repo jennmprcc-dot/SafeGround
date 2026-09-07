@@ -23,6 +23,7 @@ import {
   setAlertIdentity,
 } from "~/lib/alertIdentity";
 import { CheckCircleIcon } from "~/lib/icons";
+import { NoticeConsentOptIn } from "~/components/noticeConsent";
 
 type Phase = "form" | "confirm" | "done";
 
@@ -90,6 +91,7 @@ function RequestSupportPage() {
               : "Your request is in the team's queue — a peer will follow up as soon as they're connected."}
           </p>
           <div className="mt-2 flex w-full max-w-xs flex-col gap-2">
+            <NoticeConsentOptIn phone={phoneInput} source="peer-support" />
             <Link to="/" className="block w-full">
               <Button full>Back home</Button>
             </Link>

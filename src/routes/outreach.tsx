@@ -15,7 +15,7 @@
  * payload carries — never client trust.
  */
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
@@ -501,6 +501,14 @@ function OutreachPage() {
                   <Card>
                     <p className="text-body font-medium">Group notices</p>
                     <p className="mt-0.5 text-small text-sg-ink-soft">{data.push.note}</p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <Link to="/outreach/directory" search={{ phone }} className="block w-full">
+                        <Button variant="secondary" full>Open community directory</Button>
+                      </Link>
+                      <Link to="/outreach/directory/notice" search={{ phone }} className="block w-full">
+                        <Button variant="quiet" full>Send a group notice</Button>
+                      </Link>
+                    </div>
                   </Card>
                 </section>
               ) : (
