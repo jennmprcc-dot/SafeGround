@@ -23,17 +23,22 @@ const MESSAGING_COMPAT_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebas
 interface FirebaseAppCompat {
   initializeApp: (config: Record<string, string>) => unknown;
 }
+/**
+ * In the compat SDK (firebase-app-compat + firebase-messaging-compat from
+ * gstatic), getToken/onMessage/deleteToken are METHODS ON THE MESSAGING
+ * INSTANCE (fb.messaging(app)) — never on the global `firebase` object.
+ * window.firebase only carries initializeApp + messaging (+ apps).
+ */
 interface MessagingCompat {
   messaging: (app: unknown) => unknown;
-  getToken: (m: unknown) => Promise<string>;
-  onMessage?: (m: unknown, cb: (payload: { notification?: { title?: string; body?: string } }) => void) => void;
+  getToken?: (opts: { vapidKey: string }) => Promise<string>;
+  onMessage?: (cb: (payload: { notification?: { title?: string; body?: string } }) => void) => void;
+  deleteToken?: () => Promise<boolean>;
 }
 interface FirebaseCompat {
   apps?: unknown[];
   initializeApp?: FirebaseAppCompat["initializeApp"];
   messaging?: MessagingCompat["messaging"];
-  getToken?: MessagingCompat["getToken"];
-  onMessage?: MessagingCompat["onMessage"];
 }
 declare global {
   interface Window {
@@ -113,20 +118,28 @@ export async function registerDevicePush(phone: string, deviceLabel?: string): P
   await loadScript(APP_COMPAT_URL);
   await loadScript(MESSAGING_COMPAT_URL);
   const fb = window.firebase;
-  if (!fb?.initializeApp || !fb.messaging || !fb.getToken) {
+  // COMPAT GUARD: the compat SDK only exposes initializeApp + messaging on the
+  // global; getToken lives on the messaging instance. Checking fb.getToken here
+  // ALWAYS failed → the permanent "Firebase scripts failed to load." message.
+  if (!fb?.initializeApp || !fb.messaging) {
     return { supported: true, permission: "unknown", token: null, registered: false, message: "Firebase scripts failed to load." };
   }
+  // vapidKey belongs to getToken(), not initializeApp() — the compat app is
+  // initialized with the standard web-config keys only.
   const app = fb.initializeApp({
     apiKey: config.apiKey,
     authDomain: config.authDomain,
     projectId: config.projectId,
     appId: config.appId,
     messagingSenderId: config.messagingSenderId,
-    vapidKey: config.vapidKey,
   });
-  const messaging = fb.messaging(app);
-  if (fb.onMessage) {
-    fb.onMessage(messaging, (payload) => {
+  const messagingObj = fb.messaging(app);
+  const m = messagingObj as unknown as MessagingCompat;
+  if (!m.getToken) {
+    return { supported: true, permission: "unknown", token: null, registered: false, message: "Firebase scripts failed to load." };
+  }
+  if (m.onMessage) {
+    m.onMessage((payload) => {
       const n = payload.notification;
       if (n?.title && typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
@@ -144,7 +157,7 @@ export async function registerDevicePush(phone: string, deviceLabel?: string): P
     }
   }
   await registerPushSW();
-  const token = await fb.getToken(messaging);
+  const token = await m.getToken({ vapidKey: config.vapidKey });
   if (!token) {
     return { supported: true, permission: "granted", token: null, registered: false, message: "No push token came back yet — try again in a few seconds." };
   }
