@@ -41,6 +41,7 @@ import { NoticeConsentOptIn } from "~/components/noticeConsent";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
+import { logAnonymousEvent } from "~/lib/analytics/logger";
 /** Check-in success consent row: only when the neighbor has a stored phone
  * identity (the consent is tied to that phone). Reads identity lazily so the
  * opt-in appears on the checked-in state without touching auth. */
@@ -344,6 +345,16 @@ function CheckInPage() {
       setMine(res.row);
       setMineSource(res.source);
       setShareTick((t) => t + 1);
+      // Anonymous analytics: bare `check_in` counter, ONLY when the check-in
+      // REALLY landed in the DB (source === "db" — demo fallbacks never
+      // count). No coords, no note, no user_id. Fire-and-forget.
+      if (res.source === "db") {
+        try {
+          logAnonymousEvent("check_in");
+        } catch {
+          /* silent — the check-in already succeeded */
+        }
+      }
       // Persistent on-screen confirmation (owner-directed): STAYS until the
       // next check-in starts. Peers aren't push-notified by this path — the
       // check-in itself is the notice, so "no team push" copy is the honest one.

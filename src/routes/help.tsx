@@ -39,6 +39,7 @@ import type { CategoryId, DemoResource } from "~/lib/data";
 import { listResources, isAdminPhone } from "~/lib/server";
 import type { ResourceRow, DataSource } from "~/lib/server";
 import { getAlertIdentity } from "~/lib/alertIdentity";
+import { logAnonymousEvent } from "~/lib/analytics/logger";
 import { PlusIcon, ChevronRightIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 
@@ -224,6 +225,18 @@ function NavigatorPage() {
   const openNow = filtered.filter((r) => r.openNow).length;
   const chips = CATEGORIES.map((c) => ({ value: c.id, label: c.label, icon: c.icon }));
 
+  /* Anonymous analytics: one `resource_search` event per COMMITTED category
+   * selection (chip toggled ON) + on search submit. Category id only — NEVER
+   * the raw query text (could contain PII), never `near` lat/lng, never
+   * anything from getAlertIdentity(). Fire-and-forget; never breaks filtering. */
+  const trackCategory = (category: CategoryId) => {
+    try {
+      logAnonymousEvent("resource_search", { category });
+    } catch {
+      /* silent */
+    }
+  };
+
   const locationOnce = () => {
     const done = () => {
       setNear(demoNearMePoint());
@@ -272,14 +285,43 @@ function NavigatorPage() {
           ) : null}
         </header>
 
-        <SearchField value={query} onChange={setQuery} placeholder="Search name or place…" />
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          onSubmit={() => {
+            // Committed search: log the SELECTED categories (never the raw text).
+            try {
+              if (selected.length > 0) {
+                for (const c of selected) logAnonymousEvent("resource_search", { category: c });
+              } else {
+                logAnonymousEvent("resource_search");
+              }
+            } catch {
+              /* silent */
+            }
+          }}
+          placeholder="Search name or place…"
+        />
 
         {/* List | Map toggle — directly under search (WIREFRAMES §2a order,
          * lifted above the fold so the fixed bottom nav can never occlude it) */}
         <ViewTabs view={view} onChange={setView} tabRefs={tabRefs} />
 
         <div>
-          <ChipGrid label="Categories — choose any to filter" options={chips} selected={selected} onToggle={(v) => setSelected((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]))} />
+          <ChipGrid
+            label="Categories — choose any to filter"
+            options={chips}
+            selected={selected}
+            onToggle={(v) => {
+              setSelected((prev) => {
+                const wasOn = prev.includes(v);
+                // Log only newly-selected categories (committed filter action,
+                // not per-keystroke, not on deselect).
+                if (!wasOn) trackCategory(v);
+                return wasOn ? prev.filter((x) => x !== v) : [...prev, v];
+              });
+            }}
+          />
         </div>
 
         <LocationOnceButton onClick={locationOnce} />

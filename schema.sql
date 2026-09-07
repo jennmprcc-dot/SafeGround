@@ -2015,3 +2015,24 @@ comment on column public.users.phone is
   'Digits-only phone (nullable, unique) — bound at sign-in / invite-accept '
   'after sg_norm_phone. Powers phone invites + lookups via RPC only; RLS '
   'stays own-row-only.';
+-- ---------------------------------------------------------------------------
+-- Anonymous analytics events (owner-directed 2026-09-07)
+--
+-- Aggregate counters ONLY for the /admin/analytics dashboard + the monthly
+-- grant impact CSV. ZERO PII by construction: the table has EXACTLY six
+-- columns — no user_id, no phone, no IP, no lat/lng, no free text, no
+-- headers, no user-agent. Queries read counts/category/status/install-counts
+-- only; NOTHING here can identify a person. Do NOT add PII columns to this
+-- table, ever.
+-- ---------------------------------------------------------------------------
+create table if not exists public.analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  event_type text not null check (event_type in ('resource_search','peer_support_request','sweep_alert_view','check_in')),
+  category text null,
+  status text null,
+  install_id uuid null,
+  created_at timestamptz not null default now()
+);
+comment on column public.analytics_events.install_id is
+  'ANALYTICS: no PII — never join to users/check_ins/push_tokens/outreach_roster';
+create index if not exists idx_analytics_events_month on public.analytics_events (created_at, event_type);

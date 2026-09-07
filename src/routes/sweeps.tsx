@@ -32,6 +32,7 @@ import { approxDistanceMi, demoNearMePoint } from "~/lib/data";
 import { BellMoonIcon, CheckIcon, MapPinIcon, PenIcon, CheckCircleIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
+import { logAnonymousEvent } from "~/lib/analytics/logger";
 
 /* ── pin visuals (DESIGN_SYSTEM §4.4) ───────────────────────────── */
 const PIN_STYLE: Record<string, { shape: string; color: string }> = {
@@ -397,6 +398,18 @@ function SweepsPage() {
     listSweeps().then((r) => setState({ rows: r.rows, source: r.source, loading: false })).catch(() => undefined);
   };
 
+  /* Anonymous analytics: bare `sweep_alert_view` counter when a neighbor
+   * opens a sweep detail sheet. No lat/lng, no note, no reported_by — just
+   * the fact that a heads-up was viewed. Fire-and-forget. */
+  const openSweep = (s: SweepRow) => {
+    setSelected(s);
+    try {
+      logAnonymousEvent("sweep_alert_view");
+    } catch {
+      /* silent */
+    }
+  };
+
   const activeCount = state.rows.filter((s) => s.status === "active" || s.status === "planned").length;
 
   const filtered = useMemo(() => {
@@ -441,7 +454,7 @@ function SweepsPage() {
         ) : (
           <>
             <div className="flex flex-col gap-3">
-              <SweepMapPane sweeps={state.rows} onPick={setSelected} />
+              <SweepMapPane sweeps={state.rows} onPick={openSweep} />
               <div className="mb-1 flex items-center justify-between px-1">
                 <p className="text-small text-sg-ink-soft">
                   {activeCount} active or planned {activeCount === 1 ? "heads-up" : "heads-ups"} · {state.source === "db" ? "live" : "demo"}
@@ -479,7 +492,7 @@ function SweepsPage() {
             {filtered.map((s) => {
               const kind = s.status === "active" ? "Active" : s.status === "planned" ? "Planned" : "Resolved";
               return (
-                <ListRow key={s.id} onClick={() => setSelected(s)}>
+                <ListRow key={s.id} onClick={() => openSweep(s)}>
                   <IconTile wash={s.status === "active" ? "bg-sg-clay-wash" : s.status === "planned" ? "bg-sg-gold-wash" : "bg-sg-line"}>
                     <BellMoonIcon size={20} />
                   </IconTile>
