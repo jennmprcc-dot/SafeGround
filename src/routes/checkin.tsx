@@ -37,7 +37,17 @@ import {
 import type { CheckInRow, PeerCheckInRow, PeerRow, DataSource } from "~/lib/server";
 import { demoNearMePoint } from "~/lib/data";
 import { MoonBlanketIcon, HeartIcon, PauseIcon, PersonIcon, LockIcon } from "~/lib/icons";
+import { NoticeConsentOptIn } from "~/components/noticeConsent";
+import { getAlertIdentity } from "~/lib/alertIdentity";
 import { cn } from "~/lib/cn";
+/** Check-in success consent row: only when the neighbor has a stored phone
+ * identity (the consent is tied to that phone). Reads identity lazily so the
+ * opt-in appears on the checked-in state without touching auth. */
+function CheckinConsentRow() {
+  const [id] = useState(() => getAlertIdentity());
+  if (!id?.phone) return null;
+  return <NoticeConsentOptIn phone={id.phone} source="checkin" />;
+}
 
 /** Stable per-user UUID for the demo auth wave: same name + same device → same id. */
 function myUserId(name: string): string {
@@ -431,6 +441,7 @@ function CheckInPage() {
             <p className="text-small text-sg-ink-soft">
               Peers only ever see an approximate area (~150m) for 24 hours. Overdue notes go to your trusted peers alone — never to agencies, and never by themselves.
             </p>
+            <CheckinConsentRow />
           </>
         )}
 

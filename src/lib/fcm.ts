@@ -81,17 +81,22 @@ export function pushSupported(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
 }
 
-/* ── service worker registration (browser-only file, public dir) ─── */
-export async function registerPushSW(): Promise<ServiceWorkerRegistration | null> {
-  if (!("serviceWorker" in navigator)) return null;
-  if (!("PushManager" in window)) return null; // iOS Safari needs A2HS first
+/* ── service worker registration (browser-only file, public dir) ───
+ * Real errors SURFACE (never swallowed): /push-test shows the message so a
+ * broken worker is diagnosable instead of silently returning null. */
+export async function registerPushSW(): Promise<ServiceWorkerRegistration> {
+  if (!("serviceWorker" in navigator)) throw new Error("This browser doesn't support service workers.");
+  if (!("PushManager" in window)) throw new Error("Push isn't available until SafeGround is installed to the home screen.");
+  if (navigator.serviceWorker.controller) return await navigator.serviceWorker.ready;
+  let reg: ServiceWorkerRegistration;
   try {
-    if (navigator.serviceWorker.controller) return await navigator.serviceWorker.ready;
-    const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-    return (await navigator.serviceWorker.ready) ?? reg;
-  } catch {
-    return null;
+    reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+  } catch (e) {
+    throw new Error(
+      `The notification worker didn't register: ${e instanceof Error ? e.message : "unknown error"}.`,
+    );
   }
+  return (await navigator.serviceWorker.ready) ?? reg;
 }
 
 /* ── full registration flow. phone = sender/owner identity (digits) ── */

@@ -1159,3 +1159,433 @@ comment on table public.peer_support_requests is
   'One-tap peer-support requests (phone identity). Queue persists server-side; '
   'admin push goes ONLY to the two roster admins via push_tokens (never 911, '
   'never SMS). Phone-bound RLS like push_tokens/trusted_peers.';
+-- ---------------------------------------------------------------------------
+-- Community directory + group notices (owner-directed 2026-09-06)
+--
+-- Staff-gated roster (Jenn + Bambi admin, Tracey staff_limited) + opt-in
+-- group notices via Firebase push ONLY. Never SMS, never auto-contact, never
+-- to paused/unconsented numbers. Business-hours rule (8am-6pm Mon-Fri
+-- America/Los_Angeles) computed SERVER-side at send time; staff recipients
+-- are on-call and never hours-gated.
+--
+-- Enforcement lives in the RPCs below (same style as hometeam_* + Wave 2c):
+--   * sg_directory_list  — admin full rows; staff_limited REDACTED rows
+--                          (names + kind + active/paused ONLY — zero phone
+--                          digits, zero timestamps, zero after-hours flags);
+--                          non-roster raises.
+--   * sg_notice_consents — self-service consent upsert (own phone only,
+--                          called by the consent API route after calm checks).
+--   * sg_notice_eligible — pre-send eligibility counts for the confirm screen.
+--   * sg_send_group_notice — admin-only send: validate, compute eligible set,
+--                          raise on empty, write the group_notices log row,
+--                          return notice_id + recipient phones for fan-out.
+--   * sg_notice_history  — admin-only log, newest-first; limited raises.
+-- Fan-out itself (sendFcmMessage per token) happens in the API route layer
+-- (src/routes/api/directory/*), which reads tokens via push_tokens service
+-- role — the directory RPC never exposes push_tokens.token to any client.
+-- ---------------------------------------------------------------------------
+create table if not exists public.group_notices (
+  id                   uuid primary key default gen_random_uuid(),
+  sent_by_phone        text not null check (char_length(sent_by_phone) between 7 and 20),
+  title                text not null check (char_length(title) between 1 and 80),
+  body                 text not null check (char_length(body) between 1 and 500),
+  audience             text not null check (audience in ('hometeam', 'neighbors', 'both')),
+  eligible_count       int not null default 0 check (eligible_count >= 0),
+  sent_count           int not null default 0 check (sent_count >= 0),
+  skipped_after_hours  int not null default 0 check (skipped_after_hours >= 0),
+  skipped_no_token     int not null default 0 check (skipped_no_token >= 0),
+  created_at           timestamptz not null default now()
+);
+alter table public.group_notices enable row level security;
+-- RPC-only: no direct client read/write policies (same pattern as the
+-- emergency-alert log — all access through the SECURITY DEFINER RPCs above).
+-- ---------------------------------------------------------------------------
+-- notice_consents — neighbor opt-in for group updates (owner-directed).
+--
+-- Neighbors (non-HomeTeam phone contacts: alert senders, peer-support
+-- requesters, push registrants) are messaged ONLY with an explicit row here.
+-- Collected in-app via checkbox on the alert-sent + peer-support success
+-- screens: "MPRCC can send me group updates by app notification" + an
+-- after-hours sub-checkbox (default OFF). No row = no notices, ever.
+-- ---------------------------------------------------------------------------
+create table if not exists public.notice_consents (
+  phone                   text primary key check (char_length(phone) between 7 and 20),
+  consented_at            timestamptz not null default now(),
+  consents_to_after_hours boolean not null default false,
+  source                  text check (source is null or char_length(source) between 1 and 40),
+  created_at              timestamptz not null default now()
+);
+alter table public.notice_consents enable row level security;
+-- Phone-bound RLS, same pattern as push_tokens: a phone owns its own row
+-- (insert/select/update own). Server routes read service-side for the
+-- directory + eligibility; nothing anonymous reads another phone's consent.
+drop policy if exists "notice consents own insert" on public.notice_consents;
+create policy "notice consents own insert" on public.notice_consents for insert
+  with check (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+drop policy if exists "notice consents own select" on public.notice_consents;
+create policy "notice consents own select" on public.notice_consents for select
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+drop policy if exists "notice consents own update" on public.notice_consents;
+create policy "notice consents own update" on public.notice_consents for update
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create index if not exists idx_notice_consents_after_hours on public.notice_consents (consents_to_after_hours);
+comment on table public.notice_consents is
+  'Neighbor opt-in for group notices (phone identity). No row = no notices, '
+  'ever. Phone-bound RLS like push_tokens; staff reads go through the '
+  'SECURITY DEFINER directory RPCs.';
+-- ---------------------------------------------------------------------------
+-- Shared eligibility core: which phones would receive a notice for an audience
+-- at Marin-local now. Returns one row per eligible phone:
+--   phone, display_name, after_hours_ok, has_token, skipped_after_hours
+-- skipped_after_hours rows are INCLUDED in the set (flagged true) so the
+-- confirm screen can count them transparently; they are EXCLUDED from push.
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_notice_recipients(p_audience text)
+returns table (
+  phone text,
+  display_name text,
+  after_hours_ok boolean,
+  has_token boolean,
+  skipped_after_hours boolean
+)
+language plpgsql stable security definer set search_path = public
+as $sg$
+declare
+  v_aud text := btrim(coalesce(p_audience, ''));
+  v_local timestamp := now() at time zone 'America/Los_Angeles';
+  v_in_hours boolean;
+begin
+  if v_aud not in ('hometeam', 'neighbors', 'both') then
+    raise exception 'Please choose who this notice is for — HomeTeam, neighbors, or both.';
+  end if;
+  v_in_hours := extract(dow from v_local) between 1 and 5
+    and extract(hour from v_local) >= 8
+    and extract(hour from v_local) < 18;
+  return query
+  -- HomeTeam side: active supporters only (paused = opted out).
+  select
+    hm.phone,
+    hm.display_name,
+    hm.consents_to_after_hours,
+    exists (select 1 from public.push_tokens pt where pt.phone = hm.phone),
+    (not hm.consents_to_after_hours and not v_in_hours)
+  from public.hometeam_members hm
+  where (v_aud = 'hometeam' or v_aud = 'both')
+    and hm.status = 'active'
+  union all
+  -- Neighbor side: ONLY explicit notice_consents rows (no row = no notices).
+  -- Staff roster phones are on-call admins, never hours-gated — but they are
+  -- NOT notice recipients here (admins see the queue in-app); the hours gate
+  -- applies to HomeTeam + neighbor recipients per the spec.
+  select
+    nc.phone,
+    'A neighbor',
+    nc.consents_to_after_hours,
+    exists (select 1 from public.push_tokens pt where pt.phone = nc.phone),
+    (not nc.consents_to_after_hours and not v_in_hours)
+  from public.notice_consents nc
+  where (v_aud = 'neighbors' or v_aud = 'both')
+    -- Never double-count a HomeTeam member on a 'both' send.
+    and not exists (
+      select 1 from public.hometeam_members hm where hm.phone = nc.phone
+    );
+end;
+$sg$;
+-- ---------------------------------------------------------------------------
+-- sg_directory_list(p_caller_phone): the community roster, role-split.
+--
+-- Admin → full rows: phone (digits), display_name, kind, active/paused,
+-- opted-in flags, consents_to_after_hours, last_active (latest push-token
+-- touch or consent touch). Unconsented neighbors show with a "not opted in"
+-- flag and are never selectable for messaging.
+-- staff_limited → REDACTED rows: display_name + kind + active/paused ONLY.
+-- No phone field, no timestamps, no after-hours flags — the client never
+-- filters phones out itself; QA asserts the payload has zero phone digits.
+-- Non-roster → raises the calm line (never counts, never hints).
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_directory_list(p_caller_phone text)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+  v_admin boolean := public.is_roster_admin(v_caller);
+  v_staff boolean := public.is_roster_staff(v_caller);
+  v_full jsonb;
+  v_redacted jsonb;
+begin
+  if not v_staff then
+    raise exception 'This space is for the outreach team.';
+  end if;
+  if v_admin then
+    select coalesce(jsonb_agg(row_to_json(t) order by t.display_name), '[]'::jsonb)
+    into v_full
+    from (
+      select
+        hm.phone as phone,
+        hm.display_name as display_name,
+        'hometeam' as kind,
+        hm.status = 'active' as active,
+        true as opted_in,
+        hm.consents_to_after_hours as consents_to_after_hours,
+        to_char(hm.consented_to_contact_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as opted_in_at,
+        (select to_char(max(pt.updated_at), 'YYYY-MM-DD"T"HH24:MI:SSOF')
+         from public.push_tokens pt where pt.phone = hm.phone) as last_active
+      from public.hometeam_members hm
+      union all
+      select
+        nc.phone as phone,
+        'A neighbor' as display_name,
+        'neighbor' as kind,
+        true as active,
+        true as opted_in,
+        nc.consents_to_after_hours as consents_to_after_hours,
+        to_char(nc.consented_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as opted_in_at,
+        (select to_char(max(pt.updated_at), 'YYYY-MM-DD"T"HH24:MI:SSOF')
+         from public.push_tokens pt where pt.phone = nc.phone) as last_active
+      from public.notice_consents nc
+      where not exists (
+        select 1 from public.hometeam_members hm where hm.phone = nc.phone
+      )
+      union all
+      select
+        r.phone as phone,
+        r.display_name as display_name,
+        'staff' as kind,
+        r.active as active,
+        true as opted_in,
+        true as consents_to_after_hours,
+        null as opted_in_at,
+        (select to_char(max(pt.updated_at), 'YYYY-MM-DD"T"HH24:MI:SSOF')
+         from public.push_tokens pt where pt.phone = r.phone) as last_active
+      from public.outreach_roster r
+    ) t;
+    return jsonb_build_object('ok', true, 'role', 'admin', 'members', v_full);
+  end if;
+  -- staff_limited: redacted — names + kind + active/paused. Nothing else.
+  select coalesce(jsonb_agg(row_to_json(t) order by t.display_name), '[]'::jsonb)
+  into v_redacted
+  from (
+    select
+      hm.display_name as display_name,
+      'hometeam' as kind,
+      hm.status = 'active' as active
+    from public.hometeam_members hm
+    union all
+    select
+      'A neighbor' as display_name,
+      'neighbor' as kind,
+      true as active
+    from public.notice_consents nc
+    where not exists (
+      select 1 from public.hometeam_members hm where hm.phone = nc.phone
+    )
+    union all
+    select
+      r.display_name as display_name,
+      'staff' as kind,
+      r.active as active
+    from public.outreach_roster r
+  ) t;
+  return jsonb_build_object('ok', true, 'role', 'staff_limited', 'members', v_redacted);
+end;
+$sg$;
+-- ---------------------------------------------------------------------------
+-- sg_notice_consents_upsert(p_phone, p_after_hours, p_source): self-service
+-- opt-in. Anyone with their own phone number may set their own consent
+-- (the consent API route checks the phone belongs to the caller device via
+-- the x-sg-phone parity pattern). Idempotent — refreshes timestamps.
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_notice_consents_upsert(
+  p_phone text, p_after_hours boolean, p_source text
+)
+returns boolean
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone text := public.sg_norm_phone(p_phone);
+  v_source text := btrim(coalesce(p_source, '')) ;
+begin
+  if char_length(v_phone) < 7 or char_length(v_phone) > 15 then
+    raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
+  end if;
+  insert into public.notice_consents (phone, consented_at, consents_to_after_hours, source)
+  values (v_phone, now(), coalesce(p_after_hours, false),
+          nullif(v_source, ''))
+  on conflict (phone) do update
+    set consented_at = now(),
+        consents_to_after_hours = coalesce(p_after_hours, false),
+        source = nullif(v_source, '');
+  return true;
+end;
+$sg$;
+-- ---------------------------------------------------------------------------
+-- sg_notice_eligible(p_caller_phone, p_audience): pre-send eligibility for
+-- the confirm screen. Roster-only (any active role — counts are not
+-- sensitive). Returns {eligible, skipped_after_hours}. Client labels these
+-- "~N" estimates; the SEND set is recomputed at send time in M4.
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_notice_eligible(p_caller_phone text, p_audience text)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+  v_elig int := 0;
+  v_skip int := 0;
+begin
+  if not public.is_roster_staff(v_caller) then
+    raise exception 'This space is for the outreach team.';
+  end if;
+  select
+    count(*) filter (where not r.skipped_after_hours),
+    count(*) filter (where r.skipped_after_hours)
+  into v_elig, v_skip
+  from public.sg_notice_recipients(p_audience) r;
+  return jsonb_build_object(
+    'ok', true,
+    'eligible', coalesce(v_elig, 0),
+    'skipped_after_hours', coalesce(v_skip, 0)
+  );
+end;
+$sg$;
+-- ---------------------------------------------------------------------------
+-- sg_send_group_notice(p_caller_phone, p_title, p_body, p_audience):
+-- admin-only send intent. Validates, computes the eligible set at Marin-local
+-- send time, RAISES on an empty set (calm reason — nothing sent, nothing
+-- logged), writes the group_notices log row with counts, and returns
+-- {notice_id, phones, sent_count, skipped_after_hours} so the API route can
+-- fan out via sendFcmMessage per registered token (separate path from the
+-- emergency-alert audience path — separate RPC, separate log).
+-- No-token recipients are counted as skipped_no_token (not failed).
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_send_group_notice(
+  p_caller_phone text, p_title text, p_body text, p_audience text
+)
+returns jsonb
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+  v_title text := btrim(coalesce(p_title, ''));
+  v_body text := btrim(coalesce(p_body, ''));
+  v_aud text := btrim(coalesce(p_audience, ''));
+  v_elig int := 0;
+  v_skip int := 0;
+  v_id uuid;
+  v_phones text[];
+begin
+  if not public.is_roster_admin(v_caller) then
+    raise exception 'Only an outreach admin can send group notices.';
+  end if;
+  if char_length(v_title) < 1 then
+    raise exception 'Give the notice a short headline first.';
+  end if;
+  if char_length(v_title) > 80 then
+    raise exception 'Please keep the headline to 80 characters so it fits a notification.';
+  end if;
+  if char_length(v_body) < 1 then
+    raise exception 'Write a line or two for the notice body first.';
+  end if;
+  if char_length(v_body) > 500 then
+    raise exception 'Please keep the notice body to 500 characters so it stays quick to read.';
+  end if;
+  if v_aud not in ('hometeam', 'neighbors', 'both') then
+    raise exception 'Please choose who this notice is for — HomeTeam, neighbors, or both.';
+  end if;
+  select
+    count(*) filter (where not r.skipped_after_hours),
+    count(*) filter (where r.skipped_after_hours),
+    coalesce(array_agg(r.phone) filter (where not r.skipped_after_hours), '{}')
+  into v_elig, v_skip, v_phones
+  from public.sg_notice_recipients(v_aud) r;
+  v_elig := coalesce(v_elig, 0);
+  v_skip := coalesce(v_skip, 0);
+  if v_elig = 0 then
+    raise exception 'Right now that choice would reach no one — try during business hours (8am–6pm weekdays), or check who is opted in.';
+  end if;
+  insert into public.group_notices
+    (sent_by_phone, title, body, audience, eligible_count, skipped_after_hours)
+  values (v_caller, v_title, v_body, v_aud, v_elig, v_skip)
+  returning id into v_id;
+  return jsonb_build_object(
+    'ok', true,
+    'notice_id', v_id,
+    'phones', coalesce(to_jsonb(v_phones), '[]'::jsonb),
+    'eligible', v_elig,
+    'skipped_after_hours', v_skip
+  );
+end;
+$sg$;
+-- ---------------------------------------------------------------------------
+-- sg_notice_history(p_caller_phone): admin-only log, newest-first.
+-- staff_limited raises (no history access; analytics stay admin-only).
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_notice_history(p_caller_phone text)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+  v_rows jsonb;
+begin
+  if not public.is_roster_admin(v_caller) then
+    raise exception 'This space is for the outreach team.';
+  end if;
+  select coalesce(jsonb_agg(row_to_json(t) order by t.created_at desc), '[]'::jsonb)
+  into v_rows
+  from (
+    select
+      gn.id,
+      gn.title,
+      gn.body,
+      gn.audience,
+      gn.eligible_count as eligible,
+      gn.sent_count as sent,
+      gn.skipped_after_hours,
+      gn.skipped_no_token,
+      coalesce(r.display_name, 'Outreach') as sent_by_name,
+      to_char(gn.created_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as created_at
+    from public.group_notices gn
+    left join public.outreach_roster r on r.phone = gn.sent_by_phone
+    order by gn.created_at desc
+    limit 50
+  ) t;
+  return jsonb_build_object('ok', true, 'notices', v_rows);
+end;
+$sg$;
+-- ---------------------------------------------------------------------------
+-- Pause/resume stay admin-only for roster/consent state: wrap the existing
+-- HomeTeam pause/resume so staff_limited callers are rejected server-side
+-- (staff_limited may claim/deliver supplies but never changes roster/consent
+-- state). Admin callers delegate to the existing hometeam_* semantics.
+-- ---------------------------------------------------------------------------
+create or replace function public.sg_hometeam_pause(p_caller_phone text, p_phone text)
+returns boolean
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+begin
+  if not public.is_roster_admin(v_caller) then
+    raise exception 'Only an outreach admin can pause a HomeTeam member.';
+  end if;
+  perform public.hometeam_pause(p_phone);
+  return true;
+end;
+$sg$;
+create or replace function public.sg_hometeam_resume(p_caller_phone text, p_phone text)
+returns boolean
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+begin
+  if not public.is_roster_admin(v_caller) then
+    raise exception 'Only an outreach admin can resume a HomeTeam member.';
+  end if;
+  perform public.hometeam_resume(p_phone);
+  return true;
+end;
+$sg$;
+create index if not exists idx_group_notices_created on public.group_notices (created_at desc);

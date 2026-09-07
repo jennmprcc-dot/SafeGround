@@ -167,6 +167,35 @@ function QueuePage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [testNote, setTestNote] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const sendTestToSelf = async () => {
+    if (phone.length < 10 || testing) return;
+    setTesting(true);
+    setTestNote(null);
+    try {
+      const res = await fetch("/api/push/send", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-sg-phone": phone },
+        body: JSON.stringify({
+          phone,
+          title: "SafeGround test",
+          body: "It's you. This is a SafeGround test notification for this phone.",
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      setTestNote(
+        res.ok && data?.ok
+          ? "Sent — it should appear on this phone now."
+          : (data?.error ?? "That didn't go through — check push is set up for this phone."),
+      );
+    } catch {
+      setTestNote("No connection — nothing was sent.");
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const load = useCallback(async (p: string) => {
     setState({ kind: "loading" });
@@ -283,18 +312,37 @@ function QueuePage() {
             body={state.message}
             steps={<Button variant="secondary" full onClick={() => void load(phone)}>Try again</Button>}
           />
-        ) : state.rows.length === 0 ? (
-          <EmptyState
-            icon={<CheckCircleIcon size={28} />}
-            title="All clear — no open requests"
-            body="When a neighbor asks for peer support, it lands here first."
-            steps={<Button variant="secondary" full onClick={() => void load(phone)}>Refresh</Button>}
-          />
         ) : (
           <div className="flex flex-col gap-3">
-            {state.rows.map((row) => (
-              <RequestCard key={row.id} row={row} callerPhone={phone} acting={acting} onAct={(r, a, e) => void act(r, a, e)} />
-            ))}
+            {/* ready branch: loading/forbidden/unavailable handled above */}
+            {phone.length >= 10 ? (
+              <Card>
+                <p className="text-body font-medium">Notifications for this phone</p>
+                <p className="mt-0.5 text-small text-sg-ink-soft">
+                  Sends a test notification to this phone only — never to anyone else.
+                </p>
+                <div className="mt-3">
+                  <Button variant="secondary" full disabled={testing} onClick={() => void sendTestToSelf()}>
+                    {testing ? "Sending…" : "Send a test notification to this phone"}
+                  </Button>
+                </div>
+                {testNote ? <p className="mt-2 text-small text-sg-ink-soft">{testNote}</p> : null}
+              </Card>
+            ) : null}
+            {state.rows.length === 0 ? (
+              <EmptyState
+                icon={<CheckCircleIcon size={28} />}
+                title="All clear — no open requests"
+                body="When a neighbor asks for peer support, it lands here first."
+                steps={<Button variant="secondary" full onClick={() => void load(phone)}>Refresh</Button>}
+              />
+            ) : (
+              <>
+                {state.rows.map((row) => (
+                  <RequestCard key={row.id} row={row} callerPhone={phone} acting={acting} onAct={(r, a, e) => void act(r, a, e)} />
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
