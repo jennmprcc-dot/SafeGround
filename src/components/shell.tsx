@@ -213,6 +213,14 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             About &amp; privacy
           </Link>
           <Link
+            to="/peer-support-queue"
+            onClick={onClose}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <InfoIcon size={22} aria-hidden />
+            Peer-support queue (outreach)
+          </Link>
+          <Link
             to="/push-test"
             onClick={onClose}
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"

@@ -2,7 +2,8 @@
 -- SafeGround — Supabase-ready data layer (deliverable artifact, Build A)
 -- ============================================================================
 -- Tables: users, sweeps, supply_requests, resources, check_ins, trusted_peers,
---         hometeam_members, emergency_alerts, outreach_roster
+--         hometeam_members, emergency_alerts, outreach_roster,
+--         peer_support_requests, push_tokens
 --         (+ HomeTeam columns on supply_requests)
 -- Privacy guarantees (PRD §6, R-P1…R-P11) are implemented as row-level
 -- security policies, NOT as application conventions:
@@ -1107,3 +1108,54 @@ comment on table public.push_tokens is
   'belongs to. No background location, no SMS, no auto-contact — push is the '
   'dispatch channel ONLY for consenting parties and the owner test button '
   '(owner-directed 2026-09-06).';
+
+-- ---------------------------------------------------------------------------
+-- peer_support_requests — one-tap "Request peer support" (owner-directed 2026-09-06)
+--
+-- A neighbor taps once; the row is the queue. The server then pushes a Firebase
+-- notification to MPRCC's two roster admins ONLY (PEER_SUPPORT_ADMIN_PHONES in
+-- src/lib/pushServer.ts — Jenn + Bambi) via the tokens in push_tokens. Never
+-- 911, never any agency, never SMS. Admin sends are not business-hours-gated
+-- (admins are on call); any future HomeTeam-facing notice would be.
+--
+-- Consent-first: the request itself is the opt-in (user taps the button); only
+-- devices that registered a push token (push_tokens) ever receive anything.
+-- The requester's own phone is never auto-pushed by this path.
+--
+-- Status: 'open' → 'claimed' (an admin says "I'm on it") → 'done' | 'closed'.
+-- claimed_by_phone / delegate_to_phone / outcome_note mirror the emergency-alert
+-- ownership path so Wave 2c reporting can reuse the same shape.
+-- ---------------------------------------------------------------------------
+create table if not exists public.peer_support_requests (
+  id               uuid primary key default gen_random_uuid(),
+  phone            text not null check (char_length(phone) between 7 and 20),
+  name_optional    text check (name_optional is null or char_length(name_optional) between 1 and 40),
+  note             text check (note is null or char_length(note) <= 500),
+  status           text not null default 'open'
+                   check (status in ('open', 'claimed', 'done', 'closed')),
+  claimed_by_phone text check (claimed_by_phone is null or char_length(claimed_by_phone) between 7 and 20),
+  delegate_to_phone text check (delegate_to_phone is null or char_length(delegate_to_phone) between 7 and 20),
+  outcome_note     text check (outcome_note is null or char_length(outcome_note) <= 500),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+alter table public.peer_support_requests enable row level security;
+-- Phone-bound RLS, same pattern as push_tokens: the requester owns their rows
+-- (insert own; select/update own). Server routes read/write service-side (the
+-- admin queue lists/filters through the server role); nothing anonymous reads
+-- another phone's requests.
+drop policy if exists "peer support own insert" on public.peer_support_requests;
+create policy "peer support own insert" on public.peer_support_requests for insert
+  with check (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+drop policy if exists "peer support own select" on public.peer_support_requests;
+create policy "peer support own select" on public.peer_support_requests for select
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+drop policy if exists "peer support own update" on public.peer_support_requests;
+create policy "peer support own update" on public.peer_support_requests for update
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create index if not exists idx_peer_support_status on public.peer_support_requests (status, created_at desc);
+create index if not exists idx_peer_support_phone on public.peer_support_requests (phone, created_at desc);
+comment on table public.peer_support_requests is
+  'One-tap peer-support requests (phone identity). Queue persists server-side; '
+  'admin push goes ONLY to the two roster admins via push_tokens (never 911, '
+  'never SMS). Phone-bound RLS like push_tokens/trusted_peers.';
