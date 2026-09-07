@@ -10,7 +10,7 @@ import { useAuth } from "~/lib/auth";
 import { Button, Card, LocationOnceButton, useToasts } from "~/components/ui";
 import { getHomeStats } from "~/lib/server";
 import type { DataSource } from "~/lib/server";
-import { MoonBlanketIcon } from "~/lib/icons";
+import { MoonBlanketIcon, PersonIcon } from "~/lib/icons";
 
 /* Time-aware greeting — computed client-side so SSR never mismatches (calm default first). */
 function Greeting() {
@@ -191,11 +191,29 @@ function HomePage() {
             height={160}
             className="h-40 w-auto object-contain"
           />
-          <p className="mt-1 text-center text-small font-medium text-sg-ink-soft">by MPRCC — Marin Peer Recovery Community Collective</p>
+          <p className="mt-1 text-center text-small font-medium text-sg-ink-soft">by MPRCC — Marin Peer Resource Community Collective</p>
         </div>
         <Greeting />
 
         <HeadsUpCard />
+
+        <Card className="border-sg-sage/60 bg-sg-sage-wash/60">
+          <div className="flex items-start gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-sg-sage text-white" aria-hidden>
+              <PersonIcon size={24} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-h2">Talk to MPRCC</h2>
+              <p className="mt-1 text-body text-sg-ink">
+                Request support from MPRCC&apos;s peer team — a real person will reach out to you.
+                You&apos;re in control: nothing is sent until you tap, and nothing goes to police or any agency.
+              </p>
+              <Link to="/peer-support" className="mt-3 block">
+                <Button full>Request peer support</Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
 
         <div className="flex flex-col gap-2">
           <Link to="/help" className="block">
@@ -209,11 +227,6 @@ function HomePage() {
           <Link to="/alerts/new" className="block">
             <Button variant="secondary" full>
               Get help from my people
-            </Button>
-          </Link>
-          <Link to="/peer-support" className="block">
-            <Button variant="secondary" full>
-              Request peer support
             </Button>
           </Link>
           {signedIn ? (
