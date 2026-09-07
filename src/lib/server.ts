@@ -1027,11 +1027,15 @@ export const listAlertsFor = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ rows: AlertRow[]; source: AlertSource }> => {
     const phone = data.phone;
     try {
+      // Roster/hometeam match on the last 10 digits (roster stores 11-digit
+      // with the leading 1; push_tokens/app send 10-digit) — owner bug
+      // 2026-09-07, fixed here + in the DB sg_norm_phone.
+      const key10 = phone.replace(/[^0-9]/g, "").slice(-10);
       const who = (await sql()`
         select
-          coalesce((select bool_or(active and role = 'admin') from public.outreach_roster where phone = ${phone}), false) as is_admin,
-          coalesce((select bool_or(active) from public.outreach_roster where phone = ${phone}), false) as is_staff,
-          coalesce((select bool_or(status = 'active') from public.hometeam_members where phone = ${phone}), false) as is_hometeam`
+          coalesce((select bool_or(active and role = 'admin') from public.outreach_roster where substring(phone from length(phone) - 9) = ${key10}), false) as is_admin,
+          coalesce((select bool_or(active) from public.outreach_roster where substring(phone from length(phone) - 9) = ${key10}), false) as is_staff,
+          coalesce((select bool_or(status = 'active') from public.hometeam_members where substring(phone from length(phone) - 9) = ${key10}), false) as is_hometeam`
       ) as unknown as Array<{ is_admin: boolean; is_staff: boolean; is_hometeam: boolean }>;
       const viewer = { phone, staff: Boolean(who[0]?.is_staff), admin: Boolean(who[0]?.is_admin), hometeam: Boolean(who[0]?.is_hometeam) };
       const rows = (await sql()`
@@ -1258,10 +1262,12 @@ export const logNeed = createServerFn({ method: "POST" })
     const { items, note, pickupPreference, neighborPhone, neighborName, outreachPhone, visibility } = data;
     try {
       // Outreach-on-behalf path: staff phone must match the live roster (phone
-      // identity, server-verified — no client trust).
+      // identity, server-verified — no client trust). Last-10-digit match
+      // (owner bug 2026-09-07): roster stores 11-digit.
+      const staffKey = outreachPhone.replace(/[^0-9]/g, "").slice(-10);
       const staffRows = (await sql()`
         select display_name from public.outreach_roster
-        where phone = ${outreachPhone} and active limit 1`) as unknown as Array<{ display_name: string }>;
+        where substring(phone from length(phone) - 9) = ${staffKey} and active limit 1`) as unknown as Array<{ display_name: string }>;
       const isStaff = staffRows.length > 0;
       // Non-staff phones may only create open needs — privacy(assign_only/private)
       // choices are enforced server-side, never by hiding a button.
@@ -1351,8 +1357,11 @@ export const isOutreachPhone = createServerFn({ method: "GET" })
     const { phone } = data;
     if (!phone) return { isOutreach: false, source: "db" };
     try {
+      // Last-10-digit match (owner bug 2026-09-07): roster stores 11-digit.
+      const key10 = phone.replace(/[^0-9]/g, "").slice(-10);
       const rows = (await sql()`
-        select 1 from public.outreach_roster where phone = ${phone} and active limit 1
+        select 1 from public.outreach_roster
+        where substring(phone from length(phone) - 9) = ${key10} and active limit 1
       `) as unknown as Array<Record<string, unknown>>;
       return { isOutreach: rows.length > 0, source: "db" };
     } catch {
@@ -1375,9 +1384,11 @@ export const isAdminPhone = createServerFn({ method: "GET" })
     const { phone } = data;
     if (!phone) return { isAdmin: false, source: "db" };
     try {
+      // Last-10-digit match (owner bug 2026-09-07): roster stores 11-digit.
+      const key10 = phone.replace(/[^0-9]/g, "").slice(-10);
       const rows = (await sql()`
         select 1 from public.outreach_roster
-        where phone = ${phone} and active and role = 'admin'
+        where substring(phone from length(phone) - 9) = ${key10} and active and role = 'admin'
         limit 1`) as unknown as Array<Record<string, unknown>>;
       return { isAdmin: rows.length > 0, source: "db" };
     } catch {
@@ -1424,9 +1435,11 @@ export const addResource = createServerFn({ method: "POST" })
       }
       try {
         // THE GATE: admin check happens here, server-side, before the insert.
+        // Last-10-digit match (owner bug 2026-09-07): roster stores 11-digit.
+        const adminKey = phone.replace(/[^0-9]/g, "").slice(-10);
         const adminRows = (await sql()`
           select 1 from public.outreach_roster
-          where phone = ${phone} and active and role = 'admin'
+          where substring(phone from length(phone) - 9) = ${adminKey} and active and role = 'admin'
           limit 1`) as unknown as Array<Record<string, unknown>>;
         if (adminRows.length === 0) {
           return {

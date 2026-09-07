@@ -477,7 +477,7 @@ returns boolean language sql stable security definer set search_path = public
 as $sgfn$
   select coalesce(bool_or(role = 'admin'), false)
   from public.outreach_roster
-  where phone = public.sg_norm_phone(p_phone) and active;
+  where public.sg_norm_phone(phone) = public.sg_norm_phone(p_phone) and active;
 $sgfn$;
 
 create or replace function public.is_roster_staff(p_phone text)
@@ -485,7 +485,7 @@ returns boolean language sql stable security definer set search_path = public
 as $sgfn$
   select coalesce(bool_or(active), false)
   from public.outreach_roster
-  where phone = public.sg_norm_phone(p_phone);
+  where public.sg_norm_phone(phone) = public.sg_norm_phone(p_phone);
 $sgfn$;
 
 -- ---------------------------------------------------------------------------
@@ -644,7 +644,17 @@ create policy "checkin peer view fuzzed only"     on public.check_ins for select
 create or replace function public.sg_norm_phone(raw text)
 returns text language sql immutable set search_path = public
 as $sgfn$
-  select regexp_replace(coalesce(raw, ''), '[^0-9]', '', 'g')
+  -- Digits-only, and unify the North-American leading 1: the roster + alerts
+  -- store 11-digit (14158797940) while the app sends 10-digit (4158797940).
+  -- The canonical stored form is 10-digit; an 11-digit US number keeps its
+  -- leading 1 stripped here so every phone-key comparison matches regardless
+  -- of which form the caller used. (Owner bug 2026-09-07.)
+  select case
+    when length(regexp_replace(coalesce(raw, ''), '[^0-9]', '', 'g')) = 11
+         and left(regexp_replace(coalesce(raw, ''), '[^0-9]', '', 'g'), 1) = '1'
+    then right(regexp_replace(coalesce(raw, ''), '[^0-9]', '', 'g'), 10)
+    else regexp_replace(coalesce(raw, ''), '[^0-9]', '', 'g')
+  end
 $sgfn$;
 
 -- "Join the HomeTeam": name + phone + explicit consent. Idempotent — joining

@@ -39,9 +39,12 @@ export async function outreachIdentity(phone: string): Promise<OutreachIdentity>
   const p = normOutreachPhone(phone);
   if (!p) return { phone: p, role: null, name: null };
   try {
+    // Last-10-digit match (owner bug 2026-09-07): roster stores 11-digit
+    // (14158797940) while the app sends 10-digit (4158797940).
+    const key10 = p.slice(-10);
     const rows = (await sql()`
       select display_name, role from public.outreach_roster
-      where phone = ${p} and active
+      where substring(phone from length(phone) - 9) = ${key10} and active
       limit 1`) as unknown as Array<{ display_name: string; role: string }>;
     const row = rows[0];
     if (!row) return { phone: p, role: null, name: null };
