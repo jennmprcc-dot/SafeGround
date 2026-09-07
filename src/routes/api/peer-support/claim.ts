@@ -35,6 +35,8 @@ async function claimRequest(c: { request: Request }) {
   const caller = normPhone(body.phone ?? c.request.headers.get("x-sg-phone"));
   const id = String(body.id ?? "").trim().slice(0, 60);
   const action = String(body.action ?? "").trim().toLowerCase();
+  // isRosterAdmin compares the last 10 digits (roster stores 11-digit with the
+  // leading 1; the app sends 10-digit) — owner bug 2026-09-07, fixed in pushServer.
   if (!(await isRosterAdmin(caller))) {
     return Response.json(
       { ok: false, error: "This queue is for the MPRCC outreach team." },

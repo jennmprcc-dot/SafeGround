@@ -73,7 +73,18 @@ async function sendPush(c: { request: Request }) {
   }
   const sent = results.filter((r) => r.status === "sent").length;
   const unregistered = results.filter((r) => r.status === "unregistered").length;
-  return Response.json({ ok: sent > 0, results, sent, unregistered, validateOnly });
+  // Top-level error carries the first real failure detail (corrupt key, auth
+  // exchange, transport) so the UI can say exactly what happened instead of a
+  // silent/blank failure. Per-token results[].detail remains the full trace.
+  const firstError = results.find((r) => r.status === "error")?.detail;
+  return Response.json({
+    ok: sent > 0,
+    results,
+    sent,
+    unregistered,
+    validateOnly,
+    ...(sent === 0 && firstError ? { error: firstError } : {}),
+  });
 }
 
 export const Route = createFileRoute("/api/push/send")({

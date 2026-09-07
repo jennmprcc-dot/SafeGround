@@ -72,14 +72,25 @@ function PushTestPage() {
           validateOnly,
         }),
       });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        results?: Array<{ status: string; detail?: string }>;
+      };
       setResult(json);
       const ok = json.ok === true;
-      setMessage(
-        ok
-          ? "The notification was handed to FCM — it should appear on this device now."
-          : (json.error as string) ?? "The send didn't complete.",
-      );
+      // Honest failure copy: per-token detail (results[].detail) is the source
+      // of truth — the corrupt-key case reads clearly instead of a blank fail.
+      if (ok) {
+        setMessage("The notification was handed to FCM — it should appear on this device now.");
+      } else {
+        const detail = json.results?.find((r) => r.status === "error")?.detail ?? json.error;
+        setMessage(
+          /key is corrupt/i.test(detail ?? "")
+            ? "The Firebase service-account key is corrupt — an admin needs to re-save it in Settings, then try again."
+            : (detail || json.error) ?? "The send didn't complete.",
+        );
+      }
       push({ kind: ok ? "success" : "error", message: ok ? "Test notification sent." : "Test send failed — see the note." });
       setStep("done");
     } catch (e) {

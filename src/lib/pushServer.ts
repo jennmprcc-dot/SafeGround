@@ -61,13 +61,26 @@ export function pushPublicConfig(): PushPublicConfig {
  * Jenn + Bambi. These are the ONLY phones that path may ever target. */
 export const PEER_SUPPORT_ADMIN_PHONES = ["14158797940", "14155249090"] as const;
 
-/** Is this phone an ACTIVE roster admin? Server-side gate (never client trust). */
+/* ── Phone-key normalization (owner bug 2026-09-07: 10-digit app value vs
+ * 11-digit roster row) ──────────────────────────────────────────────
+ * outreach_roster.phone stores 11-digit WITH country code (14158797940) while
+ * push_tokens.phone and every app call send 10-digit (4158797940). The last
+ * 10 digits are the stable identity — compare that on BOTH sides so admin
+ * checks, token lookups, and gateSend all match regardless of country code. */
+export const phoneKey = (raw: unknown): string => {
+  const digits = String(raw ?? "").replace(/[^0-9]/g, "");
+  return digits.slice(-10);
+};
+
+/** Is this phone an ACTIVE roster admin? Server-side gate (never client trust).
+ * Matches on the last 10 digits so 4158797940 == 14158797940. */
 export async function isRosterAdmin(phone: string): Promise<boolean> {
-  if (!phone) return false;
+  const key = phoneKey(phone);
+  if (!key) return false;
   try {
     const rows = (await sql()`
       select 1 from public.outreach_roster
-      where phone = ${phone} and active and role = 'admin'
+      where substring(phone from length(phone) - 9) = ${key} and active and role = 'admin'
       limit 1`) as unknown as Array<Record<string, unknown>>;
     return rows.length > 0;
   } catch {
@@ -88,17 +101,26 @@ interface CachedAccessToken {
 let tokenCache: CachedAccessToken | null = null;
 
 /**
- * Normalize a PEM private key via strict DER re-encode.
+ * Normalize a PEM private key.
  *
  * The saved secret's body contains a literal "{ " paste artifact mid-base64,
  * and Buffer.from(body, "base64") SILENTLY DROPS invalid base64 chars — which
  * corrupts the DER decode and makes the re-encoded PEM fail OpenSSL with
  * BAD_BASE64_DECODE. Fix: strip ALL non-base64 noise, rebuild correct padding
  * (the body must be a clean multiple of 4 with only trailing '=') BEFORE
- * decoding, then decode to DER (the true key bytes — immune to wrapping
- * mangling) and re-encode canonical 64-col PEM. NEVER logs any part of the key.
+ * decoding.
+ *
+ * FALLBACK (owner bug 2026-09-07): when the strict DER re-encode throws — the
+ * secret was truncated when pasted (BAD_BASE64_DECODE; the body decodes but is
+ * not a real DER key) — return the CLEANED body AS-IS (bare base64 with
+ * padding + PEM armor). `createPrivateKey` then falls back to its own DER
+ * sniffing; a truncated-but-decodable body either still works or reports the
+ * real remaining error to the send route, which surfaces it to the UI as
+ * "the key is corrupt — admin must re-save the Firebase service account".
+ * NEVER logs any part of the key.
  */
-export function normalizePrivateKey(raw: string): string {  if (!/BEGIN [A-Z ]+PRIVATE KEY/i.test(raw)) return raw.trim();
+export function normalizePrivateKey(raw: string): string {
+  if (!/BEGIN [A-Z ]+PRIVATE KEY/i.test(raw)) return raw.trim();
   const body = raw
     .replace(/\r?\n/g, "")
     .replace(/\\n/g, "")
@@ -110,10 +132,17 @@ export function normalizePrivateKey(raw: string): string {  if (!/BEGIN [A-Z ]+P
   const unpadded = body.replace(/=+$/, "");
   const padLen = (4 - (unpadded.length % 4)) % 4;
   const padded = unpadded + "=".repeat(padLen);
-  const der = Buffer.from(padded, "base64");
-  const b64 = der.toString("base64");
-  const lines = b64.match(/.{1,64}/g) ?? [];
-  return `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----\n`;
+  try {
+    const der = Buffer.from(padded, "base64");
+    const b64 = der.toString("base64");
+    const lines = b64.match(/.{1,64}/g) ?? [];
+    return `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----\n`;
+  } catch {
+    // Truncated/corrupt body: still return something createPrivateKey might
+    // salvage; if it can't, the REAL error (with the honest "key is corrupt"
+    // hint) surfaces through sendFcmMessage → /api/push/send → the test page.
+    return `-----BEGIN PRIVATE KEY-----\n${padded.match(/.{1,64}/g)?.join("\n") ?? padded}\n-----END PRIVATE KEY-----\n`;
+  }
 }
 
 /** Parse the SA JSON defensively. NEVER logs any field of the account. */
@@ -149,7 +178,15 @@ export async function getFcmAccessToken(): Promise<string> {
     exp,
   };
   const signingInput = `${b64u(JSON.stringify(header))}.${b64u(JSON.stringify(claims))}`;
-  const key = createPrivateKey(sa.private_key!);
+  let key: import("node:crypto").KeyObject;
+  try {
+    key = createPrivateKey(sa.private_key!);
+  } catch (e) {
+    // Almost always a pasted-corrupt service-account private key (BAD_BASE64_DECODE).
+    // Surface that honestly so the UI can tell the owner to re-save the secret.
+    const cause = e instanceof Error ? e.message.slice(0, 120) : "invalid key";
+    throw new Error(`Firebase service-account private key is corrupt (${cause}) — an admin needs to re-save the Firebase service account in Settings.`);
+  }
   const signature = createSign("RSA-SHA256").update(signingInput).sign(key, "base64url");
   const assertion = `${signingInput}.${signature}`;
   const res = await fetch(TOKEN_URL, {
@@ -223,17 +260,23 @@ export async function sendFcmMessage(msg: PushMessage): Promise<FcmSendResult> {
   return { to: masked, status: "error", detail };
 }
 
-/** Look up all registered tokens for a phone (digits-normalized). */
+/** Look up all registered tokens for a phone (digits-normalized to the last
+ * 10 — push_tokens.phone is stored 10-digit; roster/alert phones may lead with
+ * the 1 country code; both must match). */
 export async function tokensForPhone(phone: string): Promise<string[]> {
+  const key = phoneKey(phone);
+  if (!key) return [];
   const rows = (await sql()`
     select token from public.push_tokens
-    where phone = ${phone.replace(/[^0-9]/g, "")}
+    where substring(phone from length(phone) - 9) = ${key}
     order by updated_at desc
     limit 20`) as unknown as Array<{ token: string }>;
   return rows.map((r) => r.token);
 }
 
-/** Which phone owns a token (for token-only sends). Empty when unknown. */
+/** Which phone owns a token (for token-only sends). Empty when unknown.
+ * Returns the row's stored (possibly 10-digit) phone — gateSend compares the
+ * LAST 10 DIGITS, so the display form does not matter for matching. */
 export async function phoneForToken(token: string): Promise<string> {
   const rows = (await sql()`
     select phone from public.push_tokens where token = ${token} limit 1
@@ -262,15 +305,15 @@ export interface GateCheck {
   reason?: string;
 }
 export async function gateSend(callerPhone: string, targetPhone: string, token?: string): Promise<GateCheck> {
-  const caller = (callerPhone || "").replace(/[^0-9]/g, "");
-  const target = (targetPhone || "").replace(/[^0-9]/g, "");
+  const caller = phoneKey(callerPhone);
+  const target = phoneKey(targetPhone);
   if (!caller) return { allowed: false, reason: "caller phone required" };
   if (token) {
-    const owner = await phoneForToken(token);
-    if (owner === caller) return { allowed: true };
+    const owner = phoneKey(await phoneForToken(token));
+    if (owner && owner === caller) return { allowed: true };
   }
   if (target && target === caller) return { allowed: true };
-  const admin = await isRosterAdmin(caller);
+  const admin = await isRosterAdmin(callerPhone);
   if (admin) return { allowed: true };
   return { allowed: false, reason: "You can only push to your own phone, or (as MPRCC admin) to roster recipients." };
 }

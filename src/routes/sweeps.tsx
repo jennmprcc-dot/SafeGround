@@ -31,6 +31,7 @@ import type { SweepRow, DataSource } from "~/lib/server";
 import { approxDistanceMi, demoNearMePoint } from "~/lib/data";
 import { BellMoonIcon, CheckIcon, MapPinIcon, PenIcon, CheckCircleIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
+import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
 /* ── pin visuals (DESIGN_SYSTEM §4.4) ───────────────────────────── */
 const PIN_STYLE: Record<string, { shape: string; color: string }> = {
@@ -175,6 +176,7 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
   const [note, setNote] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [done, setDone] = useState<SubmitConfirmState | null>(null);
 
   // Reset when the sheet opens.
   useEffect(() => {
@@ -184,6 +186,7 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
       setHappened(true);
       setNote("");
       setPublishing(false);
+      setDone(null);
     }
   }, [open]);
 
@@ -206,13 +209,14 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
     setPublishing(true);
     try {
       const res = await reportSweep({ data: { lat: point.lat, lng: point.lng, note, happened, userId: signedIn ? demoDeviceId(displayName) : "" } });
-      push({ kind: "success", message: res.source === "db" ? "Thanks — your report helps neighbors." : "Draft saved — will sync when the connection returns." });
+      // Persistent confirmation (owner-directed): the sheet flips to a success
+      // state that STAYS — not just a toast. Sweeps city list + outreach queue
+      // both share the row; there is no separate team push channel for reports.
+      setDone({ saved: res.source === "db", kind: res.source === "db" ? "saved" : "draft" });
       onDone(true, res.source);
-      onClose();
     } catch {
-      push({ kind: "error", message: "No connection right now — your draft is saved. Try again when you can." });
+      setDone({ saved: false, kind: "draft", line: "No connection right now — your draft is saved. Try again when you can." });
       onDone(false, "demo");
-      onClose();
     } finally {
       setPublishing(false);
     }
@@ -224,6 +228,20 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
     <>
       <BottomSheet open={open} onClose={onClose} title="Report what you see">
         <div className="flex flex-col gap-4 pb-2">
+          {done ? (
+            <>
+              <SubmitConfirm state={done} />
+              <p className="text-small text-sg-ink-soft">
+                {done.kind === "draft"
+                  ? "You can close this — the draft stays on this phone until you're connected."
+                  : "It's now on the sweeps list for neighbors and the outreach team."}
+              </p>
+              <Button variant="quiet" full onClick={onClose}>
+                Close
+              </Button>
+            </>
+          ) : (
+            <>
           <p className="text-small text-sg-ink-soft">Step {needsSignIn ? 2 : step} of 3 — no rush, and no photos needed. Words are enough.</p>
 
           {step === 1 && (
@@ -309,6 +327,8 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
                 {publishing ? "Sending…" : "Publish heads-up"}
               </Button>
               <Button variant="quiet" full onClick={() => setStep(2)}>Back</Button>
+            </>
+          )}
             </>
           )}
         </div>

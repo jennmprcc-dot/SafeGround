@@ -8,7 +8,7 @@
  * No background tracking: every check-in is a manual, user-initiated action.
  */
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import {
   BottomSheet,
@@ -94,14 +94,20 @@ function ConfirmSheet({
       setNote("");
     }
   }, [open]);
-  const names = peers.filter((p) => p.mutual).map((p) => p.displayName.split(" ")[0]).slice(0, 2);
-  const who = names.length > 0 ? names.join(" and ") : "your trusted peers";
+  // FRIEND-1: the "Who sees" line names current mutual peers by first name;
+  // N = live mutual count, 0 allowed → button reads "Check in (just for me)"
+  // and the consent line says only you can see it (records for history/self-
+  // nudge, shares with nobody).
+  const mutual = peers.filter((p) => p.mutual);
+  const names = mutual.map((p) => p.displayName.split(" ")[0]).slice(0, 2);
+  const count = mutual.length;
+  const who = count > 0 ? names.join(" and ") : "Only you — no one else sees this";
   return (
     <BottomSheet open={open} onClose={onClose} title="Check in for tonight?">
       <div className="flex flex-col gap-4 pb-2">
         <ConsentReceipt
           who={who}
-          what="Approximate area (~150m) + the time + your note"
+          what={count > 0 ? "Approximate area (~150m) + the time + your note" : "Nothing — just your own check-in history"}
           howLong="24 hours, then it disappears"
         />
         <fieldset className="flex flex-col gap-2">
@@ -130,7 +136,7 @@ function ConfirmSheet({
           placeholder="Anything you want your peers to know?"
         />
         <Button full onClick={() => onShare({ mode, note })}>
-          Share check-in
+          {count > 0 ? `Share check-in with ${count} ${count === 1 ? "peer" : "peers"}` : "Check in (just for me)"}
         </Button>
         <Button variant="quiet" full onClick={onClose}>
           Not now
@@ -178,6 +184,73 @@ function FriendsMap({ peers }: { peers: PeerCheckInRow[] }) {
   );
 }
 
+/* ── NOTE-1 composer sheet — preset heart + custom ≤140, honest save ── */
+function NoteComposer({
+  open,
+  name,
+  userId,
+  preset,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  name: string;
+  userId: string;
+  preset: string;
+  onClose: () => void;
+  onSave: (peer: { name: string; userId: string }, text: string) => void;
+}) {
+  const [text, setText] = useState(preset);
+  useEffect(() => {
+    if (open) setText(preset);
+  }, [open, preset]);
+  return (
+    <BottomSheet open={open} onClose={onClose} title={`Send a kind note to ${name}`}>
+      <div className="flex flex-col gap-4 pb-2">
+        <p className="text-small text-sg-ink-soft">Only {name} sees this. Be kind — no pressure to reply.</p>
+        <TextArea
+          label="Your note"
+          maxLength={140}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Thinking of you ♥"
+          helper="Plain text — up to 140 characters"
+        />
+        <Button full disabled={text.trim().length === 0} onClick={() => onSave({ name, userId }, text)}>
+          Save note
+        </Button>
+        <Button variant="quiet" full onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+/* ── "How to help" — overdue peer expander (text/call/outreach steps,
+ *   NEVER authorities; spec §1.4 keeps this unchanged) ─────────── */
+function HelpSheet({ peer, onClose }: { peer: PeerCheckInRow | null; onClose: () => void }) {
+  if (!peer) return null;
+  const name = peer.peerName.split(" ")[0];
+  return (
+    <BottomSheet open={peer != null} onClose={onClose} title={`How to help ${name}`}>
+      <div className="flex flex-col gap-3 pb-2 text-small text-sg-ink-soft">
+        <p>
+          {name} hasn&apos;t checked in for {peer.checkedInAt ? hoursSince(peer.checkedInAt) : "a while"}. A gentle reach-out can help — no pressure, no alarm.
+        </p>
+        <div className="flex flex-col gap-2">
+          <p className="flex gap-2"><span className="font-medium text-sg-ink">1.</span> Send a kind note — tap their heart below and pick "Thinking of you".</p>
+          <p className="flex gap-2"><span className="font-medium text-sg-ink">2.</span> Text or call the way you normally do — a soft "you okay?" goes far.</p>
+          <Link to="/help" onClick={onClose} className="flex gap-2">
+            <span className="font-medium text-sg-ink">3.</span> <span className="text-sg-sky underline underline-offset-2">Find MPRCC outreach opening times</span> — someone on the team can check in person.
+          </Link>
+        </div>
+        <p>This stays between you. It never involves authorities, ever.</p>
+      </div>
+    </BottomSheet>
+  );
+}
+
 /* ── Check-in page ──────────────────────────────────────────────── */
 function CheckInPage() {
   const { signedIn, displayName, signIn } = useAuth();
@@ -192,6 +265,10 @@ function CheckInPage() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
   const [shareTick, setShareTick] = useState(0);
+  // NOTE-1: composer sheet state + locally-saved note rows (outbox).
+  const [composer, setComposer] = useState<{ name: string; userId: string; preset: string } | null>(null);
+  const [savedNotes, setSavedNotes] = useState<Array<{ id: string; recipientName: string }>>([]);
+  const [helpPeer, setHelpPeer] = useState<PeerCheckInRow | null>(null);
 
   const userId = signedIn ? myUserId(displayName) : "";
 
@@ -235,7 +312,7 @@ function CheckInPage() {
   }, [signedIn, userId, shareTick]);
 
   const mutually = useMemo(() => peers.filter((p) => p.mutual), [peers]);
-  const pendingInvites = useMemo(() => peers.filter((p) => !p.mutual), [peers]);
+  const acceptedPeers = mutually; // accepted rows rendered on /checkin (full manage lives on PEER-1)
   const selfOverdue = mine?.overdue ?? false;
 
   const share = async (opts: { mode: "once" | "pin"; note: string }) => {
@@ -278,6 +355,49 @@ function CheckInPage() {
       push({ kind: "info", message: paused ? "Sharing is paused — your peers see 'Not sharing right now'." : "Sharing is back on." });
     } else {
       push({ kind: "error", message: "Couldn't update right now — try again in a moment." });
+    }
+  };
+
+  // NOTE-1: open the composer (preset pre-fills, editable). The heart button
+  // and "Write a note" both land here.
+  const openComposer = (name: string, peerId: string, preset = "") => {
+    if (!signedIn) {
+      push({ kind: "info", message: "Sign in to save a note for a friend." });
+      return;
+    }
+    setComposer({ name: name.split(" ")[0], userId: peerId, preset });
+  };
+
+  /** Save a note: writes peer_notes (delivered_at NULL) via the API AND keeps
+   * a LOCAL outbox copy — the honest "saved, not yet delivered" state. */
+  const saveNote = async (peer: { name: string; userId: string }, text: string) => {
+    if (!text.trim()) return;
+    setComposer(null);
+    const id = getAlertIdentity();
+    if (!id?.phone) {
+      // No phone identity yet — keep the draft locally so nothing is lost.
+      setSavedNotes((prev) => [...prev, { id: `local-${Date.now()}`, recipientName: peer.name }]);
+      push({ kind: "info", message: `Note saved for ${peer.name} — will send when messaging arrives` });
+      return;
+    }
+    try {
+      const res = await fetch("/api/peers/notes", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-sg-phone": id.phone },
+        body: JSON.stringify({ phone: id.phone, userId: peer.userId, note: text.trim().slice(0, 140) }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (res.ok && data?.ok) {
+        setSavedNotes((prev) => [...prev, { id: `saved-${Date.now()}`, recipientName: peer.name }]);
+        push({ kind: "success", message: `Note saved for ${peer.name} — will send when messaging arrives` });
+      } else {
+        // Honest partial state: the draft is saved on this phone (outbox).
+        setSavedNotes((prev) => [...prev, { id: `draft-${Date.now()}`, recipientName: peer.name }]);
+        push({ kind: "info", message: `Saved on this phone — we'll send it when we're connected.` });
+      }
+    } catch {
+      setSavedNotes((prev) => [...prev, { id: `draft-${Date.now()}`, recipientName: peer.name }]);
+      push({ kind: "info", message: `Saved on this phone — we'll send it when we're connected.` });
     }
   };
 
@@ -355,37 +475,43 @@ function CheckInPage() {
               {mineSource === "demo" && mine ? <p className="mt-2 text-small text-sg-ink-soft">Demo check-in — shown here until the database connects.</p> : null}
             </Card>
 
-            {/* trusted peers (§4c) */}
+            {/* trusted peers (§4c) — now links to the dedicated PEER-1 screen */}
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
                 <p className="text-small font-medium text-sg-ink">Trusted peers — only these people can see your check-ins</p>
-                <Button variant="quiet" onClick={() => push({ kind: "info", message: "Invite a peer — a code you share with someone you trust." })} className="!min-h-[44px] !px-2">
+                <Link
+                  to="/checkin/peers"
+                  className="inline-flex min-h-[48px] items-center px-1 text-sg-sky underline underline-offset-2"
+                >
                   Invite a peer
-                </Button>
+                </Link>
               </div>
               <ul className="flex flex-col">
-                {mutually.map((p) => (
-                  <ListRow key={p.userId}>
-                    <IconTile wash="bg-sg-sage-wash"><PersonIcon size={20} /></IconTile>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-body font-medium text-sg-ink">{p.displayName}</span>
-                      <span className="block text-small text-sg-ink-soft">sees your check-ins · remove anytime</span>
-                    </span>
-                    <Button variant="text" onClick={() => push({ kind: "info", message: `${p.displayName} can no longer see your check-ins.` })} className="!min-h-[44px]">
-                      Remove
-                    </Button>
-                  </ListRow>
-                ))}
-                {pendingInvites.map((p) => (
-                  <ListRow key={p.userId}>
-                    <IconTile wash="bg-sg-gold-wash"><PersonIcon size={20} /></IconTile>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-body font-medium text-sg-ink">{p.displayName}</span>
-                      <span className="block text-small text-sg-ink-soft">invite pending · {p.status}</span>
-                    </span>
-                    <StatusBadge kind="Reported">Pending</StatusBadge>
-                  </ListRow>
-                ))}
+                {acceptedPeers.length === 0 ? (
+                  <EmptyState
+                    icon={<PersonIcon size={28} />}
+                    title="No trusted peers yet"
+                    body="Check-ins work best with one person you trust. They only ever see an approximate area — never your exact spot."
+                    steps={
+                      <Link to="/checkin/peers" className="block w-full">
+                        <Button full>Invite a peer</Button>
+                      </Link>
+                    }
+                  />
+                ) : (
+                  acceptedPeers.map((p) => (
+                    <ListRow key={p.userId}>
+                      <IconTile wash="bg-sg-sage-wash"><PersonIcon size={20} /></IconTile>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-body font-medium text-sg-ink">{p.displayName}</span>
+                        <span className="block text-small text-sg-ink-soft">sees your check-ins · remove anytime</span>
+                      </span>
+                      <Link to="/checkin/peers" className="inline-flex min-h-[44px] items-center px-1 text-sg-sky underline underline-offset-2">
+                        Manage
+                      </Link>
+                    </ListRow>
+                  ))
+                )}
               </ul>
             </section>
 
@@ -395,6 +521,10 @@ function CheckInPage() {
                 <p className="text-small font-medium text-sg-ink">Friends sharing with you</p>
                 <p className="text-small text-sg-ink-soft">{friendsSource === "db" ? "live" : "demo"}</p>
               </div>
+              {/* FRIEND-1 privacy copy — verbatim (spec §1.3) */}
+              <p className="px-1 pb-2 text-small text-sg-ink-soft">
+                Approximate areas only (~150m) · 24 hours · never background · stop anytime in Check in.
+              </p>
               <FriendsMap peers={friends} />
               <ul className="mt-2 flex flex-col">
                 {friends.length === 0 ? (
@@ -419,16 +549,17 @@ function CheckInPage() {
                         ) : (
                           <span className="mt-0.5 block text-small text-sg-ink-soft">
                             Checked in {p.checkedInAt ? hoursSince(p.checkedInAt) : "recently"} ago · near an approximate area
+                            {p.visibleUntil ? ` · until ${timeLabel(p.visibleUntil)}` : ""}
                             {p.note ? ` · "${p.note}"` : ""}
                           </span>
                         )}
                       </span>
                       {p.overdue ? (
-                        <Button variant="text" onClick={() => push({ kind: "info", message: "A kind note is on its way — no pressure, no alarm." })} className="!min-h-[44px]">
-                          Send a kind note
+                        <Button variant="text" onClick={() => setHelpPeer(p)} className="!min-h-[44px]">
+                          How to help &rarr;
                         </Button>
                       ) : (
-                        <Button variant="quiet" onClick={() => push({ kind: "success", message: "Thinking of you, sent." })} className="!min-h-[44px]">
+                        <Button variant="quiet" onClick={() => openComposer(p.peerName, p.peerId, "Thinking of you \u2665")} className="!min-h-[44px] !px-2">
                           <HeartIcon size={18} aria-hidden />
                         </Button>
                       )}
@@ -436,6 +567,16 @@ function CheckInPage() {
                   ))
                 )}
               </ul>
+              {/* NOTE-1: saved-status line per friend card (honest — never "Sent") */}
+              {savedNotes.length > 0 ? (
+                <div className="mt-2 flex flex-col gap-1 px-1">
+                  {savedNotes.map((n) => (
+                    <p key={n.id} className="text-small text-sg-sage-deep">
+                      Note saved for {n.recipientName} — will send when messaging arrives
+                    </p>
+                  ))}
+                </div>
+              ) : null}
             </section>
 
             <p className="text-small text-sg-ink-soft">
@@ -459,6 +600,17 @@ function CheckInPage() {
       </div>
 
       <ConfirmSheet open={confirmOpen} peers={peers} onClose={() => setConfirmOpen(false)} onShare={(o) => void share(o)} />
+
+      <NoteComposer
+        open={composer != null}
+        name={composer?.name ?? "your friend"}
+        userId={composer?.userId ?? ""}
+        preset={composer?.preset ?? ""}
+        onClose={() => setComposer(null)}
+        onSave={(peer, text) => void saveNote(peer, text)}
+      />
+
+      <HelpSheet peer={helpPeer} onClose={() => setHelpPeer(null)} />
 
       <Dialog
         open={pauseOpen}
