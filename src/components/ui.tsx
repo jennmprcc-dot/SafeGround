@@ -428,7 +428,17 @@ export function ChipGrid<T extends string>({
   );
 }
 
-export function SearchField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+export function SearchField({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit?: () => void;
+  placeholder?: string;
+}) {
   return (
     <div className="relative">
       <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sg-ink-soft" aria-hidden>
@@ -438,6 +448,16 @@ export function SearchField({ value, onChange, placeholder }: { value: string; o
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && onSubmit) {
+            e.preventDefault();
+            try {
+              onSubmit();
+            } catch {
+              /* analytics submit must never break search */
+            }
+          }
+        }}
         placeholder={placeholder ?? "Search name or place…"}
         aria-label="Search resources by name or place"
         className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card pl-12 pr-4 text-body text-sg-ink outline-none transition-colors placeholder:text-sg-ink-soft/70 focus:border-sg-ink"

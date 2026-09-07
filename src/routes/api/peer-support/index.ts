@@ -17,6 +17,9 @@ import {
   normPhone,
   peerSupportTableReady,
 } from "~/lib/peerSupportServer";
+import {
+  insertAnalyticsEvent,
+} from "~/lib/analytics/server";
 
 async function createRequest(c: { request: Request }) {
   let body: { phone?: unknown; name?: unknown; note?: unknown } = {};
@@ -47,6 +50,15 @@ async function createRequest(c: { request: Request }) {
       created_at: Date;
     }>;
     const row = rows[0];
+    // Analytics (anonymous, fire-and-forget): the request REALLY landed in
+    // the DB above, so count it. Category stays null — the form has no
+    // category field (owner decision pending). A logging failure must never
+    // break the request itself.
+    try {
+      await insertAnalyticsEvent("peer_support_request", { status: "open" });
+    } catch {
+      /* silent — the request already succeeded */
+    }
     const { notifiedPhones, tokensSent } = await fanOutToAdmins(name);
     return Response.json({
       ok: true,
