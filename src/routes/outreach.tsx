@@ -21,6 +21,7 @@ import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/component
 import { getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
+import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
 type Tab = "sweeps" | "needs" | "alerts" | "more";
 
@@ -109,6 +110,8 @@ function OutreachPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [clearFor, setClearFor] = useState<string | null>(null);
   const [outcome, setOutcome] = useState("");
+  /** Persistent on-screen confirmation of dashboard actions (owner-directed 2026-09-07). */
+  const [actionConfirmed, setActionConfirmed] = useState<SubmitConfirmState | null>(null);
 
   const load = useCallback(async (p: string) => {
     setState({ kind: "loading" });
@@ -146,10 +149,27 @@ function OutreachPage() {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && data?.ok) {
+        // Persistent on-screen confirmation (owner-directed): the action LANDED.
+        // Dashboard writes are record-keeping; there's no live push to a second
+        // team beyond what the alert itself already did — "the team has it" is
+        // honest without overclaiming a push.
+        setActionConfirmed({
+          saved: true,
+          kind: "saved",
+          line:
+            kind === "alert" && action === "clear"
+              ? "Saved — alert cleared as staff, outcome recorded."
+              : kind === "need" && action === "claim"
+                ? "Saved — claimed. The record shows you on it."
+                : kind === "need" && action === "deliver"
+                  ? "Saved — marked delivered."
+                  : "Saved — the dashboard is updated.",
+        });
         setClearFor(null);
         setOutcome("");
         await load(phone);
       } else {
+        setActionConfirmed({ saved: false, kind: "draft", line: data?.error ?? "That didn't go through — nothing changed." });
         setActionError(data?.error ?? "That didn't go through — nothing changed.");
       }
     } catch {
@@ -213,6 +233,17 @@ function OutreachPage() {
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
             {actionError}
           </p>
+        ) : null}
+
+        {actionConfirmed ? (
+          <div className="flex flex-col gap-2">
+            <SubmitConfirm state={actionConfirmed} />
+            <p className="text-small text-sg-ink-soft">
+              {actionConfirmed.kind === "draft"
+                ? "Nothing changed — you can try again when you're ready."
+                : "The record is saved — the team sees the update on their next load."}
+            </p>
+          </div>
         ) : null}
 
         {phone.length < 10 ? (

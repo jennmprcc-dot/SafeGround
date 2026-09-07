@@ -52,6 +52,8 @@ export interface FcmStatus {
   token: string | null;
   registered: boolean;
   message: string;
+  /** Honest reason when getToken() returned empty — surfaced on /push-test. */
+  emptyTokenReason?: string;
 }
 
 /* ── script loader (Promise, deduped, cross-origin safe) ─────────── */
@@ -81,22 +83,43 @@ export function pushSupported(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
 }
 
-/* ── service worker registration (browser-only file, public dir) ───
+/**
+ * Wait until the firebase messaging service worker is actually ACTIVE, then
+ * return its registration. navigator.serviceWorker.ready resolves as soon as a
+ * registration exists — on iOS Safari that can be BEFORE the worker finishes
+ * activating, and getToken() returns "" with no error. Waiting on
+ * installing/waiting → active closes the "no token lands" bug (backlog
+ * fe17dcaf): the token is only requested from a worker that can receive it.
  * Real errors SURFACE (never swallowed): /push-test shows the message so a
- * broken worker is diagnosable instead of silently returning null. */
+ * broken worker is diagnosable instead of silently returning null.
+ */
 export async function registerPushSW(): Promise<ServiceWorkerRegistration> {
   if (!("serviceWorker" in navigator)) throw new Error("This browser doesn't support service workers.");
   if (!("PushManager" in window)) throw new Error("Push isn't available until SafeGround is installed to the home screen.");
-  if (navigator.serviceWorker.controller) return await navigator.serviceWorker.ready;
   let reg: ServiceWorkerRegistration;
-  try {
-    reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-  } catch (e) {
-    throw new Error(
-      `The notification worker didn't register: ${e instanceof Error ? e.message : "unknown error"}.`,
-    );
+  if (navigator.serviceWorker.controller) {
+    reg = await navigator.serviceWorker.ready;
+  } else {
+    try {
+      reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+    } catch (e) {
+      throw new Error(
+        `The notification worker didn't register: ${e instanceof Error ? e.message : "unknown error"}.`,
+      );
+    }
   }
-  return (await navigator.serviceWorker.ready) ?? reg;
+  // iOS gotcha (backlog fe17dcaf): ready can resolve before the worker is
+  // active. Wait out installing/waiting so getToken() runs on a live worker.
+  const sw = reg.installing ?? reg.waiting ?? reg.active;
+  if (sw && reg.active === null) {
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      sw.addEventListener("statechange", done, { once: true });
+      // Never hang the flow: whatever state it reaches, give getToken a shot.
+      setTimeout(done, 4000);
+    });
+  }
+  return reg;
 }
 
 /* ── full registration flow. phone = sender/owner identity (digits) ── */
@@ -164,7 +187,19 @@ export async function registerDevicePush(phone: string, deviceLabel?: string): P
   await registerPushSW();
   const token = await m.getToken({ vapidKey: config.vapidKey });
   if (!token) {
-    return { supported: true, permission: "granted", token: null, registered: false, message: "No push token came back yet — try again in a few seconds." };
+    // Honest empty-token reason (backlog fe17dcaf): the worker may still be
+    // starting on iOS — a real reason instead of a silent null so /push-test
+    // can tell the owner what to do next.
+    let reason = "No push token came back yet — wait a moment, then Allow notifications again.";
+    try {
+      const swReg = await navigator.serviceWorker.getRegistration("/firebase-messaging-sw.js");
+      if (swReg && swReg.active === null) {
+        reason = "The notification worker is still starting — wait a moment, then Send again.";
+      }
+    } catch {
+      /* best-effort diagnosis */
+    }
+    return { supported: true, permission: "granted", token: null, registered: false, message: reason, emptyTokenReason: reason };
   }
   const reg = await fetch("/api/push/register", {
     method: "POST",

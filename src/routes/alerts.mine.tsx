@@ -15,6 +15,7 @@ import type { AlertRow, AlertSource } from "~/lib/alerts";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
 import { AlertMapPane, GetDirectionsButton } from "~/components/alertMap";
 import { CheckCircleIcon, HandsIcon, PersonIcon } from "~/lib/icons";
+import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
 function timeLabel(iso: string): string {
   const d = new Date(iso);
@@ -34,6 +35,8 @@ function MineView() {
   const [outcome, setOutcome] = useState("");
   const [tick, setTick] = useState(0);
   const [crisisOpen, setCrisisOpen] = useState(false);
+  /** Persistent on-screen confirmation of the sender-clear (owner-directed 2026-09-07). */
+  const [clearConfirmed, setClearConfirmed] = useState<SubmitConfirmState | null>(null);
 
   const phone = identity?.phone ?? "";
 
@@ -93,10 +96,19 @@ function MineView() {
   const clear = async (note: string) => {
     const res = await resolveEmergencyAlert({ data: { alertId: row?.id ?? "", phone, note } });
     if (res.ok) {
+      // Persistent on-screen confirmation (owner-directed): the clear LANDED —
+      // not just a toast. The clear itself notifies the audience, so the honest
+      // line is "cleared" rather than "team notified".
+      setClearConfirmed({
+        saved: true,
+        kind: "saved",
+        line: res.source === "db" ? "All clear — saved. Your people can rest easy." : "Saved on this phone — will sync when connected.",
+      });
       push({ kind: "success", message: "All clear — your people can rest easy." });
       setRow(null);
       setOutcome("");
     } else {
+      setClearConfirmed({ saved: false, kind: "draft", line: res.error ?? "That didn't go through — nothing changed." });
       push({ kind: "error", message: res.error ?? "That didn't go through — nothing changed." });
     }
   };
@@ -111,6 +123,15 @@ function MineView() {
 
         {loading ? (
           <div className="rounded-[16px] border border-sg-line bg-sg-card p-4 text-small text-sg-ink-soft">Checking for an active alert…</div>
+        ) : clearConfirmed ? (
+          <div className="flex flex-col gap-2">
+            <SubmitConfirm state={clearConfirmed} />
+            <p className="text-small text-sg-ink-soft">
+              {clearConfirmed.kind === "draft"
+                ? "Nothing changed — you can try again when you're ready."
+                : "This clear is saved. If you ever need to reach your people again, the alert page is one tap away."}
+            </p>
+          </div>
         ) : !row ? (
           <EmptyState
             icon={<CheckCircleIcon size={28} />}

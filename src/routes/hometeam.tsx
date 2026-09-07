@@ -16,6 +16,7 @@ import { NEED_STATUS_LABEL, needBadgeKind, needHelpingLine } from "~/lib/hometea
 import { HandsIcon, PlusIcon, CheckIcon, PauseIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import type { BadgeKind } from "~/components/ui";
+import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
 export const Route = createFileRoute("/hometeam")({ component: HomeTeamPage });
 
@@ -231,6 +232,8 @@ function LogSheet({
   const [pickup, setPickup] = useState("");
   const [visibility, setVisibility] = useState<"open" | "assign_only" | "private">("open");
   const [busy, setBusy] = useState(false);
+  /** Persistent on-screen confirmation of the need post (owner-directed 2026-09-07). */
+  const [posted, setPosted] = useState<SubmitConfirmState | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -238,6 +241,7 @@ function LogSheet({
       setNote("");
       setPickup("");
       setVisibility("open");
+      setPosted(null);
     }
   }, [open]);
 
@@ -261,10 +265,18 @@ function LogSheet({
     });
     setBusy(false);
     if (res.ok) {
+      // Persistent on-screen confirmation (NOT a short-lived toast): the HomeTeam
+      // feed is the notice channel — no separate team push goes out here, so
+      // "shared" (not "team notified") is the honest copy.
+      setPosted({
+        saved: true,
+        kind: "saved",
+        line: res.source === "db" ? "Saved — the need is shared with the HomeTeam." : "Saved on this phone — will sync when connected.",
+      });
       push({ kind: "success", message: "The need is shared with the HomeTeam — thank you." });
       onLogged();
-      onClose();
     } else {
+      setPosted({ saved: false, kind: "draft", line: res.error ?? "Saved on this phone for now — try again when you're ready." });
       push({ kind: "error", message: res.error ?? "That didn't go through — try again when you're ready." });
     }
   };
@@ -303,9 +315,17 @@ function LogSheet({
             <p className="text-small text-sg-ink-soft">Private needs stay between the neighbor and the outreach team.</p>
           </fieldset>
         ) : null}
-        <Button full onClick={save} disabled={busy}>
+        <Button full onClick={save} disabled={busy} disabledReason={busy ? "Saving…" : undefined}>
           Share the need
         </Button>
+        {posted ? (
+          <div className="flex flex-col gap-2">
+            <SubmitConfirm state={posted} />
+            <Button variant="quiet" full onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        ) : null}
         <p className="text-small text-sg-ink-soft">First claim wins — the neighbor sees who's helping and when it arrives.</p>
       </div>
     </BottomSheet>
@@ -353,6 +373,8 @@ function HomeTeamPage() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  /** Persistent on-screen confirmation of claim / mark-delivered (owner-directed 2026-09-07). */
+  const [actionConfirmed, setActionConfirmed] = useState<SubmitConfirmState | null>(null);
 
   /** Local supporter identity — phone-only, never shared without action. */
   const [phone, setPhone] = useState<string>("");
@@ -412,12 +434,17 @@ function HomeTeamPage() {
       const res = await claimNeed({ data: { requestId: need.id, phone } });
       setBusyId(null);
       if (res.ok) {
+        // Persistent on-screen confirmation (NOT a toast): first-claim-wins
+        // landed server-side — the neighbor now sees you as the helper.
+        setActionConfirmed({ saved: true, kind: "saved", line: res.source === "db" ? "Saved — you're on it. The neighbor can see you." : "Saved on this phone — will sync when connected." });
         push({ kind: "success", message: "You're on it — the neighbor can see you." });
         setTick((t) => t + 1);
       } else if (res.alreadyHandled) {
+        setActionConfirmed({ saved: false, kind: "saved", line: "That need is already being handled — thank you for checking." });
         push({ kind: "info", message: "That need is already being handled — thank you for checking." });
         setTick((t) => t + 1);
       } else {
+        setActionConfirmed({ saved: false, kind: "draft", line: res.error ?? "That didn't go through — nothing changed." });
         push({ kind: "error", message: res.error ?? "That didn't go through — try again in a moment." });
       }
     },
@@ -431,9 +458,13 @@ function HomeTeamPage() {
       const res = await markNeedDelivered({ data: { requestId: need.id, phone } });
       setBusyId(null);
       if (res.ok) {
+        // Persistent on-screen confirmation (NOT a toast): delivery recorded
+        // server-side — hometeam_complete logs who brought what.
+        setActionConfirmed({ saved: true, kind: "saved", line: res.source === "db" ? "Saved — marked delivered. Thank you for bringing it." : "Saved on this phone — will sync when connected." });
         push({ kind: "success", message: "Marked delivered — thank you for bringing it." });
         setTick((t) => t + 1);
       } else {
+        setActionConfirmed({ saved: false, kind: "draft", line: res.error ?? "That didn't go through — nothing changed." });
         push({ kind: "error", message: res.error ?? "That didn't go through — nothing changed." });
       }
     },
@@ -549,6 +580,18 @@ function HomeTeamPage() {
             </div>
           </Card>
         )}
+
+        {/* Persistent on-screen confirmation of claim / mark-delivered (owner-directed 2026-09-07). */}
+        {actionConfirmed ? (
+          <div className="flex flex-col gap-2">
+            <SubmitConfirm state={actionConfirmed} />
+            <p className="text-small text-sg-ink-soft">
+              {actionConfirmed.kind === "draft"
+                ? "Nothing changed — you can try again when you're ready."
+                : "The neighbor sees the status on their side — no one else is notified beyond the HomeTeam."}
+            </p>
+          </div>
+        ) : null}
 
         {/* Join CTA when not a member yet */}
         {!joined ? (
