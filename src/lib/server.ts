@@ -97,6 +97,9 @@ export interface PeerRow {
   status: "pending" | "accepted";
   /** True only when BOTH sides accepted (the other accepted my invite). */
   mutual: boolean;
+  /** Who sent the pending invite: "in" = they invited me, "out" = I invited
+   * them. Only meaningful for pending rows (spec §1.2 PEER-1 states). */
+  direction: "out" | "in";
 }
 
 export interface ListResult<T> {
@@ -752,7 +755,13 @@ export const listTrustedPeers = createServerFn({ method: "GET" })
             when a.peer_id is not null then 'accepted'
             else 'pending'
           end as status,
-          (a.peer_id is not null and b.peer_id is not null) as mutual
+          (a.peer_id is not null and b.peer_id is not null) as mutual,
+          case
+            when exists (
+              select 1 from public.trusted_peers x
+              where x.requester_id = p.user_id and x.peer_id = ${userId} and x.status = 'pending')
+            then 'in' else 'out'
+          end as direction
         from (
           -- outgoing invites from me (the rows I can act on)
           select peer_id as user_id, status, created_at
@@ -766,9 +775,15 @@ export const listTrustedPeers = createServerFn({ method: "GET" })
         left join trusted_peers a on a.requester_id = ${userId} and a.peer_id = p.user_id and a.status = 'accepted'
         left join trusted_peers b on b.requester_id = p.user_id and b.peer_id = ${userId} and b.status = 'accepted'
         order by mutual desc, p.created_at desc
-        limit 50`) as unknown as Array<{ user_id: string; display_name: string; status: "accepted" | "pending"; mutual: boolean }>;
+        limit 50`) as unknown as Array<{ user_id: string; display_name: string; status: "accepted" | "pending"; mutual: boolean; direction: "out" | "in" }>;
       return {
-        rows: rows.map((r) => ({ userId: r.user_id, displayName: r.display_name, status: r.status, mutual: r.mutual })),
+        rows: rows.map((r) => ({
+          userId: r.user_id,
+          displayName: r.display_name,
+          status: r.status,
+          mutual: r.mutual,
+          direction: r.direction,
+        })),
         source: "db",
       };
     } catch {

@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { cn } from "~/lib/cn";
 import { useAuth } from "~/lib/auth";
-import { listSweeps, getMyCheckIn, demoUserId } from "~/lib/server";
+import { listSweeps, getMyCheckIn, listTrustedPeers, demoUserId } from "~/lib/server";
 import { BellMoonIcon, CheckIcon, HomeIcon, InfoIcon, MenuIcon, MoonIcon, NightLampIcon } from "~/lib/appIcons";
 import { HeartIcon } from "~/lib/icons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
@@ -87,6 +87,7 @@ function BottomNav() {
   const { signedIn, displayName } = useAuth();
   const [sweepCount, setSweepCount] = useState<number | null>(null);
   const [selfOverdue, setSelfOverdue] = useState(false);
+  const [incomingInvite, setIncomingInvite] = useState(false);
 
   // Live badges: sweep count (public read) + self-overdue dot (own check-in).
   // Both degrade calmly to no badge when the DB is unreachable.
@@ -99,12 +100,20 @@ function BottomNav() {
       .catch(() => undefined);
     if (!signedIn) {
       setSelfOverdue(false);
+      setIncomingInvite(false);
       return;
     }
     const userId = demoUserId(displayName, deviceToken());
     getMyCheckIn({ data: { userId } })
       .then((r) => {
         if (alive) setSelfOverdue(r.row?.overdue ?? false);
+      })
+      .catch(() => undefined);
+    // PEER-4 inbox dot: an incoming (pending-in) invite surfaces on the
+    // Check-in tab when push isn't available — dot only, no count, no name.
+    listTrustedPeers({ data: { userId } })
+      .then((r) => {
+        if (alive) setIncomingInvite(r.rows.some((p) => p.status === "pending" && p.direction === "in"));
       })
       .catch(() => undefined);
     return () => {
