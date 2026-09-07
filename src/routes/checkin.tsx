@@ -40,6 +40,7 @@ import { MoonBlanketIcon, HeartIcon, PauseIcon, PersonIcon, LockIcon } from "~/l
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 import { cn } from "~/lib/cn";
+import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 /** Check-in success consent row: only when the neighbor has a stored phone
  * identity (the consent is tied to that phone). Reads identity lazily so the
  * opt-in appears on the checked-in state without touching auth. */
@@ -265,6 +266,8 @@ function CheckInPage() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
   const [shareTick, setShareTick] = useState(0);
+  /** Persistent on-screen confirmation of the check-in submit (owner-directed 2026-09-07). */
+  const [checkinConfirmed, setCheckinConfirmed] = useState<SubmitConfirmState | null>(null);
   // NOTE-1: composer sheet state + locally-saved note rows (outbox).
   const [composer, setComposer] = useState<{ name: string; userId: string; preset: string } | null>(null);
   const [savedNotes, setSavedNotes] = useState<Array<{ id: string; recipientName: string }>>([]);
@@ -341,8 +344,13 @@ function CheckInPage() {
       setMine(res.row);
       setMineSource(res.source);
       setShareTick((t) => t + 1);
+      // Persistent on-screen confirmation (owner-directed): STAYS until the
+      // next check-in starts. Peers aren't push-notified by this path — the
+      // check-in itself is the notice, so "no team push" copy is the honest one.
+      setCheckinConfirmed({ saved: true, kind: "saved", line: res.source === "db" ? "Saved — your people can see you're okay." : "Saved on this phone — will sync when connected." });
       push({ kind: "success", message: res.source === "db" ? "You're checked in — rest easy." : "Check-in saved here — will sync when connected." });
     } else {
+      setCheckinConfirmed({ saved: false, kind: "draft", line: "No connection right now — your draft is saved. Try again when you can." });
       push({ kind: "error", message: "No connection right now — your draft is saved. Try again when you can." });
     }
   };
@@ -473,6 +481,16 @@ function CheckInPage() {
                 </div>
               </div>
               {mineSource === "demo" && mine ? <p className="mt-2 text-small text-sg-ink-soft">Demo check-in — shown here until the database connects.</p> : null}
+              {checkinConfirmed ? (
+                <div className="mt-2">
+                  <SubmitConfirm state={checkinConfirmed} />
+                  <p className="mt-1 text-small text-sg-ink-soft">
+                    {checkinConfirmed.kind === "draft"
+                      ? "You can keep going — the draft stays on this phone until you're connected."
+                      : "Your exact spot stays with you — peers see only an approximate area, for 24 hours."}
+                  </p>
+                </div>
+              ) : null}
             </Card>
 
             {/* trusted peers (§4c) — now links to the dedicated PEER-1 screen */}

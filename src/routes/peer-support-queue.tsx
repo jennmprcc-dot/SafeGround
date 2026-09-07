@@ -17,6 +17,7 @@ import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { formatPhone, getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
+import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
 interface QueueRow {
   id: string;
@@ -169,6 +170,8 @@ function QueuePage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [testNote, setTestNote] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  /** Persistent on-screen confirmation of queue actions (owner-directed 2026-09-07). */
+  const [actionConfirmed, setActionConfirmed] = useState<SubmitConfirmState | null>(null);
 
   const sendTestToSelf = async () => {
     if (phone.length < 10 || testing) return;
@@ -243,8 +246,20 @@ function QueuePage() {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && data?.ok) {
+        // Persistent on-screen confirmation (owner-directed): the queue write
+        // LANDED. The request's original push already notified the admins; the
+        // claim/handoff/done itself is record-keeping, so "the queue is updated"
+        // is the honest line — no overclaim of a second team push.
+        const delegated = action === "claim" && !!extra && phoneLooksOk(extra);
+        const verb = delegated ? "handed off" : action === "claim" ? "claimed" : "marked done";
+        setActionConfirmed({
+          saved: true,
+          kind: "saved",
+          line: `Saved — ${verb}. The queue now shows it.`,
+        });
         await load(phone);
       } else {
+        setActionConfirmed({ saved: false, kind: "draft", line: data?.error ?? "That didn't go through — nothing changed." });
         setActionError(data?.error ?? "That didn't go through — nothing changed.");
       }
     } catch {
@@ -289,6 +304,17 @@ function QueuePage() {
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
             {actionError}
           </p>
+        ) : null}
+
+        {actionConfirmed ? (
+          <div className="flex flex-col gap-2">
+            <SubmitConfirm state={actionConfirmed} />
+            <p className="text-small text-sg-ink-soft">
+              {actionConfirmed.kind === "draft"
+                ? "Nothing changed — you can try again when you're ready."
+                : "The record is saved — the team sees the update on their next load."}
+            </p>
+          </div>
         ) : null}
 
         {phone.length < 10 ? (

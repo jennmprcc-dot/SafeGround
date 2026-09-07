@@ -317,6 +317,11 @@ function SendAlertPage() {
     });
     setSending(false);
     if (res.ok) {
+      // The success view IS the persistent confirmation (owner-directed) —
+      // it stays on screen, no short-lived toast. "Notified" copy: this path
+      // queues the alert for the audience; the push channel reaches the team /
+      // HomeTeam when configured, so the honest line is "Sent. Your people
+      // have it." — the existing success view already carries it.
       setSent({ id: res.alertId ?? "", source: res.source });
     } else {
       setError(res.error ?? "That didn't go through — nothing was sent. No rush to try again.");
