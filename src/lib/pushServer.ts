@@ -56,6 +56,11 @@ export function pushPublicConfig(): PushPublicConfig {
   };
 }
 
+/* ── Roster (peer-support dispatch target, owner-directed 2026-09-06) ──
+ * The peer-support request route must push ONLY to MPRCC's two admins,
+ * Jenn + Bambi. These are the ONLY phones that path may ever target. */
+export const PEER_SUPPORT_ADMIN_PHONES = ["14158797940", "14155249090"] as const;
+
 /* ── Phone-key normalization (owner bug 2026-09-07: 10-digit app value vs
  * 11-digit roster row) ──────────────────────────────────────────────
  * outreach_roster.phone stores 11-digit WITH country code (14158797940) while
