@@ -342,7 +342,7 @@ function SendAlertPage() {
                 <input
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="e.g. Sam"
+                  placeholder="Your first name"
                   className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
                 />
               </label>

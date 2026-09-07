@@ -42,8 +42,10 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
     <header className="sticky top-0 z-30 border-b border-sg-line bg-sg-paper/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-[640px] items-center justify-between gap-2 px-4">
         <Link to="/" className="flex min-h-[48px] items-center gap-2" aria-label="SafeGround home">
-          <img src="/logo-header.png" alt="" width={28} height={28} className="h-7 w-7 object-contain" aria-hidden />
-          <span className="text-btn font-semibold tracking-tight text-sg-ink">SafeGround</span>
+          <img src="/logo-header.png" alt="" width={26} height={20} className="h-5 w-7 object-contain" aria-hidden />
+          <span className="text-btn font-semibold tracking-tight text-sg-ink">
+            SafeGround <span className="font-normal text-sg-ink-soft">— by MPRCC</span>
+          </span>
           {signedIn ? (
             <span className="ml-2 hidden rounded-full bg-sg-sage-wash px-2 py-0.5 text-small font-medium text-sg-sage-deep sm:inline" aria-hidden>
               {displayName}

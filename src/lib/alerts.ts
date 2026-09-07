@@ -78,7 +78,7 @@ export interface AlertRow {
   source: AlertSource;
 }
 
-/** Resolution outcome line for resolved cards, e.g. "✓ Sam — all clear 11:05pm · Maya helped · 1h20m · note". */
+/** Resolution outcome line for resolved cards, e.g. "✓ a neighbor — all clear 11:05pm · Maya helped · 1h20m · note". */
 export function outcomeLine(a: AlertRow): string {
   const bits: string[] = [];
   bits.push(`${a.senderName.split(" ")[0] ?? "Sender"} — all clear`);
@@ -102,5 +102,5 @@ export const ALERT_LIFE_COPY = "Until you tap “I'm OK — all clear”, max 24
 /** Phone → calm identity for demo fallback (never displayed to strangers). */
 export const DEMO_SENDER = {
   phone: "14155550888",
-  name: "Sam",
+  name: "a neighbor",
 };

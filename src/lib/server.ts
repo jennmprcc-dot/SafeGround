@@ -21,8 +21,9 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
-import { DEMO_RESOURCES, DEMO_SWEEPS } from "~/lib/data";
+import { DEMO_SWEEPS } from "~/lib/data";
 import type { CategoryId } from "~/lib/data";
+import { realMarinAsDemoResources } from "~/lib/marinFallback";
 import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertRow, AlertSource } from "~/lib/alerts";
 import { DEMO_SENDER } from "~/lib/alerts";
 import type { NeedRow, NeedStatus, NeedVisibility, NeedSource, MemberStatusRow } from "~/lib/hometeam";
@@ -383,7 +384,7 @@ function mapPeerCheckIn(p: {
 }
 
 function demoResources(): ResourceRow[] {
-  return DEMO_RESOURCES.map((r) => ({
+  return realMarinAsDemoResources().map((r) => ({
     id: r.id,
     name: r.name,
     category: r.category,
@@ -901,7 +902,7 @@ function demoAlertRows(phone: string): AlertRow[] {
     exactLng: null,
     canSeeExact: false,
     audience: ["friends", "peers", "hometeam"],
-    senderName: mine ? "You" : "Sam",
+    senderName: DEMO_SENDER.name,
     senderPhone: DEMO_SENDER.phone,
     claimedBy: null,
     claimedByName: null,
@@ -925,7 +926,7 @@ function demoAlertRows(phone: string): AlertRow[] {
     exactLng: null,
     canSeeExact: false,
     audience: ["friends", "peers"],
-    senderName: mine ? "You" : "Sam",
+    senderName: DEMO_SENDER.name,
     senderPhone: DEMO_SENDER.phone,
     claimedBy: null,
     claimedByName: null,

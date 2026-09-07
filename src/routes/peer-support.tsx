@@ -173,7 +173,7 @@ function RequestSupportPage() {
               label="Your first name (optional)"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-              placeholder="e.g. Sam"
+              placeholder="Your first name"
               maxLength={40}
             />
             <TextArea
