@@ -1589,3 +1589,419 @@ begin
 end;
 $sg$;
 create index if not exists idx_group_notices_created on public.group_notices (created_at desc);
+-- ---------------------------------------------------------------------------
+-- Trusted-peer phone connections (spec §1, 2026-09-07)
+--
+-- Phone-invite layer over the existing uuid-based trusted_peers pairing table:
+--   * M1 users.phone (nullable, unique, digits-only) — bound at sign-in /
+--     invite-accept from the caller-supplied phone after sg_norm_phone.
+--     RLS stays own-row-only; reads go through the RPCs below.
+--   * M2 sg_peer_lookup — single-number exact match, {exists, display_name}
+--     only (first name), rate-limited ≤10/day per caller, never lists.
+--   * M3 sg_peer_invite — resolves by phone, idempotent pending row, calm
+--     raise when the number has no account (→ share-a-code path).
+--   * M4 sg_peer_accept / sg_peer_decline — accept flips pending + writes
+--     the reciprocal accepted row (mutual-accept RLS); decline deletes
+--     silently (inviter sees "no longer pending", never a name).
+--   * M5 sg_peer_remove — deletes both directional rows instantly (also the
+--     cancel path for an outgoing pending invite).
+--   * M6 peer_notes — deferred-delivery outbox (delivered_at stays NULL
+--     until the messaging wave; the UI reads it as "saved, not delivered").
+--   * peer_invite_codes — PEER-3 fallback: 6-char codes, 48h expiry, redeem
+--     INTO a pending invite (mutual consent preserved).
+-- All RPCs are SECURITY DEFINER, calm-error, phone-normalized. No contact
+-- import, no enumeration, no background anything — one typed number only.
+-- ---------------------------------------------------------------------------
+alter table public.users add column if not exists phone text;
+create unique index if not exists users_phone_unique on public.users (phone);
+
+create table if not exists public.peer_lookup_log (
+  id           uuid primary key default gen_random_uuid(),
+  caller_phone text not null check (char_length(caller_phone) between 7 and 20),
+  target_phone text not null check (char_length(target_phone) between 7 and 20),
+  created_at   timestamptz not null default now()
+);
+alter table public.peer_lookup_log enable row level security;
+-- RPC-only: no direct client policies (same pattern as group_notices).
+create index if not exists idx_peer_lookup_log_caller on public.peer_lookup_log (caller_phone, created_at desc);
+
+create table if not exists public.peer_invite_codes (
+  code            text primary key check (code ~ '^[A-Z2-9]{6}$'),
+  inviter_user_id uuid not null references public.users (id) on delete cascade,
+  created_at      timestamptz not null default now(),
+  expires_at      timestamptz not null default (now() + interval '48 hours'),
+  redeemed_by     uuid references public.users (id) on delete set null,
+  redeemed_at     timestamptz
+);
+alter table public.peer_invite_codes enable row level security;
+-- RPC-only: no direct client policies.
+create index if not exists idx_peer_invite_codes_inviter on public.peer_invite_codes (inviter_user_id, created_at desc);
+
+create table if not exists public.peer_notes (
+  id                uuid primary key default gen_random_uuid(),
+  sender_user_id    uuid not null references public.users (id) on delete cascade,
+  recipient_user_id uuid not null references public.users (id) on delete cascade,
+  note              text not null check (char_length(note) between 1 and 140),
+  created_at        timestamptz not null default now(),
+  delivered_at      timestamptz,
+  read_at           timestamptz,
+  check (sender_user_id <> recipient_user_id)
+);
+alter table public.peer_notes enable row level security;
+drop policy if exists "peer notes sender insert" on public.peer_notes;
+create policy "peer notes sender insert" on public.peer_notes for insert
+  with check (sender_user_id in (
+    select u.id from public.users u
+    where u.phone = current_setting('request.headers', true)::json ->> 'x-sg-phone'));
+drop policy if exists "peer notes party read" on public.peer_notes;
+create policy "peer notes party read" on public.peer_notes for select
+  using (sender_user_id in (
+    select u.id from public.users u
+    where u.phone = current_setting('request.headers', true)::json ->> 'x-sg-phone')
+  or recipient_user_id in (
+    select u.id from public.users u
+    where u.phone = current_setting('request.headers', true)::json ->> 'x-sg-phone'));
+drop policy if exists "peer notes recipient receipt" on public.peer_notes;
+create policy "peer notes recipient receipt" on public.peer_notes for update
+  using (recipient_user_id in (
+    select u.id from public.users u
+    where u.phone = current_setting('request.headers', true)::json ->> 'x-sg-phone'))
+  with check (recipient_user_id in (
+    select u.id from public.users u
+    where u.phone = current_setting('request.headers', true)::json ->> 'x-sg-phone'));
+create index if not exists idx_peer_notes_sender on public.peer_notes (sender_user_id, created_at desc);
+create index if not exists idx_peer_notes_recipient on public.peer_notes (recipient_user_id, created_at desc);
+
+-- Bind (or verify) the caller's phone to their user row: the M1 "set at
+-- sign-in / invite-accept" step. Shared by every phone-aware peer RPC.
+create or replace function public.sg_peer_self(p_user_id uuid, p_phone text)
+returns uuid language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone text := public.sg_norm_phone(p_phone);
+  v_found boolean;
+begin
+  select true into v_found from public.users where id = p_user_id;
+  if not coalesce(v_found, false) then
+    raise exception 'We could not find your sign-in — try signing in again, no rush.';
+  end if;
+  if v_phone <> '' then
+    if char_length(v_phone) < 7 or char_length(v_phone) > 15 then
+      raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
+    end if;
+    if exists (select 1 from public.users where phone = v_phone and id <> p_user_id) then
+      raise exception 'That number is already in use on another sign-in — nothing was changed.';
+    end if;
+    update public.users set phone = v_phone, updated_at = now() where id = p_user_id;
+  end if;
+  return p_user_id;
+end;
+$sg$;
+
+-- M2: single-number lookup. Returns ONLY {exists, display_name} (first name)
+-- for that one number. Rate-limited: ≤10/day per caller, gentle block after.
+create or replace function public.sg_peer_lookup(p_caller_phone text, p_target_phone text)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_caller text := public.sg_norm_phone(p_caller_phone);
+  v_target text := public.sg_norm_phone(p_target_phone);
+  v_count int;
+  v_name text;
+begin
+  if char_length(v_caller) < 7 or char_length(v_caller) > 15 then
+    raise exception 'Add your own number first — then you can look up one number at a time.';
+  end if;
+  if char_length(v_target) < 7 or char_length(v_target) > 15 then
+    raise exception 'That number looks incomplete — check it and try again, no rush.';
+  end if;
+  select count(*) into v_count from public.peer_lookup_log
+  where caller_phone = v_caller and created_at > now() - interval '1 day';
+  if v_count >= 10 then
+    raise exception 'You have looked up several numbers today — take a rest and try again tomorrow.';
+  end if;
+  insert into public.peer_lookup_log (caller_phone, target_phone) values (v_caller, v_target);
+  select split_part(u.display_name, ' ', 1) into v_name
+  from public.users u where u.phone = v_target;
+  if v_name is null then
+    return jsonb_build_object('ok', true, 'exists', false, 'display_name', null);
+  end if;
+  return jsonb_build_object('ok', true, 'exists', true, 'display_name', v_name);
+end;
+$sg$;
+
+-- M3: invite by phone. Resolves the target by phone, inserts an idempotent
+-- pending row, raises calmly when the number has no account (→ code path).
+create or replace function public.sg_peer_invite(p_caller_user_id uuid, p_target_phone text)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_target text := public.sg_norm_phone(p_target_phone);
+  v_caller_phone text;
+  v_target_id uuid;
+  v_target_name text;
+  v_status text;
+begin
+  select phone into v_caller_phone from public.users where id = p_caller_user_id;
+  if v_caller_phone is null then
+    raise exception 'Add your number first — then you can invite someone you trust.';
+  end if;
+  if char_length(v_target) < 7 or char_length(v_target) > 15 then
+    raise exception 'That number looks incomplete — check it and try again, no rush.';
+  end if;
+  if v_target = v_caller_phone then
+    raise exception 'That is your own number — invite someone you trust instead.';
+  end if;
+  select u.id, split_part(u.display_name, ' ', 1) into v_target_id, v_target_name
+  from public.users u where u.phone = v_target;
+  if v_target_id is null then
+    raise exception 'No neighbor on that number yet — you can share an invite code instead.';
+  end if;
+  -- They already invited me and I invite back: that IS mutual consent.
+  select status into v_status from public.trusted_peers
+  where requester_id = v_target_id and peer_id = p_caller_user_id;
+  if v_status = 'pending' then
+    update public.trusted_peers set status = 'accepted', updated_at = now()
+    where requester_id = v_target_id and peer_id = p_caller_user_id;
+    insert into public.trusted_peers (requester_id, peer_id, status)
+    values (p_caller_user_id, v_target_id, 'accepted')
+    on conflict (requester_id, peer_id) do update set status = 'accepted', updated_at = now();
+    return jsonb_build_object('ok', true, 'status', 'accepted', 'display_name', v_target_name);
+  end if;
+  select status into v_status from public.trusted_peers
+  where requester_id = p_caller_user_id and peer_id = v_target_id;
+  if v_status is not null then
+    return jsonb_build_object('ok', true, 'status', v_status, 'display_name', v_target_name);
+  end if;
+  insert into public.trusted_peers (requester_id, peer_id, status)
+  values (p_caller_user_id, v_target_id, 'pending');
+  return jsonb_build_object('ok', true, 'status', 'pending', 'display_name', v_target_name);
+end;
+$sg$;
+
+-- M4: invitee accepts (binds their phone per M1) — flips pending + writes the
+-- reciprocal accepted row that satisfies the mutual-accept RLS.
+create or replace function public.sg_peer_accept(p_caller_user_id uuid, p_caller_phone text, p_other_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_name text;
+  v_already boolean;
+begin
+  perform public.sg_peer_self(p_caller_user_id, p_caller_phone);
+  select split_part(u.display_name, ' ', 1) into v_name
+  from public.users u where u.id = p_other_user_id;
+  if v_name is null then
+    raise exception 'That invite is not waiting anymore — nothing changed.';
+  end if;
+  update public.trusted_peers set status = 'accepted', updated_at = now()
+  where requester_id = p_other_user_id and peer_id = p_caller_user_id and status = 'pending';
+  if not found then
+    select true into v_already from public.trusted_peers
+    where requester_id = p_other_user_id and peer_id = p_caller_user_id and status = 'accepted';
+    if coalesce(v_already, false) then
+      return jsonb_build_object('ok', true, 'status', 'accepted', 'display_name', v_name);
+    end if;
+    raise exception 'That invite is not waiting anymore — nothing changed.';
+  end if;
+  insert into public.trusted_peers (requester_id, peer_id, status)
+  values (p_caller_user_id, p_other_user_id, 'accepted')
+  on conflict (requester_id, peer_id) do update set status = 'accepted', updated_at = now();
+  return jsonb_build_object('ok', true, 'status', 'accepted', 'display_name', v_name);
+end;
+$sg$;
+
+-- M4: invitee declines — deletes the pending row silently (no blame; the
+-- inviter simply sees "no longer pending").
+create or replace function public.sg_peer_decline(p_caller_user_id uuid, p_other_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+begin
+  perform public.sg_peer_self(p_caller_user_id, '');
+  delete from public.trusted_peers
+  where requester_id = p_other_user_id and peer_id = p_caller_user_id and status = 'pending';
+  return jsonb_build_object('ok', true);
+end;
+$sg$;
+
+-- M5: remove (or cancel an outgoing pending invite) — deletes BOTH
+-- directional rows instantly, whatever their status.
+create or replace function public.sg_peer_remove(p_caller_user_id uuid, p_other_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+begin
+  perform public.sg_peer_self(p_caller_user_id, '');
+  delete from public.trusted_peers
+  where (requester_id = p_caller_user_id and peer_id = p_other_user_id)
+     or (requester_id = p_other_user_id and peer_id = p_caller_user_id);
+  return jsonb_build_object('ok', true);
+end;
+$sg$;
+
+-- PEER-3: mint (or reuse) my 6-char invite code, 48h expiry.
+create or replace function public.sg_peer_code_create(p_caller_user_id uuid)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_found boolean;
+  v_code text;
+  v_expires timestamptz;
+  v_alphabet text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  v_tries int := 0;
+begin
+  perform public.sg_peer_self(p_caller_user_id, '');
+  select true into v_found
+  from public.peer_invite_codes c
+  where c.inviter_user_id = p_caller_user_id
+    and c.redeemed_by is null and c.expires_at > now()
+  order by c.created_at desc limit 1;
+  if coalesce(v_found, false) then
+    select c.code, c.expires_at into v_code, v_expires
+    from public.peer_invite_codes c
+    where c.inviter_user_id = p_caller_user_id
+      and c.redeemed_by is null and c.expires_at > now()
+    order by c.created_at desc limit 1;
+    return jsonb_build_object('ok', true, 'code', v_code, 'expires_at', v_expires);
+  end if;
+  loop
+    v_tries := v_tries + 1;
+    select string_agg(substr(v_alphabet, (random() * 31)::int + 1, 1), '')
+    into v_code from generate_series(1, 6);
+    begin
+      insert into public.peer_invite_codes (code, inviter_user_id)
+      values (v_code, p_caller_user_id)
+      returning expires_at into v_expires;
+      return jsonb_build_object('ok', true, 'code', v_code, 'expires_at', v_expires);
+    exception when unique_violation then
+      if v_tries >= 5 then
+        raise exception 'That did not go through — try again in a moment.';
+      end if;
+    end;
+  end loop;
+end;
+$sg$;
+
+-- PEER-3: redeem a code INTO a pending invite (inviter → me). The redeemer
+-- still accepts on PEER-1 — mutual consent is preserved.
+create or replace function public.sg_peer_code_redeem(p_caller_user_id uuid, p_code text)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^a-zA-Z0-9]', '', 'g'));
+  v_inviter uuid;
+  v_expires timestamptz;
+  v_redeemed uuid;
+  v_name text;
+begin
+  perform public.sg_peer_self(p_caller_user_id, '');
+  select c.inviter_user_id, c.expires_at, c.redeemed_by
+  into v_inviter, v_expires, v_redeemed
+  from public.peer_invite_codes c where c.code = v_code;
+  if v_inviter is null then
+    raise exception 'That code did not work — check it or ask for a new one.';
+  end if;
+  if v_expires <= now() then
+    raise exception 'Codes last 48h — ask them to make a new one.';
+  end if;
+  if v_inviter = p_caller_user_id then
+    raise exception 'That is your own code — share it with someone you trust instead.';
+  end if;
+  select split_part(u.display_name, ' ', 1) into v_name
+  from public.users u where u.id = v_inviter;
+  if v_redeemed is not null and v_redeemed <> p_caller_user_id then
+    raise exception 'That code was already used — ask them to make a new one.';
+  end if;
+  if v_redeemed = p_caller_user_id then
+    return jsonb_build_object('ok', true, 'inviter_name', v_name);
+  end if;
+  update public.peer_invite_codes
+  set redeemed_by = p_caller_user_id, redeemed_at = now()
+  where code = v_code;
+  insert into public.trusted_peers (requester_id, peer_id, status)
+  values (v_inviter, p_caller_user_id, 'pending')
+  on conflict (requester_id, peer_id) do nothing;
+  return jsonb_build_object('ok', true, 'inviter_name', v_name);
+end;
+$sg$;
+
+-- NOTE-1: save a kind note (deferred delivery — delivered_at stays NULL
+-- until the messaging wave; <=20/day per sender; mutual peers only).
+create or replace function public.sg_note_save(p_sender_user_id uuid, p_recipient_user_id uuid, p_note text)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_note text := btrim(coalesce(p_note, ''));
+  v_today int;
+  v_id uuid;
+  v_at timestamptz;
+begin
+  perform public.sg_peer_self(p_sender_user_id, '');
+  if char_length(v_note) = 0 then
+    raise exception 'Write a line or two first — even a few kind words matter.';
+  end if;
+  if char_length(v_note) > 140 then
+    raise exception 'Please keep the note to 140 characters so it stays quick to read.';
+  end if;
+  if not exists (select 1 from public.users where id = p_recipient_user_id) then
+    raise exception 'We could not find that peer — nothing was saved.';
+  end if;
+  if not exists (
+    select 1 from public.trusted_peers a
+    join public.trusted_peers b
+      on b.requester_id = a.peer_id and b.peer_id = a.requester_id
+    where a.requester_id = p_sender_user_id and a.peer_id = p_recipient_user_id
+      and a.status = 'accepted' and b.status = 'accepted'
+  ) then
+    raise exception 'You can only save notes for a trusted peer you both chose — nothing was saved.';
+  end if;
+  select count(*) into v_today from public.peer_notes
+  where sender_user_id = p_sender_user_id and created_at > now() - interval '1 day';
+  if v_today >= 20 then
+    raise exception 'You have saved plenty of notes today — take a rest and try again tomorrow.';
+  end if;
+  insert into public.peer_notes (sender_user_id, recipient_user_id, note)
+  values (p_sender_user_id, p_recipient_user_id, v_note)
+  returning id, created_at into v_id, v_at;
+  return jsonb_build_object('ok', true, 'id', v_id, 'created_at', v_at);
+end;
+$sg$;
+
+-- NOTE-1: my sent notes, newest first (the "Saved notes" sender view).
+create or replace function public.sg_notes_mine(p_caller_user_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public
+as $sg$
+declare
+  v_rows jsonb;
+begin
+  perform public.sg_peer_self(p_caller_user_id, '');
+  select coalesce(jsonb_agg(row_to_json(t) order by t.created_at desc), '[]'::jsonb)
+  into v_rows
+  from (
+    select
+      n.id,
+      n.note,
+      split_part(u.display_name, ' ', 1) as recipient_name,
+      to_char(n.created_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as created_at,
+      case when n.delivered_at is null then 'saved' else 'delivered' end as status
+    from public.peer_notes n
+    join public.users u on u.id = n.recipient_user_id
+    where n.sender_user_id = p_caller_user_id
+    order by n.created_at desc
+    limit 50
+  ) t;
+  return jsonb_build_object('ok', true, 'notes', v_rows);
+end;
+$sg$;
+comment on table public.peer_notes is
+  'Deferred-delivery kind notes between mutual trusted peers (1:1 only — '
+  'never staff, never public). delivered_at stays NULL until the messaging '
+  'wave ships; the UI reads it as "saved, not yet delivered". Plain text; '
+  '<=20/day per sender; <=140 chars.';
+comment on table public.peer_invite_codes is
+  'PEER-3 fallback invite codes: 6 chars, 48h expiry. Redeeming creates a '
+  'pending trusted_peers invite the redeemer still accepts — mutual consent '
+  'preserved. The app never sends SMS; the inviter shares the code themself.';
+comment on column public.users.phone is
+  'Digits-only phone (nullable, unique) — bound at sign-in / invite-accept '
+  'after sg_norm_phone. Powers phone invites + lookups via RPC only; RLS '
+  'stays own-row-only.';
