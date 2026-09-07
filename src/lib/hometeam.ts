@@ -122,7 +122,7 @@ export function demoNeeds(): NeedRow[] {
       visibility: "open",
       requesterLabel: "Maya · downtown",
       loggedByOutreach: false,
-      claimedByName: "Sam",
+      claimedByName: "a HomeTeam neighbor",
       claimedAt: ago(2),
       assignedToName: null,
       assignedAt: null,

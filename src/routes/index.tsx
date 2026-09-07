@@ -135,8 +135,8 @@ function NearYouCard() {
         />
         <p className="mt-3 text-small text-sg-ink-soft">
           {source === "db"
-            ? "Live listings — maintained and verified by outreach teams."
-            : "Demo data — places are fictional for now. Live listings arrive when the database connects."}
+            ? "Live listings — maintained and verified by MPRCC outreach."
+            : "Real Marin County listings — call ahead if you can; hours change."}
         </p>
       </div>
     </Card>
@@ -183,8 +183,15 @@ function HomePage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-6 px-4 pt-6">
-        <div className="flex justify-center pt-2">
-          <img src="/logo-hero.png" alt="SafeGround" width={96} height={96} className="h-24 w-24 object-contain" />
+        <div className="flex flex-col items-center justify-center pt-2">
+          <img
+            src="/logo-hero.png"
+            alt="SafeGround"
+            width={220}
+            height={160}
+            className="h-40 w-auto object-contain"
+          />
+          <p className="mt-1 text-center text-small font-medium text-sg-ink-soft">by MPRCC — Marin Peer Recovery Community Collective</p>
         </div>
         <Greeting />
 

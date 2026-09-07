@@ -12,7 +12,7 @@ import { MapPinIcon, LockIcon } from "~/lib/icons";
 
 /** Exact-visibility line (spec §Receive/help) — only under exact. */
 export const EXACT_VISIBILITY_LINE =
-  "exact — only you, Sam's people + staff; gone when it closes";
+  "exact — only you, your people + staff; gone when it closes";
 
 export function AlertMapPane({ alert }: { alert: AlertRow }) {
   const { location, canSeeExact, fuzzLat, fuzzLng, exactLat, exactLng } = alert;

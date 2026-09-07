@@ -9,13 +9,21 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { title: "SafeGround — find help, rest, and people who care" },
+      { title: "SafeGround — by MPRCC" },
       {
         name: "description",
         content:
-          "SafeGround is a calm mobile-first companion for finding resources, seeing sweep heads-ups, and checking in with trusted people. No account needed to look. No background location, ever.",
+          "SafeGround is a calm mobile-first companion from MPRCC for finding resources, seeing sweep heads-ups, and checking in with trusted people. No account needed to look. No background location, ever.",
       },
       { name: "theme-color", content: "#F7F4EC" },
+      // Social sharing card (branding pass): absolute URL to the live logo.
+      { property: "og:title", content: "SafeGround — by MPRCC" },
+      { property: "og:description", content: "A calm mobile-first companion from MPRCC for finding help, rest, and people who care." },
+      { property: "og:type", content: "website" },
+      { property: "og:image", content: "https://3ece348267758ca697d7eddcee09689c.ctonew.app/logo-header.png" },
+      { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "SafeGround — by MPRCC" },
+      { name: "twitter:image", content: "https://3ece348267758ca697d7eddcee09689c.ctonew.app/logo-header.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
