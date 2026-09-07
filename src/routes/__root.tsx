@@ -2,6 +2,7 @@ import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-r
 import type { ReactNode } from "react";
 
 import { AuthProvider } from "~/lib/auth";
+import { WelcomeOverlay } from "~/components/welcome";
 import appCss from "~/styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -64,6 +65,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
+        <WelcomeOverlay />
         <Scripts />
       </body>
     </html>
