@@ -204,6 +204,11 @@ function HomePage() {
               Get help from my people
             </Button>
           </Link>
+          <Link to="/peer-support" className="block">
+            <Button variant="secondary" full>
+              Request peer support
+            </Button>
+          </Link>
           {signedIn ? (
             <Link to="/checkin" className="block">
               <Button variant="secondary" full>
