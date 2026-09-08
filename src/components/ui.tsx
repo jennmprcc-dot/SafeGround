@@ -346,6 +346,8 @@ export function TextField({
   ...rest
 }: { label: string; helper?: string; error?: string } & InputHTMLAttributes<HTMLInputElement>) {
   const id = useId();
+  const helperId = useId();
+  const errorId = useId();
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-btn font-medium">
@@ -353,13 +355,15 @@ export function TextField({
       </label>
       <input
         id={id}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : helper ? helperId : undefined}
         className={cn(
           "min-h-[52px] w-full rounded-[12px] border-2 bg-sg-card px-4 text-body text-sg-ink outline-none transition-colors placeholder:text-sg-ink-soft/70",
           error ? "border-sg-danger-gentle" : "border-sg-line focus:border-sg-ink",
         )}
         {...rest}
       />
-      {error ? <p className="text-small text-sg-danger-gentle">{error}</p> : helper ? <p className="text-small text-sg-ink-soft">{helper}</p> : null}
+      {error ? <p id={errorId} className="text-small text-sg-danger-gentle">{error}</p> : helper ? <p id={helperId} className="text-small text-sg-ink-soft">{helper}</p> : null}
     </div>
   );
 }
@@ -371,6 +375,8 @@ export function TextArea({
   ...rest
 }: { label: string; helper?: string; error?: string } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const id = useId();
+  const helperId = useId();
+  const errorId = useId();
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-btn font-medium">
@@ -378,6 +384,8 @@ export function TextArea({
       </label>
       <textarea
         id={id}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : helper ? helperId : undefined}
         className={cn(
           "min-h-[52px] w-full rounded-[12px] border-2 bg-sg-card px-4 py-3 text-body text-sg-ink outline-none transition-colors placeholder:text-sg-ink-soft/70",
           error ? "border-sg-danger-gentle" : "border-sg-line focus:border-sg-ink",
@@ -389,7 +397,7 @@ export function TextArea({
           {String(rest.value ?? "").length}/{rest.maxLength}
         </p>
       ) : null}
-      {error ? <p className="text-small text-sg-danger-gentle">{error}</p> : helper ? <p className="text-small text-sg-ink-soft">{helper}</p> : null}
+      {error ? <p id={errorId} className="text-small text-sg-danger-gentle">{error}</p> : helper ? <p id={helperId} className="text-small text-sg-ink-soft">{helper}</p> : null}
     </div>
   );
 }

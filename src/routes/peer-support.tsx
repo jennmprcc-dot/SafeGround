@@ -185,7 +185,7 @@ function RequestSupportPage() {
             </p>
           </Card>
           <div className="flex flex-col gap-2">
-            <Button full disabled={sending} onClick={() => void doSend()}>
+            <Button full disabled={sending} aria-busy={sending} onClick={() => void doSend()}>
               {sending ? "Sending…" : t("ps_yes")}
             </Button>
             <Button variant="quiet" full onClick={() => setPhase("form")}>
@@ -252,6 +252,7 @@ function RequestSupportPage() {
 
         <Button
           full
+          aria-busy={sending}
           disabled={!phoneOk || sending}
           disabledReason={!phoneOk ? t("ps_need_phone") : undefined}
           onClick={() => setPhase("confirm")}

@@ -266,6 +266,7 @@ function CheckInPage() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
   const [shareTick, setShareTick] = useState(0);
+  const [locating, setLocating] = useState(false);
   /** Persistent on-screen confirmation of the check-in submit (owner-directed 2026-09-07). */
   const [checkinConfirmed, setCheckinConfirmed] = useState<SubmitConfirmState | null>(null);
   // NOTE-1: composer sheet state + locally-saved note rows (outbox).
@@ -329,13 +330,16 @@ function CheckInPage() {
     }
     let lat: number;
     let lng: number;
+    setLocating(true);
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, { maximumAge: 0, timeout: 8000 }),
       );
       lat = pos.coords.latitude;
       lng = pos.coords.longitude;
+      setLocating(false);
     } catch {
+      setLocating(false);
       setCheckinConfirmed({ saved: false, kind: "draft", line: "Couldn't read your location — allow it once, or try again when you can." });
       push({ kind: "error", message: "Couldn't read your location — allow it once, or try again when you can." });
       return;
@@ -425,6 +429,9 @@ function CheckInPage() {
       <div className="flex flex-col gap-4 px-4 pt-5">
         <header>
           <h1 className="text-h1">Check in</h1>
+          {locating ? (
+            <p role="status" className="text-small text-sg-ink-soft">Reading your location once — nothing is stored.</p>
+          ) : null}
           <p className="mt-0.5 text-small text-sg-ink-soft">Let someone know you're okay — no rush.</p>
         </header>
 
