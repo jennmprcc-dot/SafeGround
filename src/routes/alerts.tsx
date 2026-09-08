@@ -8,7 +8,7 @@
  * Calm: no WARNING/DANGER/URGENT/MISSING/siren anywhere.
  */
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { BottomSheet, Button, EmptyState, SkeletonRows, useToasts } from "~/components/ui";
 import { useAuth } from "~/lib/auth";
@@ -326,4 +326,11 @@ function AlertsInbox() {
   );
 }
 
-export const Route = createFileRoute("/alerts")({ component: AlertsInbox });
+function AlertsRouteShell() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isChild = pathname === "/alerts/new" || pathname === "/alerts/mine";
+  if (isChild) return <Outlet />;
+  return <AlertsInbox />;
+}
+
+export const Route = createFileRoute("/alerts")({ component: AlertsRouteShell });
