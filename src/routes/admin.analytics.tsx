@@ -12,7 +12,7 @@
  * names, locations, or personal data are ever collected or displayed.
  */
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows } from "~/components/ui";
 import { getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
@@ -139,9 +139,14 @@ function WeeklyBars({ days }: { days: WeekDay[] }) {
 }
 
 function AnalyticsPage() {
+  const search = useSearch({ strict: false });
   const [identity] = useState(() => getAlertIdentity());
-  const [phoneInput, setPhoneInput] = useState(identity?.phone ?? "");
-  const [phone, setPhone] = useState(identity?.phone ?? "");
+  const seedPhone = () => {
+    const fromUrl = typeof search?.phone === "string" ? search.phone.replace(/[^0-9]/g, "") : "";
+    return fromUrl.length >= 10 ? fromUrl : (identity?.phone ?? "");
+  };
+  const [phoneInput, setPhoneInput] = useState(seedPhone);
+  const [phone, setPhone] = useState(seedPhone);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
@@ -304,4 +309,12 @@ function AnalyticsPage() {
   );
 }
 
-export const Route = createFileRoute("/admin/analytics")({ component: AnalyticsPage });
+interface AnalyticsSearch {
+  phone?: string;
+}
+export const Route = createFileRoute("/admin/analytics")({
+  validateSearch: (search: Record<string, unknown>): AnalyticsSearch => ({
+    phone: typeof search?.phone === "string" ? search.phone : undefined,
+  }),
+  component: AnalyticsPage,
+});

@@ -530,6 +530,17 @@ function OutreachPage() {
                     </div>
                   </Card>
                   <Card>
+                    <p className="text-body font-medium">Reporting &amp; impact</p>
+                    <p className="mt-0.5 text-small text-sg-ink-soft">
+                      Anonymous, aggregate numbers for grants and outreach — open to any roster admin (Jenn + Bambi).
+                    </p>
+                    <div className="mt-3">
+                      <a href={`/admin/analytics?phone=${encodeURIComponent(phone)}`}>
+                        <Button variant="secondary" full>Open reporting &amp; impact</Button>
+                      </a>
+                    </div>
+                  </Card>
+                  <Card>
                     <p className="text-body font-medium">Group notices</p>
                     <p className="mt-0.5 text-small text-sg-ink-soft">{data.push.note}</p>
                     <div className="mt-3 flex flex-col gap-2">
