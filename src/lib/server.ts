@@ -560,53 +560,6 @@ export const reportSweep = createServerFn({ method: "POST" })
     }
   });
 
-/** Outreach verification queue — sweeps in 'reported' state + counts. */
-export const getOutreachQueue = createServerFn({ method: "GET" }).handler(
-  async (): Promise<{ pending: SweepRow[]; source: DataSource }> => {
-    try {
-      const rows = (await sql()`
-        select id, status, severity, event_at, verified_at, note, lat, lng, created_at
-        from sweeps
-        where status = 'reported'
-        order by created_at desc
-        limit 50`) as unknown as Parameters<typeof mapSweep>[0][];
-      return { pending: rows.map((r) => mapSweep(r)), source: "db" };
-    } catch {
-      return { pending: [], source: "demo" };
-    }
-  },
-);
-
-/** Outreach verify / flag / resolve. Reporters see "Under review" (flagged), never a silent delete. */
-export const actOnSweep = createServerFn({ method: "POST" })
-  .validator((input: unknown) => {
-    const v = (input ?? {}) as { id?: unknown; action?: unknown };
-    const id = typeof v.id === "string" ? v.id.slice(0, 64) : "";
-    const action = v.action === "verify" || v.action === "flag" || v.action === "resolve" ? v.action : "verify";
-    return { id, action };
-  })
-  .handler(async ({ data }): Promise<{ ok: boolean; source: DataSource }> => {
-    const { id, action } = data;
-    if (!id) return { ok: false, source: "demo" };
-    try {
-      if (action === "verify") {
-        await sql()`
-          update sweeps set status = 'verified', verified_at = now(), verified_by = null
-          where id = ${id} and status = 'reported'`;
-      } else if (action === "flag") {
-        await sql()`
-          update sweeps set status = 'flagged', flagged_at = now(), flagged_by = null
-          where id = ${id} and status = 'reported'`;
-      } else {
-        await sql()`
-          update sweeps set status = 'resolved', severity = 'resolved_recent', resolved_at = now()
-          where id = ${id}`;
-      }
-      return { ok: true, source: "db" };
-    } catch {
-      return { ok: false, source: "demo" };
-    }
-  });
 
 /* ── Build B: Check-Ins (owner writes; peers read fuzzed only) ── */
 
