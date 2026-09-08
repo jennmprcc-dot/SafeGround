@@ -150,6 +150,10 @@ function AnalyticsPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const rangeActive =
+    /^\d{4}-\d{2}-\d{2}$/.test(fromDate) && /^\d{4}-\d{2}-\d{2}$/.test(toDate);
 
   const load = useCallback(async (p: string) => {
     setState({ kind: "loading" });
@@ -185,9 +189,17 @@ function AnalyticsPage() {
     setExporting(true);
     setExportNote(null);
     try {
-      const now = new Date();
-      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const res = await fetch(`/api/admin/export-grant-report?month=${month}`, {
+      let fileBase = "";
+      let fetchUrl = "";
+      if (rangeActive) {
+        fileBase = `${fromDate}-${toDate}`;
+        fetchUrl = `/api/admin/export-grant-report?from=${fromDate}&to=${toDate}`;
+      } else {
+        const now = new Date();
+        fileBase = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        fetchUrl = `/api/admin/export-grant-report?month=${fileBase}`;
+      }
+      const res = await fetch(fetchUrl, {
         headers: { "x-sg-phone": phone },
       });
       if (!res.ok) {
@@ -198,7 +210,7 @@ function AnalyticsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `safeground-impact-report-${month}.csv`;
+      a.download = `safeground-impact-report-${fileBase}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -291,11 +303,29 @@ function AnalyticsPage() {
             <Card>
               <h2 className="text-h2">Monthly impact report</h2>
               <p className="mt-0.5 text-small text-sg-ink-soft">
-                A grant-ready summary of this month — anonymous counts only, ready to attach to a proposal.
+                A grant-ready summary of this month — anonymous counts only, ready to attach to a proposal. For a custom window, pick both dates below and export again.
               </p>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-col gap-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-btn font-medium">From (optional)</span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="w-full rounded-md border border-sg-ink-soft/20 bg-surface-input px-3 py-2 text-body"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-btn font-medium">To (optional — export uses this month when left blank)</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="w-full rounded-md border border-sg-ink-soft/20 bg-surface-input px-3 py-2 text-body"
+                  />
+                </label>
                 <Button variant="secondary" full disabled={exporting} onClick={() => void exportCsv()}>
-                  {exporting ? "Building the report…" : "Export Monthly Impact Report"}
+                  {exporting ? "Building the report…" : rangeActive ? `Export report (${fromDate} → ${toDate})` : "Export Monthly Impact Report"}
                 </Button>
               </div>
               {exportNote ? <p className="mt-2 text-small text-sg-ink-soft">{exportNote}</p> : null}
