@@ -19,7 +19,7 @@
  * first" state. No contact import anywhere; one typed number at a time.
  */
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import {
   BottomSheet,
@@ -492,4 +492,17 @@ function HowSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
-export const Route = createFileRoute("/checkin/peers")({ component: PeersPage });
+export const Route = createFileRoute("/checkin/peers")({ component: PeersRouteShell });
+
+/**
+ * Layout branch for the /checkin/peers family (P1 outlet fix, 2026-09-08).
+ * Same pattern as /checkin above: /checkin/peers is both a page and the parent
+ * of /checkin/peers/invite. The invite page renders its own <AppShell>, so when
+ * it matches we return a bare <Outlet />. The peers list itself is untouched.
+ */
+function PeersRouteShell() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isChild = pathname.startsWith("/checkin/peers/invite");
+  if (isChild) return <Outlet />;
+  return <PeersPage />;
+}

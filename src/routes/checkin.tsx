@@ -8,7 +8,7 @@
  * No background tracking: every check-in is a manual, user-initiated action.
  */
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import {
   BottomSheet,
@@ -656,4 +656,19 @@ function CheckInPage() {
   );
 }
 
-export const Route = createFileRoute("/checkin")({ component: CheckInPage });
+export const Route = createFileRoute("/checkin")({ component: CheckInRouteShell });
+
+/**
+ * Layout branch for the /checkin family (P1 outlet fix, 2026-09-08).
+ * /checkin is BOTH a page and the parent of /checkin/peers(+/invite). Without
+ * an <Outlet /> the child pages were swallowed and the parent rendered instead.
+ * Child pages (peers, invite) already render their own <AppShell>, so when a
+ * child matches we return a bare <Outlet /> — no double shell. The /checkin
+ * page itself is untouched and renders exactly as before.
+ */
+function CheckInRouteShell() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isChild = pathname === "/checkin/peers" || pathname.startsWith("/checkin/peers/");
+  if (isChild) return <Outlet />;
+  return <CheckInPage />;
+}
