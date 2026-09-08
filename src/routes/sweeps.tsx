@@ -27,7 +27,7 @@ import {
 import { useAuth } from "~/lib/auth";
 import { listSweeps, reportSweep } from "~/lib/server";
 import type { SweepRow, DataSource } from "~/lib/server";
-import { BellMoonIcon, CheckIcon, MapPinIcon, PenIcon } from "~/lib/icons";
+import { BellMoonIcon, MapPinIcon, PenIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
@@ -111,6 +111,21 @@ function SweepMapPane({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: Swee
   );
 }
 
+/* ── sweep trust badges (two-tier, calm, never alarming) ──────────
+ * Tier 1 — verified by MPRCC outreach. Tier 2 — a neighbor's report that
+ * outreach hasn't confirmed yet. We never say bare "Unverified". */
+function SweepTrustBadge({ verified }: { verified: boolean }) {
+  if (verified) {
+    return <StatusBadge kind="Verified">MPRCC Verified</StatusBadge>;
+  }
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <StatusBadge kind="Reported">Community report</StatusBadge>
+      <span className="text-small text-sg-ink-soft">shared by a neighbor — outreach hasn't confirmed it yet</span>
+    </span>
+  );
+}
+
 /* ── Sweep detail bottom sheet (§3c) ────────────────────────────── */
 function SweepSheet({ sweep, onClose, onReport }: { sweep: SweepRow | null; onClose: () => void; onReport: () => void }) {
   const { push } = useToasts();
@@ -123,13 +138,7 @@ function SweepSheet({ sweep, onClose, onReport }: { sweep: SweepRow | null; onCl
           <StatusBadge kind={statusKind === "active" ? "Active" : statusKind === "planned" ? "Planned" : "Resolved"}>
             {statusKind === "active" ? "Active" : statusKind === "planned" ? "Planned" : "Resolved"}
           </StatusBadge>
-          {sweep.verified ? (
-            <span className="inline-flex items-center gap-1 text-small font-medium text-sg-sage">
-              <CheckIcon size={14} aria-hidden /> Verified by outreach
-            </span>
-          ) : (
-            <span className="text-small text-sg-ink-soft">Reported by a neighbor · awaiting verification</span>
-          )}
+          <SweepTrustBadge verified={sweep.verified} />
         </div>
         <p className="text-body text-sg-ink-soft">Window: {sweep.window}</p>
         {sweep.note ? <p className="text-body text-sg-ink">{sweep.note}</p> : null}
@@ -487,8 +496,13 @@ function SweepsPage() {
                     </span>
                     <span className="mt-0.5 block text-small text-sg-ink-soft">
                       {s.reportedMinutesAgo < 60 ? `${Math.max(1, s.reportedMinutesAgo)} min ago` : `${Math.round(s.reportedMinutesAgo / 60)}h ago`} ·{" "}
-                      {s.verified ? "verified by outreach" : "awaiting verification"}
+                      {s.verified ? "MPRCC Verified" : "Community report"}
                     </span>
+                    {s.verified ? null : (
+                      <span className="mt-0.5 block text-small text-sg-ink-soft">
+                        shared by a neighbor — outreach hasn't confirmed it yet
+                      </span>
+                    )}
                   </span>
                 </ListRow>
               );

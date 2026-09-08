@@ -12,6 +12,11 @@ import { ClockIcon, MapPinIcon, NavigateIcon, PenIcon, PhoneIcon, BookmarkIcon }
 
 const NOT_CONFIRMED = "Not confirmed yet — call ahead if you can";
 
+/* ── map link (general Google Maps search URL for any address/place) ─ */
+export function mapLink(addr: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+}
+
 export function ResourceSheet({
   resource,
   onClose,
@@ -40,7 +45,23 @@ export function ResourceSheet({
         <div className="flex flex-col gap-2.5 rounded-[16px] border border-sg-line bg-sg-paper p-4 text-body">
           <p className="flex items-start gap-2 text-sg-ink">
             <MapPinIcon size={20} className="mt-0.5 shrink-0 text-sg-ink-soft" aria-hidden />
-            {resource.unconfirmed?.includes("address") ? NOT_CONFIRMED : resource.address}
+            {resource.unconfirmed?.includes("address") ? (
+              NOT_CONFIRMED
+            ) : (
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>{resource.address}</span>
+                {resource.address ? (
+                  <a
+                    href={mapLink(resource.address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sg-sky underline underline-offset-2"
+                  >
+                    Open map
+                  </a>
+                ) : null}
+              </span>
+            )}
           </p>
           <p className="flex items-start gap-2 text-sg-ink">
             <ClockIcon size={20} className="mt-0.5 shrink-0 text-sg-ink-soft" aria-hidden />
