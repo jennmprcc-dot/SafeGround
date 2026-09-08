@@ -10,6 +10,7 @@ import { useAuth } from "~/lib/auth";
 import { Button, Card, LocationOnceButton, useToasts } from "~/components/ui";
 import { getHomeStats } from "~/lib/server";
 import type { DataSource } from "~/lib/server";
+import { useLanguage } from "~/lib/i18n";
 import { MoonBlanketIcon, PersonIcon } from "~/lib/icons";
 
 /* Time-aware greeting — computed client-side so SSR never mismatches (calm default first). */
@@ -177,6 +178,7 @@ function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
 
 function HomePage() {
   const { signedIn } = useAuth();
+  const { t } = useLanguage();
   const [signInOpen, setSignInOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
 
@@ -196,6 +198,23 @@ function HomePage() {
         <Greeting />
 
         <HeadsUpCard />
+
+        <Card className="border-sg-clay/60 bg-sg-clay-wash/40">
+          <div className="flex items-start gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-sg-clay text-white" aria-hidden>
+              <PersonIcon size={24} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-h2">{t("un_home_cta")}</h2>
+              <p className="mt-1 text-body text-sg-ink">
+                {t("un_home_sub")}
+              </p>
+              <Link to="/urgent-need" className="mt-3 block">
+                <Button full>{t("un_home_cta")}</Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
 
         <Card className="border-sg-sage/60 bg-sg-sage-wash/60">
           <div className="flex items-start gap-3">

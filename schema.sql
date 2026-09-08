@@ -1165,6 +1165,21 @@ create policy "peer support own update" on public.peer_support_requests for upda
   using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
 create index if not exists idx_peer_support_status on public.peer_support_requests (status, created_at desc);
 create index if not exists idx_peer_support_phone on public.peer_support_requests (phone, created_at desc);
+-- Urgent-need action (owner-directed 2026-09-08): urgent needs (help /
+-- advocacy / ER ride / support) ride the SAME peer_support_requests queue and
+-- the SAME admin push path. Never a parallel system, never peers, never 911.
+-- is_urgent flags the row; need_category holds the owner-listed category;
+-- location (+ coords) is the sender's explicit choice, never pre-selected;
+-- exact coords are cleared when the request is done (exact expires with it).
+alter table public.peer_support_requests add column if not exists is_urgent boolean not null default false;
+alter table public.peer_support_requests add column if not exists need_category text;
+alter table public.peer_support_requests add column if not exists location text;
+alter table public.peer_support_requests add column if not exists fuzz_lat double precision;
+alter table public.peer_support_requests add column if not exists fuzz_lng double precision;
+alter table public.peer_support_requests add column if not exists exact_lat double precision;
+alter table public.peer_support_requests add column if not exists exact_lng double precision;
+alter table public.peer_support_requests add column if not exists expires_at timestamptz;
+create index if not exists idx_peer_support_urgent on public.peer_support_requests (is_urgent, status, created_at desc);
 comment on table public.peer_support_requests is
   'One-tap peer-support requests (phone identity). Queue persists server-side; '
   'admin push goes ONLY to the two roster admins via push_tokens (never 911, '
