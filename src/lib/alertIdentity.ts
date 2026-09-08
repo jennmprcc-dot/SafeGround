@@ -9,8 +9,8 @@ const PHONE_KEY = "sg.alert.phone";
 const NAME_KEY = "sg.alert.name";
 
 /** Digits-only normalized phone (matches sg_norm_phone: strip +, spaces, dashes). */
-export function normPhone(raw: string): string {
-  return raw.replace(/[^0-9]/g, "");
+export function normPhone(raw: unknown): string {
+  return String(raw ?? "").replace(/[^0-9]/g, "");
 }
 
 export interface AlertIdentity {
