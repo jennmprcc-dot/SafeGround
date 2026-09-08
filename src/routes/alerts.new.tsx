@@ -478,7 +478,7 @@ function SendAlertPage() {
         ) : (
           <BottomSheet open title="Send to your people" peek={false} onClose={() => undefined}>
             <div className="flex flex-col gap-4 pb-2">
-              <p className="text-small text-sg-ink-soft">Step {step} of 3 — no rush, every choice is yours.</p>
+              <p className="text-small text-sg-ink-soft" role="status">Step {step} of 3 — no rush, every choice is yours.</p>
 
               {step === 1 && (
                 <KindStep kind={kind} setKind={setKind} note={note} setNote={setNote} onNext={() => setStep(2)} />

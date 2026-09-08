@@ -561,7 +561,7 @@ export function ConsentReceipt({
           <dt className="w-20 shrink-0 font-medium text-sg-ink">{chrome.stop}</dt>
           <dd>
             {onStop ? (
-              <button type="button" onClick={onStop} className="text-sg-sky underline underline-offset-2">
+              <button type="button" onClick={onStop} className="inline-flex min-h-[44px] items-center text-sg-sky underline underline-offset-2">
                 {stopLabel}
               </button>
             ) : (

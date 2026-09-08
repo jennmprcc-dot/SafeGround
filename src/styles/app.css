@@ -97,17 +97,17 @@
   body * {
     visibility: hidden;
   }
-  #sg-qr-print,
-  #sg-qr-print * {
+  #sg-qr-panel,
+  #sg-qr-panel * {
     visibility: visible;
   }
-  #sg-qr-print {
+  #sg-qr-panel {
     position: fixed;
     inset: 0;
     display: grid;
     place-items: center;
   }
-  #sg-qr-print img {
+  #sg-qr-panel img {
     width: 320px;
     height: 320px;
   }

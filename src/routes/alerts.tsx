@@ -40,6 +40,7 @@ function AlertCard({ alert, open, onOpen }: { alert: AlertRow; open: boolean; on
         type="button"
         onClick={onOpen}
         aria-expanded={open}
+        aria-haspopup="dialog"
         className="w-full rounded-[16px] border border-sg-line bg-sg-card p-4 text-left opacity-70 shadow-[0_1px_2px_rgba(30,42,50,0.08)]"
       >
         <p className="flex items-center gap-2 text-small font-medium text-sg-ink-soft">
@@ -55,6 +56,7 @@ function AlertCard({ alert, open, onOpen }: { alert: AlertRow; open: boolean; on
       type="button"
       onClick={onOpen}
       aria-expanded={open}
+      aria-haspopup="dialog"
       className="w-full rounded-[16px] border border-sg-line bg-sg-card p-4 text-left shadow-[0_1px_2px_rgba(30,42,50,0.08)] transition-colors hover:bg-sg-paper"
     >
       <div className="flex items-start gap-3">

@@ -226,7 +226,7 @@ export function WelcomeOverlay() {
               <ShareIcon />
               {shareLabel}
             </Button>
-            <Button variant="secondary" onClick={toggleQr} aria-expanded={qrOpen}>
+            <Button variant="secondary" onClick={toggleQr} aria-expanded={qrOpen} aria-controls="sg-qr-panel">
               <QrIcon />
               {qrOpen ? "Hide QR code" : "Show QR code"}
             </Button>
@@ -237,7 +237,7 @@ export function WelcomeOverlay() {
             </p>
           ) : null}
           {qrOpen && qrUrl ? (
-            <div id="sg-qr-print" className="mt-4 flex flex-col items-center gap-2">
+            <div id="sg-qr-panel" className="mt-4 flex flex-col items-center gap-2">
               <img src={qrUrl} alt="QR code linking to SafeGround" width={200} height={200} className="h-[200px] w-[200px]" />
               <p className="text-small text-sg-ink-soft">Point a camera at this to open SafeGround.</p>
               <Button variant="quiet" onClick={() => window.print()} className={cn("self-center")}>

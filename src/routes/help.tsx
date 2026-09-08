@@ -112,12 +112,14 @@ function adapt(row: ResourceRow): DemoResource {
 function ViewTabs({
   view,
   onChange,
+  onKeyboardChange,
   tabRefs,
   listLabel,
   mapLabel,
 }: {
   view: "list" | "map";
   onChange: (v: "list" | "map") => void;
+  onKeyboardChange?: (v: "list" | "map") => void;
   tabRefs: RefObject<Array<HTMLButtonElement | null>>;
   listLabel: string;
   mapLabel: string;
@@ -134,7 +136,9 @@ function ViewTabs({
     if (next !== null) {
       e.preventDefault();
       tabs[next]?.focus();
-      onChange(next === 0 ? "list" : "map");
+      // Keyboard-initiated change only — pointer/tap changes go through
+      // onClick and must NOT move focus (a11y P2 focus discipline).
+      (onKeyboardChange ?? onChange)(next === 0 ? "list" : "map");
     }
   };
   return (
@@ -201,18 +205,21 @@ function NavigatorPage() {
     };
   }, []);
 
-  /* Roving focus per ARIA tabs pattern. preventScroll — never yank the
-   * reader's position around. */
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      if (view === "map") {
+  /* Focus discipline (a11y P2): moving focus to the pane on every
+   * view-state change can disorient screen-reader users, so focus moves
+   * ONLY on keyboard-initiated tab changes — via the ViewTabs arrow-key
+   * handler below, which calls focusTabAndShow. Pointer/tap switches just
+   * change the view and leave focus where the user put it. */
+  const focusTabAndShow = (v: "list" | "map") => {
+    setView(v);
+    window.setTimeout(() => {
+      if (v === "map") {
         paneRef.current?.focus({ preventScroll: true });
       } else {
         tabRefs.current[0]?.focus({ preventScroll: true });
       }
     }, 0);
-    return () => window.clearTimeout(id);
-  }, [view]);
+  };
 
   const adapted = useMemo(() => resources.map(adapt), [resources]);
   const filtered = useMemo(() => {
@@ -321,7 +328,7 @@ function NavigatorPage() {
 
         {/* List | Map toggle — directly under search (WIREFRAMES §2a order,
          * lifted above the fold so the fixed bottom nav can never occlude it) */}
-        <ViewTabs view={view} onChange={setView} tabRefs={tabRefs} listLabel={t("help_list")} mapLabel={t("help_map")} />
+        <ViewTabs view={view} onChange={setView} onKeyboardChange={focusTabAndShow} tabRefs={tabRefs} listLabel={t("help_list")} mapLabel={t("help_map")} />
 
         <div>
           <ChipGrid
@@ -355,7 +362,7 @@ function NavigatorPage() {
             }}
           />
         ) : (
-          <section id="view-pane" role="tabpanel" aria-label="List view" className="outline-none">
+          <section id="view-pane" role="tabpanel" aria-labelledby="view-tab-list" className="outline-none">
             <div className="mb-2 flex items-baseline justify-between px-1">
               <p className="text-small text-sg-ink-soft">
                 {filtered.length} {filtered.length === 1 ? "place" : "places"} · open now: {openNow}

@@ -285,7 +285,7 @@ function ReportSheet({
             </>
           ) : (
             <>
-          <p className="text-small text-sg-ink-soft">{t("sw_step")} {step} {t("sw_step_suffix")}</p>
+          <p className="text-small text-sg-ink-soft" role="status">{t("sw_step")} {step} {t("sw_step_suffix")}</p>
 
           {step === 1 && (
             <>

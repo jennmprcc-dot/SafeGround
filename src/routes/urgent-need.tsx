@@ -263,15 +263,14 @@ function UrgentNeedPage() {
 
         <fieldset>
           <legend className="sr-only">{t("un_cat_label")}</legend>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("un_cat_label")}>
+          <div className="grid grid-cols-2 gap-2">
             {CATEGORIES.map((c) => {
               const on = category === c.value;
               return (
                 <button
                   key={c.value}
                   type="button"
-                  role="radio"
-                  aria-checked={on}
+                  aria-pressed={on}
                   onClick={() => setCategory(c.value)}
                   className={`flex min-h-[76px] flex-col items-start justify-center gap-0.5 rounded-[12px] border-2 px-3 py-2 text-left transition-colors ${
                     on ? "border-sg-clay bg-sg-clay-wash/40" : "border-sg-line bg-sg-card"
@@ -316,15 +315,14 @@ function UrgentNeedPage() {
 
         <fieldset>
           <legend className="mb-2 text-btn font-medium text-sg-ink">{t("un_loc_title")}</legend>
-          <div className="flex flex-col gap-2" role="radiogroup" aria-label={t("un_loc_title")}>
+          <div className="flex flex-col gap-2">
             {LOCATIONS.map((o) => {
               const on = location === o.value;
               return (
                 <button
                   key={o.value}
                   type="button"
-                  role="radio"
-                  aria-checked={on}
+                  aria-pressed={on}
                   onClick={() => setLocation(o.value)}
                   className={`flex min-h-[64px] items-center gap-3 rounded-[12px] border-2 px-3 py-2 text-left transition-colors ${
                     on ? "border-sg-sage bg-sg-sage-wash/40" : "border-sg-line bg-sg-card"
