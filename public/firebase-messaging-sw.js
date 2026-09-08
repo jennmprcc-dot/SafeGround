@@ -97,6 +97,21 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
+        // client.url is the full URL — compare its path to the target path.
+        let here = "";
+        try {
+          here = new URL(client.url).pathname;
+        } catch (err) {
+          here = "";
+        }
+        // If the app is already on the target page, just bring it forward.
+        if (here !== "" && here === target.split("?")[0]) return client.focus();
+        // Otherwise route the open app to the notification's page (an app
+        // open on an old page would otherwise stay there after the tap).
+        if ("navigate" in client && typeof client.navigate === "function") {
+          const absolute = self.location.origin + target;
+          return Promise.all([client.navigate(absolute), client.focus()]).then(() => undefined);
+        }
         if ("focus" in client) return client.focus();
       }
       if (clients.openWindow) return clients.openWindow(target);
