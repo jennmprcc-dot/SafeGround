@@ -102,10 +102,9 @@ function SweepMapPane({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: Swee
           {t("sw_planned")}
         </span>
       </div>
-      <div className="absolute bottom-3 right-3 flex flex-col overflow-hidden rounded-[12px] border border-sg-line bg-sg-card shadow-md">
-        <button type="button" aria-label={t("sw_zoom_in")} className="flex h-12 w-12 items-center justify-center text-sg-ink hover:bg-sg-paper">+</button>
-        <button type="button" aria-label={t("sw_zoom_out")} className="flex h-12 w-12 items-center justify-center border-t border-sg-line text-sg-ink hover:bg-sg-paper">−</button>
-      </div>
+      {/* A11y: no zoom controls here — the decorative pane + sweep list
+       * rows below already give full keyboard/SR access (never leave
+       * focusable buttons with no action). */}
       <div className="absolute inset-x-4 bottom-16 rounded-[12px] bg-sg-card p-3 shadow-md">
         <p className="text-small text-sg-ink-soft">{t("sw_map_note")}</p>
       </div>
@@ -297,13 +296,14 @@ function ReportSheet({
                   style={{ backgroundImage: "radial-gradient(circle at 20% 30%, rgba(42,107,138,0.18) 0 1px, transparent 1px), linear-gradient(180deg, #e0eff5, #d6e9f2)", backgroundSize: "26px 26px, 100% 100%" }}
                 />
                 {point ? (
-                  <button
-                    type="button"
+                  /* A11y: static marker, not a button — the LocationOnceButton
+                   * below is the working path for placing the pin. */
+                  <span
+                    aria-hidden
                     className="absolute left-1/2 top-1/2 z-10 -ml-3.5 -mt-3.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-sg-clay shadow-md"
-                    aria-label={t("sw_move_pin")}
                   >
                     <MapPinIcon size={16} className="text-white" />
-                  </button>
+                  </span>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <p className="max-w-[220px] text-center text-small text-sg-ink-soft">{t("sw_pin_hint")}</p>

@@ -497,7 +497,7 @@ function SendAlertPage() {
               )}
 
               {error ? (
-                <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay">{error}</p>
+                <p role="alert" className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay">{error}</p>
               ) : null}
             </div>
           </BottomSheet>

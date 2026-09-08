@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { useAuth } from "~/lib/auth";
-import { Button, Card, LocationOnceButton, useToasts } from "~/components/ui";
+import { BottomSheet, Button, Card, LocationOnceButton, useToasts } from "~/components/ui";
 import { getHomeStatsResilient, readLocationOnce } from "~/lib/homeStatsResilience";
 import type { DataSource } from "~/lib/server";
 import { useLanguage } from "~/lib/i18n";
@@ -167,13 +167,11 @@ function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
   const { signIn } = useAuth();
   const { push } = useToasts();
   const { t } = useLanguage();
-  if (!open) return null;
+  // A11y: BottomSheet carries the dialog's focus-move + Escape-close
+  // behavior (keyboard/SR users are never stranded in the sheet).
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={t("home_si_title")}>
-      <div className="absolute inset-0 bg-[rgba(30,42,50,0.6)]" onClick={onClose} aria-hidden />
-      <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[560px] rounded-t-[20px] bg-sg-card p-6 pb-[max(env(safe-area-inset-bottom),16px)] shadow-[0_8px_32px_rgba(30,42,50,0.18)]">
-        <h2 className="text-h2">{t("home_si_title")}</h2>
-        <p className="mt-2 text-body text-sg-ink-soft">
+    <BottomSheet open={open} onClose={onClose} title={t("home_si_title")}>
+        <p className="text-body text-sg-ink-soft">
           {t("home_si_body")}
         </p>
         <div className="mt-5 flex flex-col gap-2">
@@ -191,8 +189,7 @@ function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
             {t("home_notnow")}
           </Button>
         </div>
-      </div>
-    </div>
+    </BottomSheet>
   );
 }
 
@@ -274,11 +271,13 @@ function HomePage() {
               </Button>
             </Link>
           ) : (
-            <button type="button" onClick={() => setSignInOpen(true)} className="w-full text-left">
-              <Button variant="secondary" full disabledReason={t("home_signin_needed")}>
+            <div className="w-full">
+              {/* A11y: no nested button — Button renders its own button;
+               * the onClick lives on the Button itself. */}
+              <Button variant="secondary" full disabledReason={t("home_signin_needed")} onClick={() => setSignInOpen(true)}>
                 {t("home_checkin")}
               </Button>
-            </button>
+            </div>
           )}
         </div>
 

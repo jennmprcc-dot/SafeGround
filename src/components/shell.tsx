@@ -196,12 +196,18 @@ function BottomNav() {
               {tab.to === "/checkin" && <MoonIcon size={22} />}
               <span>{t(tab.key)}</span>
               {tab.to === "/sweeps" && active > 0 ? (
-                <span className="absolute right-1/2 top-0.5 flex h-4 min-w-4 translate-x-1/2 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white" aria-label={`${active} active sweeps`}>
-                  {badgedSweeps}
-                </span>
+                <>
+                  <span aria-hidden className="absolute right-1/2 top-0.5 flex h-4 min-w-4 translate-x-1/2 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
+                    {badgedSweeps}
+                  </span>
+                  <span className="sr-only">{active} active sweeps</span>
+                </>
               ) : null}
               {tab.to === "/checkin" && selfOverdue ? (
-                <span className="absolute right-1/2 top-0.5 h-2 w-2 translate-x-1/2 rounded-full bg-sg-clay" aria-label="Overdue for a check-in" />
+                <>
+                  <span aria-hidden className="absolute right-1/2 top-0.5 h-2 w-2 translate-x-1/2 rounded-full bg-sg-clay" />
+                  <span className="sr-only">Overdue for a check-in</span>
+                </>
               ) : null}
             </Link>
           );
@@ -387,14 +393,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[640px] flex-col bg-sg-paper">
+      {/* A11y: skip link — first focusable element, visible on focus. */}
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:min-h-[48px] focus:items-center focus:rounded-[12px] focus:bg-sg-card focus:px-4 focus:font-semibold focus:text-sg-sky focus:shadow-md">
+        Skip to content
+      </a>
       <Header menuOpen={menuOpen} onOpenMenu={() => setMenuOpen(true)} />
       {offline ? (
-        <div className="flex items-center gap-2 bg-sg-sky-wash px-4 py-2.5 text-small text-sg-sky">
+        <div role="status" className="flex items-center gap-2 bg-sg-sky-wash px-4 py-2.5 text-small text-sg-sky">
           <InfoIcon size={16} aria-hidden />
           No connection — showing saved list.
         </div>
       ) : null}
-      <main className="flex-1 pb-[calc(72px+env(safe-area-inset-bottom))]">{children}</main>
+      <main id="main" className="flex-1 pb-[calc(72px+env(safe-area-inset-bottom))]">{children}</main>
       <BottomNav />
       <ToastStack toasts={toasts} onDismiss={dismiss} />
       <MenuSheet open={menuOpen} onClose={() => setMenuOpen(false)} />

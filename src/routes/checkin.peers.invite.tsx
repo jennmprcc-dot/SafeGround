@@ -152,7 +152,6 @@ function InvitePage() {
           <h1 className="text-h1">Your invite code</h1>
           <div
             className="rounded-[16px] border border-sg-line bg-sg-card px-6 py-5 text-3xl font-bold tracking-[0.3em] text-sg-ink select-all"
-            role="textbox"
             aria-label="Invite code"
           >
             {code}
