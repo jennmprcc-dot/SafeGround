@@ -1,40 +1,26 @@
 /**
- * SafeGround app shell (WIREFRAMES §0): header (wordmark + [?] + [≡]),
- * bottom nav (4 tabs, night bar, sage underline), offline banner,
- * toast stack. Crisis-resources sheet lives here (every screen can reach it
- * through the menu — "Talk to someone" is always one tap away, never a trap).
+ * SafeGround app shell (WIREFRAMES §0 + NAV_REFACTOR_SPEC §4): sticky header
+ * Row 1 (brand + lang + urgent + info + More), Row 2 (3-segment MODE selector),
+ * Row 3 (sub-nav chips for the active mode), privacy microcopy, offline banner,
+ * toast stack. Crisis-resources sheet stays one tap away from every mode.
+ *
+ * Mode state: derived from the URL via routeHint() + localStorage["sg.mode"]
+ * (readMode/writeMode). Deep links only HIGHLIGHT — sg.mode is overwritten on
+ * user tap only (spec §5). Server gates untouched; this is client chrome only.
  */
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { Link, useLocation, useNavigate, useRouterState } from "@tanstack/react-router";
 import { cn } from "~/lib/cn";
 import { useAuth } from "~/lib/auth";
 import { useLanguage } from "~/lib/i18n";
 import { listSweeps, getMyCheckIn, listTrustedPeers, demoUserId } from "~/lib/server";
-import { BellMoonIcon, CheckIcon, HomeIcon, InfoIcon, MenuIcon, MoonIcon, NightLampIcon } from "~/lib/appIcons";
-import { HeartIcon } from "~/lib/icons";
+import { BellMoonIcon, CheckIcon, InfoIcon, MenuIcon } from "~/lib/appIcons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
 import { OPEN_WELCOME_EVENT } from "~/components/welcome";
 import type { ToastState } from "~/components/ui";
-
-/* ── Icons for the shell ────────────────────────────────────────── */
-
-function FindIcon(props: { size?: number }) {
-  return (
-    <svg width={props.size ?? 24} height={props.size ?? 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-      <path d="M11 8v6M8 11h6" />
-    </svg>
-  );
-}
-
-const TABS = [
-  { to: "/", key: "nav_home" as const },
-  { to: "/help", key: "nav_help" as const },
-  { to: "/sweeps", key: "nav_sweeps" as const },
-  { to: "/checkin", key: "nav_checkin" as const },
-] as const;
+import { MODES, displayMode, readMode, routeHint, writeMode } from "~/lib/modeNav";
+import type { Mode, ModeDef, SubTab } from "~/lib/modeNav";
 
 /* ── EN|ES segmented toggle (PR-B) — calm two-state control in the
  * header, persisted to localStorage (`sg.lang`). EN is always the
@@ -69,9 +55,335 @@ export function LanguageToggle() {
   );
 }
 
+/* ── Roving tablist (spec §6 — ViewTabs pattern from help.tsx) ──────────
+ * ArrowLeft/Right (+Up/Down, Home/End) moves selection+focus on keyboard;
+ * pointer/tap activates via onClick WITHOUT moving focus — EXCEPT the mode
+ * selector, where switching modes replaces the whole sub-nav + content
+ * region, so focus moves to the new sub-nav's selected tab (spec §6). */
+
+/* ── Mode navigation (Rows 2 + 3) ─────────────────────────────────────── */
+
+function TabAnchor({
+  refCb,
+  tabId,
+  active,
+  tabIndex,
+  onSelect,
+  onKey,
+  chip,
+  to,
+  search,
+  children,
+}: {
+  refCb: (el: HTMLAnchorElement | null) => void;
+  tabId: string;
+  active: boolean;
+  tabIndex: number;
+  onSelect: () => void;
+  onKey: (e: ReactKeyboardEvent<HTMLAnchorElement>) => void;
+  chip?: boolean;
+  to: string;
+  search?: Record<string, string>;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      ref={refCb}
+      id={tabId}
+      to={to}
+      search={search}
+      role="tab"
+      aria-selected={active}
+      aria-current={active ? "page" : undefined}
+      tabIndex={tabIndex}
+      onClick={onSelect}
+      onKeyDown={onKey}
+      className={cn(
+        chip
+          ? "flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-btn font-medium transition-colors"
+          : "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-[10px] px-1 text-btn font-medium transition-colors",
+        active
+          ? chip
+            ? "border-sg-sage bg-sg-sage text-white"
+            : "bg-sg-sage text-white"
+          : chip
+            ? "border-sg-line bg-sg-card text-sg-ink-soft hover:text-sg-ink"
+            : "text-sg-ink-soft hover:text-sg-ink",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function useModeNavBadges(activeMode: Mode) {
+  const { signedIn, displayName } = useAuth();
+  const [openNeeds, setOpenNeeds] = useState<number | null>(null);
+  const [sweepCount, setSweepCount] = useState<number | null>(null);
+  const [selfOverdue, setSelfOverdue] = useState(false);
+  const [incomingInvite, setIncomingInvite] = useState(false);
+  const [activeAlerts, setActiveAlerts] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    // Needs Queue badge (HomeTeam ❤️) + alerts badge (Admin 🚨) share the
+    // outreach summary counts; sweeps badge is the public listSweeps read.
+    // Everything degrades silently when the DB is unreachable (spec §8).
+    if (activeMode === "hometeam" || activeMode === "admin") {
+      fetch("/api/outreach/summary?phone=")
+        .then((r) => (r.ok ? r.json().catch(() => null) : null))
+        .then((d: { ok?: boolean; counts?: { openNeeds?: number; activeAlerts?: number } } | null) => {
+          if (!alive || !d?.ok) return;
+          if (typeof d.counts?.openNeeds === "number") setOpenNeeds(d.counts.openNeeds);
+          if (typeof d.counts?.activeAlerts === "number") setActiveAlerts(d.counts.activeAlerts);
+        })
+        .catch(() => undefined);
+    }
+    if (activeMode === "admin") {
+      listSweeps()
+        .then((r) => {
+          if (alive) setSweepCount(r.rows.filter((s) => s.status === "active" || s.status === "planned").length);
+        })
+        .catch(() => undefined);
+    }
+    if (activeMode === "neighbor" && signedIn) {
+      const userId = demoUserId(displayName, deviceToken());
+      getMyCheckIn({ data: { userId } })
+        .then((r) => {
+          if (alive) setSelfOverdue(r.row?.overdue ?? false);
+        })
+        .catch(() => undefined);
+      listTrustedPeers({ data: { userId } })
+        .then((r) => {
+          if (alive) setIncomingInvite(r.rows.some((p) => p.status === "pending" && p.direction === "in"));
+        })
+        .catch(() => undefined);
+    } else {
+      setSelfOverdue(false);
+      setIncomingInvite(false);
+    }
+    return () => {
+      alive = false;
+    };
+  }, [activeMode, signedIn, displayName]);
+
+  return { openNeeds, sweepCount, selfOverdue, incomingInvite, activeAlerts };
+}
+
+function ModeNav() {
+  const { pathname } = useLocation();
+  const search = useRouterState({ select: (s) => s.location.search }) as Record<string, string | undefined>;
+  const navigate = useNavigate();
+  const { t } = useLanguage();
+  const [stored, setStored] = useState<Mode>(() => readMode());
+  const [focusSignal, setFocusSignal] = useState(0);
+  const [announce, setAnnounce] = useState("");
+
+  const query: Record<string, string | undefined> = {
+    view: typeof search.view === "string" ? search.view : undefined,
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+    cat: typeof search.cat === "string" ? search.cat : undefined,
+  };
+  const hint = routeHint(pathname, query);
+  const shown = displayMode(stored, hint);
+  const modeDef = MODES.find((m) => m.id === shown) ?? MODES[1];
+  const badges = useModeNavBadges(shown);
+
+  const pickMode = (m: Mode, opts?: { moveFocus?: boolean }) => {
+    setStored(m);
+    writeMode(m); // persist on tap only — never on deep-link highlight (§5)
+    onModeAnnounce(m);
+    const def = MODES.find((d) => d.id === m);
+    if (def) void navigate({ to: def.home.to, search: def.home.search });
+    if (opts?.moveFocus) {
+      setFocusSignal((n) => n + 1);
+      // Spec §6: announce the new mode + its sub-nav via role=status.
+      const name = t(def?.labelKey ?? "mode_neighbor");
+      const subs = def?.tabs.map((s) => t(s.labelKey)).join(", ") ?? "";
+      setAnnounce(t("mode_status").replace("{mode}", `${name} — ${subs}`));
+    }
+  };
+
+  const modeIds = MODES.map((m) => m.id);
+  const modeRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const onModeKey = (e: ReactKeyboardEvent<HTMLAnchorElement>) => {
+    const cur = modeRefs.current.indexOf(e.currentTarget);
+    if (cur === -1) return;
+    let next: number | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (cur + 1) % modeIds.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (cur - 1 + modeIds.length) % modeIds.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = modeIds.length - 1;
+    if (next !== null) {
+      e.preventDefault();
+      modeRefs.current[next]?.focus();
+      pickMode(modeIds[next]); // keyboard: selection follows focus (§6)
+    }
+  };
+
+  // Sub-tab keyboard: selection follows focus; pointer taps don't move focus.
+  const subRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const onSubKey = (e: ReactKeyboardEvent<HTMLAnchorElement>) => {
+    const cur = subRefs.current.indexOf(e.currentTarget);
+    if (cur === -1) return;
+    let next: number | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (cur + 1) % modeDef.tabs.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (cur - 1 + modeDef.tabs.length) % modeDef.tabs.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = modeDef.tabs.length - 1;
+    if (next !== null) {
+      e.preventDefault();
+      const dest = modeDef.tabs[next];
+      subRefs.current[next]?.focus();
+      void navigate({ to: dest.to, search: dest.search });
+    }
+  };
+  // Spec §6: on mode switch move focus to the new sub-nav's selected tab.
+  useEffect(() => {
+    if (focusSignal === 0) return;
+    const i = Math.max(0, modeDef.tabs.findIndex((s) => s.id === activeSubId(hint, modeDef)));
+    subRefs.current[i]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSignal]);
+
+  const activeSub = activeSubId(hint, modeDef);
+
+  const badgeFor = (s: SubTab): ReactNode => {
+    if (s.badge === "needs" && (badges.openNeeds ?? 0) > 0) {
+      const n = badges.openNeeds ?? 0;
+      return (
+        <>
+          <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
+            {n > 9 ? "9+" : String(n)}
+          </span>
+          <span className="sr-only" role="status">{n} open needs</span>
+        </>
+      );
+    }
+    if (s.badge === "sweeps" && (badges.sweepCount ?? 0) > 0) {
+      const n = badges.sweepCount ?? 0;
+      return (
+        <>
+          <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
+            {n > 9 ? "9+" : String(n)}
+          </span>
+          <span className="sr-only" role="status">{n} active sweeps</span>
+        </>
+      );
+    }
+    if (s.badge === "alerts" && (badges.activeAlerts ?? 0) > 0) {
+      const n = badges.activeAlerts ?? 0;
+      return (
+        <>
+          <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
+            {n > 9 ? "9+" : String(n)}
+          </span>
+          <span className="sr-only" role="status">{n} active alerts</span>
+        </>
+      );
+    }
+    if (s.badge === "checkin" && (badges.selfOverdue || badges.incomingInvite)) {
+      return (
+        <>
+          <span aria-hidden className="h-2 w-2 rounded-full bg-sg-clay" />
+          <span className="sr-only" role="status">
+            {badges.selfOverdue ? "Overdue for a check-in" : "New peer invite"}
+          </span>
+        </>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="border-t border-sg-line/70">
+      {/* Spec §6: mode announcements (polite, sr-only). */}
+      <p role="status" className="sr-only">{announce}</p>
+      {/* Row 2 — mode selector */}
+      <div className="mx-auto max-w-[640px] pt-2 sm:flex sm:items-center sm:gap-2 sm:px-4">
+        <p id="mode-label" className="sr-only">{t("mode_label")}</p>
+        <div role="tablist" aria-labelledby="mode-label" className="mx-4 flex rounded-[12px] border border-sg-line bg-sg-card p-1 sm:mx-0 sm:flex-1">
+          {MODES.map((m, i) => {
+            const active = m.id === shown;
+            return (
+              <Link
+                key={m.id}
+                ref={(el) => {
+                  modeRefs.current[i] = el;
+                }}
+                id={`mode-tab-${m.id}`}
+                to={m.home.to}
+                search={m.home.search}
+                role="tab"
+                aria-selected={active}
+                aria-current={active ? "page" : undefined}
+                tabIndex={active ? 0 : -1}
+                onClick={(e) => {
+                  e.preventDefault();
+                  pickMode(m.id, { moveFocus: true });
+                }}
+                onKeyDown={onModeKey}
+                className={cn(
+                  "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-[10px] px-1 text-btn font-medium transition-colors",
+                  active ? "bg-sg-sage text-white" : "text-sg-ink-soft hover:text-sg-ink",
+                )}
+              >
+                <span aria-hidden>{m.icon}</span>
+                <span>{t(m.labelKey)}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+      {/* Row 3 — sub-nav chips for the active mode */}
+      <nav aria-label={t(modeDef.labelKey)} className="mx-auto max-w-[640px] sm:flex sm:justify-end sm:px-4">
+        <div role="tablist" aria-label={`${t(modeDef.labelKey)} — ${t("mode_label")}`} className="flex gap-2 overflow-x-auto px-4 py-2">
+          {modeDef.tabs.map((s, i) => {
+            const active = s.id === activeSub;
+            return (
+              <TabAnchor
+                key={s.id}
+                refCb={(el) => {
+                  subRefs.current[i] = el;
+                }}
+                tabId={`sub-tab-${modeDef.id}-${s.id}`}
+                active={active}
+                tabIndex={active ? 0 : -1}
+                onSelect={() => undefined}
+                onKey={onSubKey}
+                chip
+                to={s.to}
+                search={s.search}
+              >
+                <span aria-hidden>{s.icon}</span>
+                <span>{t(s.labelKey)}</span>
+                {badgeFor(s)}
+              </TabAnchor>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+function activeSubId(
+  hint: { mode: Mode | null; tab: string | null },
+  modeDef: ModeDef,
+): string {
+  if (hint.tab && modeDef.tabs.some((s) => s.id === hint.tab)) return hint.tab;
+  return modeDef.tabs[0].id;
+}
+
 /* ── Header ─────────────────────────────────────────────────────── */
 
-function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () => void }) {
+function Header({
+  menuOpen,
+  onOpenMenu,
+}: {
+  menuOpen: boolean;
+  onOpenMenu: () => void;
+}) {
   const { signedIn, displayName } = useAuth();
   const { t } = useLanguage();
   return (
@@ -94,7 +406,7 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
               the header — opens /urgent-need, sends nothing by itself. */}
           <Link
             to="/urgent-need"
-            className="flex min-h-[40px] items-center rounded-full bg-sg-clay px-3 text-small font-semibold text-white hover:opacity-90"
+            className="flex min-h-[48px] items-center rounded-full bg-sg-clay px-3 text-small font-semibold text-white hover:opacity-90"
             aria-label={t("un_home_cta")}
             title={t("un_home_cta")}
           >
@@ -114,104 +426,16 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
             className="flex min-h-[48px] min-w-[44px] items-center justify-center text-sg-ink-soft hover:text-sg-ink"
-            aria-label="Menu"
+            aria-label={t("nav_more")}
           >
             <MenuIcon size={22} />
           </button>
         </nav>
       </div>
+      {/* Privacy microcopy (spec §4): one calm line, not a banner. */}
+      <p className="mx-auto max-w-[640px] px-4 pb-1 text-small text-sg-ink-soft">{t("privacy_micro")}</p>
+      <ModeNav />
     </header>
-  );
-}
-
-/* ── Bottom nav ─────────────────────────────────────────────────── */
-
-function BottomNav() {
-  const { pathname } = useLocation();
-  const { signedIn, displayName } = useAuth();
-  const { t } = useLanguage();
-  const [sweepCount, setSweepCount] = useState<number | null>(null);
-  const [selfOverdue, setSelfOverdue] = useState(false);
-  const [incomingInvite, setIncomingInvite] = useState(false);
-
-  // Live badges: sweep count (public read) + self-overdue dot (own check-in).
-  // Both degrade calmly to no badge when the DB is unreachable.
-  useEffect(() => {
-    let alive = true;
-    listSweeps()
-      .then((r) => {
-        if (alive) setSweepCount(r.rows.filter((s) => s.status === "active" || s.status === "planned").length);
-      })
-      .catch(() => undefined);
-    if (!signedIn) {
-      setSelfOverdue(false);
-      setIncomingInvite(false);
-      return;
-    }
-    const userId = demoUserId(displayName, deviceToken());
-    getMyCheckIn({ data: { userId } })
-      .then((r) => {
-        if (alive) setSelfOverdue(r.row?.overdue ?? false);
-      })
-      .catch(() => undefined);
-    // PEER-4 inbox dot: an incoming (pending-in) invite surfaces on the
-    // Check-in tab when push isn't available — dot only, no count, no name.
-    listTrustedPeers({ data: { userId } })
-      .then((r) => {
-        if (alive) setIncomingInvite(r.rows.some((p) => p.status === "pending" && p.direction === "in"));
-      })
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [signedIn, displayName]);
-
-  const active = sweepCount ?? 0;
-  const badgedSweeps = active > 9 ? "9+" : String(active);
-
-  return (
-    <nav
-      aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-sg-night/40 bg-sg-night pb-[env(safe-area-inset-bottom)] text-sg-card"
-    >
-      <div className="mx-auto flex max-w-[640px]">
-        {TABS.map((tab) => {
-          const isActive = tab.to === "/" ? pathname === "/" : pathname.startsWith(tab.to);
-          return (
-            <Link
-              key={tab.to}
-              to={tab.to}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 pt-1.5 text-small transition-colors",
-                isActive ? "text-sg-card" : "text-sg-card/70 hover:text-sg-card",
-              )}
-            >
-              {isActive ? <span className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-sg-sage" aria-hidden /> : null}
-              {tab.to === "/" && <HomeIcon size={22} />}
-              {tab.to === "/help" && <FindIcon size={22} />}
-              {tab.to === "/sweeps" && <BellMoonIcon size={22} />}
-              {tab.to === "/checkin" && <MoonIcon size={22} />}
-              <span>{t(tab.key)}</span>
-              {tab.to === "/sweeps" && active > 0 ? (
-                <>
-                  <span aria-hidden className="absolute right-1/2 top-0.5 flex h-4 min-w-4 translate-x-1/2 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
-                    {badgedSweeps}
-                  </span>
-                  <span className="sr-only">{active} active sweeps</span>
-                </>
-              ) : null}
-              {tab.to === "/checkin" && selfOverdue ? (
-                <>
-                  <span aria-hidden className="absolute right-1/2 top-0.5 h-2 w-2 translate-x-1/2 rounded-full bg-sg-clay" />
-                  <span className="sr-only">Overdue for a check-in</span>
-                </>
-              ) : null}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
   );
 }
 
@@ -261,9 +485,12 @@ export function CrisisSheet({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-/* ── Menu sheet ─────────────────────────────────────────────────── */
+/* ── More sheet (spec §4 — replaces the menu sheet's nav role) ──────────
+ * Everything not in the 3×3 grid lives here so nothing is ever unreachable:
+ * /alerts/new, /alerts/mine, /privacy, welcome, /push-test, crisis resources,
+ * sign-in/out block. No mode chrome changes on other routes. */
 
-function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { signedIn, displayName, signIn, signOut } = useAuth();
   const { push } = useToasts();
   const { t } = useLanguage();
@@ -271,15 +498,23 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   return (
     <>
-      <BottomSheet open={open && !crisisOpen} onClose={onClose} title={t("menu_title")}>
-        <nav className="flex flex-col gap-1" aria-label="Menu">
+      <BottomSheet open={open && !crisisOpen} onClose={onClose} title={t("nav_more")}>
+        <nav className="flex flex-col gap-1" aria-label="More">
           <Link
-            to="/hometeam"
+            to="/alerts/new"
             onClick={onClose}
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
-            <HeartIcon size={22} aria-hidden />
-            {t("menu_hometeam")}
+            <BellMoonIcon size={22} aria-hidden />
+            Send an alert
+          </Link>
+          <Link
+            to="/alerts/mine"
+            onClick={onClose}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <CheckIcon size={22} aria-hidden />
+            My alerts
           </Link>
           <Link
             to="/privacy"
@@ -301,14 +536,6 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             {t("menu_welcome")}
           </button>
           <Link
-            to="/peer-support-queue"
-            onClick={onClose}
-            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
-          >
-            <InfoIcon size={22} aria-hidden />
-            {t("menu_queue")}
-          </Link>
-          <Link
             to="/push-test"
             onClick={onClose}
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
@@ -321,7 +548,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             onClick={() => setCrisisOpen(true)}
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
-            <NightLampIcon size={22} aria-hidden />
+            <CheckIcon size={22} aria-hidden />
             {t("menu_crisis")}
           </button>
           {signedIn ? (
@@ -402,10 +629,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           No connection — showing saved list.
         </div>
       ) : null}
-      <main id="main" className="flex-1 pb-[calc(72px+env(safe-area-inset-bottom))]">{children}</main>
-      <BottomNav />
+      <main id="main" className="flex-1 pb-[env(safe-area-inset-bottom)]">{children}</main>
       <ToastStack toasts={toasts} onDismiss={dismiss} />
-      <MenuSheet open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <MoreSheet open={menuOpen} onClose={() => setMenuOpen(false)} />
       <CrisisSheet open={crisisOpen} onClose={() => setCrisisOpen(false)} />
     </div>
   );

@@ -6,7 +6,7 @@
  * No background location, no auth-account requirement, calm copy throughout.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { BottomSheet, Button, Card, ConsentReceipt, Dialog, EmptyState, SkeletonRows, StatusBadge, TextArea, TextField, useToasts } from "~/components/ui";
 import { isOutreachPhone, logNeed, joinHomeTeam, claimNeed, markNeedDelivered, listNeeds, getHomeTeamStatus } from "~/lib/server";
@@ -19,7 +19,12 @@ import type { BadgeKind } from "~/components/ui";
 import { useLanguage, needStatusKey } from "~/lib/i18n";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
-export const Route = createFileRoute("/hometeam")({ component: HomeTeamPage });
+export const Route = createFileRoute("/hometeam")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    view: typeof search?.view === "string" ? search.view : undefined,
+  }),
+  component: HomeTeamPage,
+});
 
 /** Calm relative time: "5h ago" / "just now". */
 function timeAgo(iso: string): string {
@@ -40,7 +45,7 @@ const badgeKindFor: Record<ReturnType<typeof needBadgeKind>, BadgeKind> = {
 
 /** One need as a calm card — item chips, requester (first name only), note,
  * status, helper line, action button (claims/delivers per state + identity). */
-function NeedCard({
+export function NeedCard({
   need,
   phone,
   claimedByMe,
@@ -475,6 +480,13 @@ function HomeTeamPage() {
   }, [phone, tick]);
 
   const joined = memberStatus.name !== null || phone.length === 0;
+  // 3-mode nav (?view=give): Donate/Pickup panel on the SAME page — the
+  // LogSheet (incl. ht_pickup) opens expanded + feed pre-filters to open.
+  const search = useSearch({ from: "/hometeam" }) as { view?: string };
+  const giveMode = search.view === "give";
+  useEffect(() => {
+    if (giveMode) setLogOpen(true);
+  }, [giveMode]);
   const openNeeds = useMemo(() => needs.filter((n) => n.status === "open"), [needs]);
   const activeNeeds = useMemo(() => needs.filter((n) => n.status === "claimed" || n.status === "in_progress"), [needs]);
   const doneNeeds = useMemo(() => needs.filter((n) => n.status === "delivered" || n.status === "fulfilled"), [needs]);
@@ -667,6 +679,20 @@ function HomeTeamPage() {
               {t("ht_log")}
             </Button>
           </div>
+        ) : null}
+
+        {/* 3-mode nav (?view=give): Donate/Pickup panel — LogSheet form
+            reuse (incl. ht_pickup) inline on the same page, no new route. */}
+        {giveMode ? (
+          <section aria-label={t("nav_ht_give")} className="rounded-[16px] border border-sg-sage/60 bg-sg-sage-wash/40 p-4">
+            <h2 className="text-h2">{t("nav_ht_give")}</h2>
+            <p className="mt-0.5 text-small text-sg-ink-soft">{t("ht_log")}</p>
+            <div className="mt-3">
+              <Button full variant="secondary" onClick={() => setLogOpen(true)}>
+                {t("ht_log")}
+              </Button>
+            </div>
+          </section>
         ) : null}
 
         {/* feed */}
