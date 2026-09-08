@@ -12,7 +12,6 @@ import { AppShell } from "~/components/shell";
 import {
   BottomSheet,
   Button,
-  Card,
   ChipGrid,
   ConsentReceipt,
   Dialog,
@@ -26,10 +25,10 @@ import {
   useToasts,
 } from "~/components/ui";
 import { useAuth } from "~/lib/auth";
-import { listSweeps, reportSweep, getOutreachQueue, actOnSweep } from "~/lib/server";
+import { listSweeps, reportSweep } from "~/lib/server";
 import type { SweepRow, DataSource } from "~/lib/server";
 import { approxDistanceMi, demoNearMePoint } from "~/lib/data";
-import { BellMoonIcon, CheckIcon, MapPinIcon, PenIcon, CheckCircleIcon } from "~/lib/icons";
+import { BellMoonIcon, CheckIcon, MapPinIcon, PenIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
@@ -375,8 +374,6 @@ function SweepsPage() {
   const [filter, setFilter] = useState<"all" | "active" | "planned">("all");
   const [selected, setSelected] = useState<SweepRow | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const [queueOpen, setQueueOpen] = useState(false);
-  const [queue, setQueue] = useState<{ pending: SweepRow[]; source: DataSource }>({ pending: [], source: "demo" });
   const tabRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -417,25 +414,6 @@ function SweepsPage() {
     return state.rows.filter((s) => s.status === filter);
   }, [state.rows, filter]);
 
-  const openQueue = () => {
-    getOutreachQueue()
-      .then((r) => {
-        setQueue(r);
-        setQueueOpen(true);
-      })
-      .catch(() => setQueueOpen(true));
-  };
-
-  const doAct = async (id: string, action: "verify" | "flag" | "resolve") => {
-    const res = await actOnSweep({ data: { id, action } });
-    if (res.ok) {
-      push({ kind: "info", message: action === "verify" ? "Marked as verified." : action === "flag" ? "Flagged for a second look — the reporter sees 'Under review'." : "Marked resolved." });
-      refresh();
-    } else {
-      push({ kind: "error", message: "Couldn't update right now — try again in a moment." });
-    }
-  };
-
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
@@ -444,9 +422,6 @@ function SweepsPage() {
             <h1 className="text-h1">Sweeps</h1>
             <p className="mt-0.5 text-small text-sg-ink-soft">Heads-ups from neighbors, kept calm.</p>
           </div>
-          <Button variant="secondary" onClick={openQueue} className="!min-h-[44px]">
-            Outreach queue
-          </Button>
         </header>
 
         {state.loading ? (
@@ -523,38 +498,6 @@ function SweepsPage() {
         </p>
       </div>
 
-      {/* outreach review queue (dashboard-lite; real dashboard is Wave 2) */}
-      <BottomSheet open={queueOpen} onClose={() => setQueueOpen(false)} title="Outreach queue">
-        <div className="flex flex-col gap-3 pb-2">
-          <p className="text-small text-sg-ink-soft">{queue.pending.length} sweeps awaiting verification{queue.source === "db" ? "" : " (demo)"}.</p>
-          {queue.pending.length === 0 ? (
-            <EmptyState title="All caught up" body="No reports waiting for a look right now." />
-          ) : (
-            queue.pending.map((s) => (
-              <Card key={s.id}>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-body font-medium text-sg-ink">{s.note ?? `${s.status} heads-up`}</p>
-                    <p className="mt-0.5 text-small text-sg-ink-soft">{s.window} · {s.reportedMinutesAgo} min ago</p>
-                  </div>
-                  <StatusBadge kind="Reported">Reported</StatusBadge>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => void doAct(s.id, "verify")}>
-                    <CheckCircleIcon size={18} aria-hidden /> Verify
-                  </Button>
-                  <Button variant="quiet" onClick={() => void doAct(s.id, "flag")}>
-                    Flag
-                  </Button>
-                  <Button variant="quiet" onClick={() => void doAct(s.id, "resolve")}>
-                    Resolve
-                  </Button>
-                </div>
-              </Card>
-            ))
-          )}
-        </div>
-      </BottomSheet>
 
       <ReportSheet
         open={reportOpen}
