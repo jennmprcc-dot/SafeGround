@@ -105,6 +105,17 @@ function RequestSupportPage() {
       } | null;
       if (res.ok && data?.ok) {
         setAlertIdentity(phoneInput, nameInput || identity?.name || "Neighbor");
+        // 3-mode nav v1 fallback (spec §10.2): no peer-status read endpoint
+        // exists, so the done screen stamps a local receipt the /requests
+        // page shows. Local only — never sent, never logged.
+        try {
+          localStorage.setItem(
+            "sg.peer_receipt",
+            JSON.stringify({ at: new Date().toISOString(), note: note.trim().slice(0, 500) }),
+          );
+        } catch {
+          /* private mode — receipt just won't show */
+        }
         setTeamNotified(data.teamNotified !== false);
         setPhase("done");
       } else {
@@ -139,6 +150,9 @@ function RequestSupportPage() {
             <NoticeConsentOptIn phone={phoneInput} source="peer-support" />
             <Link to="/" className="block w-full">
               <Button full>{t("ps_home")}</Button>
+            </Link>
+            <Link to="/requests" className="block w-full">
+              <Button variant="secondary" full>{t("nav_nb_requests")}</Button>
             </Link>
           </div>
           <p className="text-small text-sg-ink-soft">

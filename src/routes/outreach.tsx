@@ -15,10 +15,11 @@
  * payload carries — never client trust.
  */
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
+import { useLanguage } from "~/lib/i18n";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
@@ -101,11 +102,19 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 function OutreachPage() {
+  const { t } = useLanguage();
   const [identity] = useState(() => getAlertIdentity());
   const [phoneInput, setPhoneInput] = useState(identity?.phone ?? "");
   const [phone, setPhone] = useState(identity?.phone ?? "");
   const [state, setState] = useState<LoadState>({ kind: "idle" });
-  const [tab, setTab] = useState<Tab>("sweeps");
+  // 3-mode nav: /outreach?tab=alerts (Urgent Dispatch sub-tab) reuses the
+  // existing tab state — default tab follows the query param when valid.
+  const outreachSearch = useSearch({ from: "/outreach" }) as { tab?: string };
+  const initialTab: Tab =
+    outreachSearch.tab === "alerts" || outreachSearch.tab === "needs" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more"
+      ? outreachSearch.tab
+      : "sweeps";
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [clearFor, setClearFor] = useState<string | null>(null);
@@ -205,6 +214,21 @@ function OutreachPage() {
             </span>
           ) : null}
         </header>
+
+        {/* 3-mode nav (§8): role-appropriate lines on the Admin side. Public /
+            signed-out sees the calm locked line; staff_limited sees the team
+            line. Chrome only — the payload + server gates decide the data. */}
+        {data ? (
+          admin ? null : (
+            <p className="rounded-[12px] bg-sg-paper px-3 py-2 text-small text-sg-ink-soft">
+              {t("mode_staff_limited")}
+            </p>
+          )
+        ) : (
+          <p className="rounded-[12px] bg-sg-paper px-3 py-2 text-small text-sg-ink-soft">
+            {t("mode_admin_locked")}
+          </p>
+        )}
 
         <Card>
           <label className="flex flex-col gap-1.5">
@@ -570,4 +594,9 @@ function OutreachPage() {
   );
 }
 
-export const Route = createFileRoute("/outreach")({ component: OutreachPage });
+export const Route = createFileRoute("/outreach")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: typeof search?.tab === "string" ? search.tab : undefined,
+  }),
+  component: OutreachPage,
+});

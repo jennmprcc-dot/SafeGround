@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import {
   Button,
@@ -174,7 +174,15 @@ function NavigatorPage() {
   const { resources, loading, offline, source, retry } = useResources();
   const { push } = useToasts();
   const { lang, t } = useLanguage();
-  const [selected, setSelected] = useState<CategoryId[]>([]);
+  // 3-mode nav: ?cat=food,daycenters pre-selects Food and Day Use chips;
+  // ?view=manage shows the admin-only Manage Resources section (same page,
+  // no new route; hidden entirely for non-admin incl. staff_limited).
+  const helpSearch = useSearch({ from: "/help" }) as { view?: string; cat?: string };
+  const manageMode = helpSearch.view === "manage";
+  const [selected, setSelected] = useState<CategoryId[]>(() => {
+    const cats = (helpSearch.cat ?? "").split(",").map((c) => c.trim()).filter(Boolean) as CategoryId[];
+    return cats.filter((c) => c in CATEGORY_MAP);
+  });
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"list" | "map">("list");
   const [near, setNear] = useState<{ lat: number; lng: number } | null>(null);
@@ -349,6 +357,34 @@ function NavigatorPage() {
 
         <LocationOnceButton onClick={locationOnce} />
 
+        {/* 3-mode nav (?view=manage): admin-only Manage Resources section —
+            ResourceAddSheet reuse + resource list + directory/analytics cards.
+            Hidden ENTIRELY for non-admin (incl. staff_limited): ?view=manage
+            for non-admin renders the normal directory, no error (§10.3).
+            Server gates untouched: addResource + directory/analytics re-check
+            the roster server-side; this section is chrome only. */}
+        {manageMode && isAdmin ? (
+          <section aria-label={t("nav_ad_resources")} className="flex flex-col gap-3 rounded-[16px] border border-sg-sage/60 bg-sg-sage-wash/40 p-4">
+            <h2 className="text-h2">{t("nav_ad_resources")}</h2>
+            <p className="text-small text-sg-ink-soft">
+              {filtered.length} {filtered.length === 1 ? "place" : "places"} listed below — Add opens the same form as ever.
+            </p>
+            <div>
+              <Button full variant="secondary" onClick={() => setAddOpen(true)}>
+                <PlusIcon size={18} aria-hidden /> Add
+              </Button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Link to="/outreach/directory" className="block w-full">
+                <Button variant="secondary" full>Open community directory</Button>
+              </Link>
+              <Link to="/admin/analytics" className="block w-full">
+                <Button variant="secondary" full>Open reporting and impact</Button>
+              </Link>
+            </div>
+          </section>
+        ) : null}
+
         {offline && <OfflineBanner message="No connection — showing saved list. It's all here." onRetry={retry} />}
 
         {view === "map" ? (
@@ -436,4 +472,10 @@ function NavigatorPage() {
   );
 }
 
-export const Route = createFileRoute("/help")({ component: NavigatorPage });
+export const Route = createFileRoute("/help")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    view: typeof search?.view === "string" ? search.view : undefined,
+    cat: typeof search?.cat === "string" ? search.cat : undefined,
+  }),
+  component: NavigatorPage,
+});
