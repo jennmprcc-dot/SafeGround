@@ -165,7 +165,7 @@ export function ResourceAddSheet({
         ) : null}
 
         <div className="flex flex-col gap-2">
-          <Button variant="primary" full onClick={save} disabledReason={busy ? "Saving…" : undefined} disabled={busy}>
+          <Button variant="primary" full onClick={save} disabledReason={busy ? "Saving…" : undefined} disabled={busy} aria-busy={busy}>
             {busy ? "Saving…" : "Save resource"}
           </Button>
           <Button variant="quiet" full onClick={onClose}>

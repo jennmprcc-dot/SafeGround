@@ -75,6 +75,7 @@ function UrgentNeedPage() {
   const [note, setNote] = useState("");
   const [phase, setPhase] = useState<Phase>("form");
   const [sending, setSending] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Owner A&B: staff are notified BY DEFAULT; the sender keeps the choice
   // via a visible checkbox. Starts ON, never pre-fills anything else.
@@ -97,6 +98,7 @@ function UrgentNeedPage() {
       // Single one-time device read, user-initiated for THIS request. No
       // stored fallback, no invented point: the read is taken at send time so
       // the choice reflects where the neighbor is now.
+      setLocating(true);
       try {
         const p = await readDevicePoint();
         if (location === "exact") {
@@ -107,10 +109,12 @@ function UrgentNeedPage() {
           fuzzLng = p.lng;
         }
       } catch {
+        setLocating(false);
         setError(t("un_loc_fail"));
         setSending(false);
         return;
       }
+      setLocating(false);
     }
     try {
       const res = await fetch("/api/urgent-need/", {
@@ -232,8 +236,11 @@ function UrgentNeedPage() {
               <span className="block text-small text-sg-ink-soft">{t("un_notify_sub")}</span>
             </span>
           </label>
+          {locating ? (
+            <p role="status" className="text-small text-sg-ink-soft">Reading your location once — nothing is stored.</p>
+          ) : null}
           <div className="flex flex-col gap-2">
-            <Button full disabled={sending} onClick={() => void doSend()}>
+            <Button full disabled={sending} aria-busy={sending} onClick={() => void doSend()}>
               {sending ? "Sending…" : t("un_yes")}
             </Button>
             <Button variant="quiet" full onClick={() => setPhase("form")}>
@@ -357,6 +364,7 @@ function UrgentNeedPage() {
 
         <Button
           full
+          aria-busy={sending}
           disabled={!ready || sending}
           disabledReason={
             !category ? t("un_need_cat") : !location ? t("un_need_loc") : !phoneOk ? t("un_need_phone") : undefined

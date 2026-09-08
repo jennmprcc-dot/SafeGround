@@ -155,12 +155,13 @@ function AudienceStep({ hometeam, setHometeam, onNext, onBack }: {
 }
 
 /* ── Step 3: location — NEVER pre-selected ──────────────────────── */
-function LocationStep({ location, setLocation, onSend, onBack, sending, exactConfirmOpen, setExactConfirmOpen, exactReady }: {
+function LocationStep({ location, setLocation, onSend, onBack, sending, locating, exactConfirmOpen, setExactConfirmOpen, exactReady }: {
   location: AlertLocation | null;
   setLocation: (l: AlertLocation) => void;
   onSend: () => void;
   onBack: () => void;
   sending: boolean;
+  locating: boolean;
   exactConfirmOpen: boolean;
   setExactConfirmOpen: (b: boolean) => void;
   exactReady: boolean;
@@ -203,6 +204,9 @@ function LocationStep({ location, setLocation, onSend, onBack, sending, exactCon
         <p className="text-small text-sg-ink-soft">
           Never calls 911 or any agency — help comes from your people unless you ask for more.
         </p>
+        {locating ? (
+          <p role="status" className="text-small text-sg-ink-soft">Reading your location once — nothing is stored.</p>
+        ) : null}
 
         <Button
           full
@@ -257,6 +261,7 @@ function SendAlertPage() {
   const [location, setLocation] = useState<AlertLocation | null>(null);
   const [exactConfirmOpen, setExactConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [sent, setSent] = useState<{ id: string; source: AlertSource } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phoneInput, setPhoneInput] = useState("");
@@ -291,6 +296,7 @@ function SendAlertPage() {
       // this alert. No stored fallback, no invented point — if the read fails,
       // the location choice can't be honored and the sender sees a calm error.
       let p: { lat: number; lng: number } | null = null;
+      setLocating(true);
       try {
         p = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
           if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
@@ -304,6 +310,7 @@ function SendAlertPage() {
           );
         });
       } catch {
+        setLocating(false);
         setError("Couldn't read your location — pick “No location” to send with words only, or try again when you can.");
         setSending(false);
         return;
@@ -315,6 +322,7 @@ function SendAlertPage() {
         fuzzLat = p.lat;
         fuzzLng = p.lng;
       }
+      setLocating(false);
     }
 
     const audience: AlertAudienceGroup[] = ["friends", "peers"];
@@ -490,6 +498,7 @@ function SendAlertPage() {
                   onSend={() => void doSend()}
                   onBack={() => setStep(2)}
                   sending={sending}
+                  locating={locating}
                   exactConfirmOpen={exactConfirmOpen}
                   setExactConfirmOpen={setExactConfirmOpen}
                   exactReady={hometeam}

@@ -247,6 +247,7 @@ function InvitePage() {
 
         <Button
           full
+          aria-busy={sending}
           disabled={!canSend}
           disabledReason={!phoneOk ? "A complete phone number first — no rush." : !consented ? "The consent box needs a tap — it explains exactly what's shared." : undefined}
           onClick={() => void doInvite()}
