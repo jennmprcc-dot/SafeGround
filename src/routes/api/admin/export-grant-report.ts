@@ -1,7 +1,8 @@
 /**
  * Grant-ready monthly impact-report CSV export (owner-directed 2026-09-07).
  *
- * GET /api/admin/export-grant-report?month=YYYY-MM (default: current month).
+ * GET /api/admin/export-grant-report?month=YYYY-MM (default: current month)
+ *   or ?from=YYYY-MM-DD&to=YYYY-MM-DD (inclusive `to`).
  * Admin-only (isRosterAdmin — staff_limited 403s server-side). Counts only
  * from analytics_events (+ peer_support_requests / supply_requests / sweeps
  * for the same window); NO row data, NO phones, names, IPs, coords, or notes
@@ -26,6 +27,20 @@ function monthWindow(raw: string | null): { label: string; start: string } | nul
   return { label, start: `${label}-01` };
 }
 
+/** Window: a from/to date range when both are valid, else the month path. */
+type Win = { label: string; start: string; after: "month" | "day" };
+
+function windowFor(url: URL): Win {
+  const from = (url.searchParams.get("from") ?? "").trim();
+  const to = (url.searchParams.get("to") ?? "").trim();
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  if (re.test(from) && re.test(to)) {
+    return { label: `${from}-${to}`, start: from, after: "day" };
+  }
+  const m = monthWindow(url.searchParams.get("month"));
+  return { label: m.label, start: m.start, after: "month" };
+}
+
 const num = (v: unknown): number => {
   const n = typeof v === "string" || typeof v === "number" ? Number(v) : NaN;
   return Number.isFinite(n) ? n : 0;
@@ -44,11 +59,11 @@ async function exportReport(c: { request: Request }) {
     return Response.json({ ok: false, error: UNAVAILABLE }, { status: 503 });
   }
   const url = new URL(c.request.url);
-  const win = monthWindow(url.searchParams.get("month"));
-  if (!win) return Response.json({ ok: false, error: UNAVAILABLE }, { status: 503 });
+  const win = windowFor(url);
   try {
     const start = win.start;
-    // Bind start ONCE as a param; add one month inside SQL (no JS date math drift).
+    // Postgres computes the exclusive end from the bound interval (no JS date math).
+    const interval_ = win.after === "day" ? "1 day" : "1 month";
     const counts = (await sql()`
       select
         count(*) as total,
@@ -59,7 +74,7 @@ async function exportReport(c: { request: Request }) {
         count(distinct install_id) as unduplicated
       from public.analytics_events
       where created_at >= ${start}::date
-        and created_at < ${start}::date + interval '1 month'`) as unknown as Array<Record<string, unknown>>;
+        and created_at < ${start}::date + ${interval_}::interval`) as unknown as Array<Record<string, unknown>>;
     const m = counts[0] ?? {};
     const total = num(m.total);
     const searches = num(m.resource_searches);
@@ -68,13 +83,13 @@ async function exportReport(c: { request: Request }) {
       select category, count(*) as count
       from public.analytics_events
       where created_at >= ${start}::date
-        and created_at < ${start}::date + interval '1 month'
+        and created_at < ${start}::date + ${interval_}::interval
         and event_type = 'resource_search' and category is not null
       group by category
       order by count desc
       limit 10`) as unknown as Array<{ category: string; count: unknown }>;
 
-    // Peer Outreach Connection Volume — by status, same month window.
+    // Peer Outreach Connection Volume — by status, same window.
     // Guarded: peer_support_requests may not exist on every DB yet.
     let statusRows: Array<{ status: string; count: unknown }> = [];
     try {
@@ -82,7 +97,7 @@ async function exportReport(c: { request: Request }) {
         select status, count(*) as count
         from public.peer_support_requests
         where created_at >= ${start}::date
-          and created_at < ${start}::date + interval '1 month'
+          and created_at < ${start}::date + ${interval_}::interval
         group by status
         order by status`) as unknown as Array<{ status: string; count: unknown }>;
     } catch {
@@ -90,7 +105,7 @@ async function exportReport(c: { request: Request }) {
     }
 
     const csv =
-      row("SafeGround — Monthly Impact Report", win.label) +
+      row("SafeGround — Impact Report", win.label) +
       row() +
       row("Reporting Period", win.label) +
       row() +

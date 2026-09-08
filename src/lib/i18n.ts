@@ -99,6 +99,12 @@ const EN = {
   ps_done_b: "Your request is in the team's queue — a peer will follow up as soon as they're connected.",
   ps_done_privacy: "This stays between you and the MPRCC outreach team — never 911, never anyone else.",
   ps_home: "Back home",
+  // Peer-support queue entry (owner bug 2026-09-08: "queue doesn't open") —
+  // link shown to roster admins only (server gate), calm line for everyone else.
+  ps_queue_title: "For the outreach team",
+  ps_queue_body: "Requests from neighbors land in the team queue — open it here.",
+  ps_queue_open: "Open peer-support queue",
+  ps_queue_only: "The queue is for the MPRCC outreach team only.",
   // Urgent-need action (owner-directed 2026-09-08)
   un_home_cta: "I need help now",
   un_home_sub: "Urgent needs go straight to the MPRCC team — Help, Advocacy, ER ride, ER supplies, or Support. Never 911.",
@@ -459,6 +465,10 @@ const ES: Partial<Record<I18nKey, string>> = {
   ps_done_b: "Tu solicitud está en la lista del equipo — un compañero te contactará en cuanto pueda.",
   ps_done_privacy: "Esto queda entre tú y el equipo de MPRCC — nunca el 911, nunca nadie más.",
   ps_home: "Volver al inicio",
+  ps_queue_title: "Para el equipo",
+  ps_queue_body: "Las solicitudes de vecinos llegan a la lista del equipo — ábrela aquí.",
+  ps_queue_open: "Abrir la lista de apoyo",
+  ps_queue_only: "La lista es solo para el equipo de MPRCC.",
   un_home_cta: "Necesito ayuda ahora",
   un_home_sub: "Lo urgente llega directo al equipo de MPRCC — Ayuda, Apoyo, Ride a emergencias, Insumos o Acompanamiento. Nunca al 911.",
   un_title: "Necesito ayuda ahora",

@@ -29,6 +29,48 @@ import { NoticeConsentOptIn } from "~/components/noticeConsent";
 
 type Phase = "form" | "confirm" | "done";
 
+/**
+ * Peer-support queue entry (owner bug 2026-09-08: "queue doesn't open").
+ *
+ * Roster admins (Jenn + Bambi) get an "Open peer-support queue" card linking to
+ * /peer-support-queue?phone=<on-device phone>; everyone else sees the calm line
+ * "The queue is for the MPRCC outreach team only." with NO link. Membership is
+ * checked on-device by last-10-digit match against the two admin keys (the same
+ * normalization the server gate uses), but the queue page itself stays gated
+ * server-side via isRosterAdmin — this link exposes no queue data.
+ *
+ * Client-safe on purpose: this must NOT import ~/lib/pushServer or ~/db (those
+ * pull pg into the browser bundle — 2026-09-08 P0 lesson).
+ */
+/* Jenn (4158797940) + Bambi (4155249090) — last-10-digit keys, matching the
+ * server gate's phoneKey() normalization. The queue page itself re-checks
+ * server-side; this is only which entry hint to render. */
+const ADMIN_PHONE_KEYS = ["4158797940", "4155249090"];
+function QueueEntry({ phone }: { phone: string }) {
+  const { t } = useLanguage();
+  const digits = normPhone(phone);
+  const key = digits.slice(-10);
+  const isAdmin = digits.length >= 10 && ADMIN_PHONE_KEYS.includes(key);
+  if (!isAdmin || digits.length < 10) {
+    return (
+      <p className="text-center text-small text-sg-ink-soft">
+        {t("ps_queue_only")}
+      </p>
+    );
+  }
+  return (
+    <Card>
+      <p className="text-body font-medium">{t("ps_queue_title")}</p>
+      <p className="mt-0.5 text-small text-sg-ink-soft">{t("ps_queue_body")}</p>
+      <div className="mt-3">
+        <a href={`/peer-support-queue?phone=${encodeURIComponent(digits)}`}>
+          <Button variant="secondary" full>{t("ps_queue_open")}</Button>
+        </a>
+      </div>
+    </Card>
+  );
+}
+
 function RequestSupportPage() {
   const { t } = useLanguage();
   const [identity] = useState(() => getAlertIdentity());
@@ -102,6 +144,9 @@ function RequestSupportPage() {
           <p className="text-small text-sg-ink-soft">
             {t("ps_done_privacy")}
           </p>
+          <div className="mt-2 w-full max-w-xs">
+            <QueueEntry phone={phoneInput} />
+          </div>
         </div>
       </AppShell>
     );
@@ -221,6 +266,7 @@ function RequestSupportPage() {
         >
           {t("crisis_title")}
         </button>
+        <QueueEntry phone={phoneInput} />
       </div>
       <CrisisSheet open={crisisOpen} onClose={() => setCrisisOpen(false)} />
     </AppShell>
