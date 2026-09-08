@@ -17,12 +17,9 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
+import type { AnalyticsEventType } from "~/lib/analytics/types";
 
-export type AnalyticsEventType =
-  | "resource_search"
-  | "peer_support_request"
-  | "sweep_alert_view"
-  | "check_in";
+export type { AnalyticsEventType };
 
 const EVENT_TYPES: ReadonlySet<string> = new Set([
   "resource_search",
