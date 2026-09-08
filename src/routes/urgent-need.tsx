@@ -1,8 +1,8 @@
 /**
  * Urgent-need action (owner-directed 2026-09-08): "I need help now".
  *
- * One calm page: pick one of the owner's four categories (Help, Advocacy,
- * ER ride, Support) + phone + optional name/note + the sender's explicit
+ * One calm page: pick one of the owner's five categories (Help, Advocacy,
+ * ER ride, ER supplies, Support) + phone + optional name/note + the sender's explicit
  * location choice (none / fuzzed / exact, NEVER pre-selected) -> confirm ->
  * POST /api/urgent-need -> the MPRCC team has it.
  *
@@ -25,7 +25,7 @@ import { CheckCircleIcon } from "~/lib/icons";
 import { useLanguage, type I18nKey } from "~/lib/i18n";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
 
-type UrgentCategory = "help" | "advocacy" | "er_ride" | "support";
+type UrgentCategory = "help" | "advocacy" | "er_ride" | "er_supplies" | "support";
 type UrgentLocation = "none" | "fuzzed" | "exact";
 type Phase = "form" | "confirm" | "done";
 
@@ -37,6 +37,7 @@ const CATEGORIES: ReadonlyArray<{
   { value: "help", labelKey: "un_cat_help", subKey: "un_cat_help_sub" },
   { value: "advocacy", labelKey: "un_cat_advocacy", subKey: "un_cat_advocacy_sub" },
   { value: "er_ride", labelKey: "un_cat_er_ride", subKey: "un_cat_er_ride_sub" },
+  { value: "er_supplies", labelKey: "un_cat_er_supplies", subKey: "un_cat_er_supplies_sub" },
   { value: "support", labelKey: "un_cat_support", subKey: "un_cat_support_sub" },
 ];
 
@@ -75,6 +76,9 @@ function UrgentNeedPage() {
   const [phase, setPhase] = useState<Phase>("form");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Owner A&B: staff are notified BY DEFAULT; the sender keeps the choice
+  // via a visible checkbox. Starts ON, never pre-fills anything else.
+  const [notifyStaff, setNotifyStaff] = useState(true);
   const [teamNotified, setTeamNotified] = useState(true);
   const [crisisOpen, setCrisisOpen] = useState(false);
 
@@ -122,6 +126,9 @@ function UrgentNeedPage() {
           fuzzLng,
           exactLat,
           exactLng,
+          // Owner A&B: unchecked suppresses the staff push ONLY — the
+          // request still records in the queue either way.
+          notifyStaff,
         }),
       });
       const data = (await res.json().catch(() => null)) as {
@@ -211,6 +218,20 @@ function UrgentNeedPage() {
             </dl>
             <p className="mt-3 text-small text-sg-ink-soft">{t("un_scope")}</p>
           </Card>
+          {/* Owner A&B: staff notified BY DEFAULT; the sender keeps the
+              choice here on the confirm screen, before anything is sent. */}
+          <label className="flex min-h-[56px] cursor-pointer items-start gap-3 rounded-[12px] border border-sg-line bg-sg-card px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={notifyStaff}
+              onChange={(e) => setNotifyStaff(e.target.checked)}
+              className="mt-1 h-5 w-5 shrink-0 accent-[#2f6b4f]"
+            />
+            <span>
+              <span className="block text-btn font-semibold text-sg-ink">{t("un_notify")}</span>
+              <span className="block text-small text-sg-ink-soft">{t("un_notify_sub")}</span>
+            </span>
+          </label>
           <div className="flex flex-col gap-2">
             <Button full disabled={sending} onClick={() => void doSend()}>
               {sending ? "Sending…" : t("un_yes")}

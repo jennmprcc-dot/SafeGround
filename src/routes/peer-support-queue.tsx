@@ -43,6 +43,7 @@ const URGENT_LABEL: Record<string, string> = {
   help: "Help",
   advocacy: "Advocacy",
   er_ride: "ER ride",
+  er_supplies: "ER supplies",
   support: "Support",
 };
 

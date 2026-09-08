@@ -90,6 +90,16 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
         </Link>
         <nav className="flex items-center" aria-label="Site">
           <LanguageToggle />
+          {/* Owner-directed 2026-09-08: calm one-tap urgent-need action in
+              the header — opens /urgent-need, sends nothing by itself. */}
+          <Link
+            to="/urgent-need"
+            className="flex min-h-[40px] items-center rounded-full bg-sg-clay px-3 text-small font-semibold text-white hover:opacity-90"
+            aria-label={t("un_home_cta")}
+            title={t("un_home_cta")}
+          >
+            {t("un_home_cta")}
+          </Link>
           <Link
             to="/privacy"
             className="flex min-h-[48px] min-w-[44px] items-center justify-center text-sg-ink-soft hover:text-sg-ink"

@@ -2,10 +2,14 @@
  * Urgent-need action (owner-directed 2026-09-08): "I need help now".
  *
  * POST /api/urgent-need { phone, name?, note?, category, location,
- *   fuzzLat?, fuzzLng?, exactLat?, exactLng? }
- *   category: help | advocacy | er_ride | support (owner's exact four, required)
+ *   fuzzLat?, fuzzLng?, exactLat?, exactLng?, notifyStaff? }
+ *   category: help | advocacy | er_ride | er_supplies | support (owner's
+ *     exact five, required, reviewed)
  *   location: none | fuzzed | exact — the sender's explicit choice, NEVER
  *     pre-selected; the server rejects a missing location.
+ *   notifyStaff: "Notify MPRCC staff" consent, default ON (owner A&B).
+ *     false suppresses the admin push ONLY — the request still records.
+ *     Absent/true notifies the two roster admins as usual.
  *
  * SAFETY CONTRACT (same as peer support — this reuses that exact path):
  *  - The row lands in peer_support_requests with is_urgent=true + need_category,
@@ -49,6 +53,7 @@ async function createUrgentNeed(c: { request: Request }) {
     fuzzLng?: unknown;
     exactLat?: unknown;
     exactLng?: unknown;
+    notifyStaff?: unknown;
   } = {};
   try {
     body = (await c.request.json()) as typeof body;
@@ -70,10 +75,13 @@ async function createUrgentNeed(c: { request: Request }) {
   }
   if (!category) {
     return Response.json(
-      { ok: false, error: "Please choose what you need — Help, Advocacy, ER ride, or Support." },
+      { ok: false, error: "Please choose what you need — Help, Advocacy, ER ride, ER supplies, or Support." },
       { status: 400 },
     );
   }
+  // Owner A&B: notify-staff consent, default ON. Only an explicit false
+  // suppresses the push — the request still records either way.
+  const notifyStaff = body.notifyStaff !== false;
   // Never-pre-selected guard (client + server): location must be explicit.
   if (!location) {
     return Response.json(
@@ -136,10 +144,12 @@ async function createUrgentNeed(c: { request: Request }) {
     } catch {
       /* silent — the request already succeeded */
     }
-    // SAME proven push path as peer support: both admin phones get the push.
-    const { notifiedPhones, tokensSent } = await fanOutToAdmins(name, {
-      urgentCategory: category,
-    });
+    // SAME proven push path as peer support: both admin phones get the
+    // push UNLESS the sender unchecked "Notify MPRCC staff" (owner A&B —
+    // the row still records, the queue still shows it, only the push stops).
+    const { notifiedPhones, tokensSent } = notifyStaff
+      ? await fanOutToAdmins(name, { urgentCategory: category })
+      : { notifiedPhones: 0, tokensSent: 0 };
     return Response.json({
       ok: true,
       id: row.id,

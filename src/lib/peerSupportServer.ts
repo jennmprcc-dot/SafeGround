@@ -44,18 +44,25 @@ export async function peerSupportTableReady(): Promise<boolean> {
 /* ── Fan-out: push ONLY to the two admins ─────────────────────────
  * The ONLY dispatch in this feature. Iterates the two admin phones, looks
  * up their registered tokens, sends. The requester is never a target. */
-export type UrgentNeedCategory = "help" | "advocacy" | "er_ride" | "support";
+/* Owner-listed categories (2026-09-08; ER supplies added after the initial
+ * brief). Must stay exactly these five strings. */
+export type UrgentNeedCategory = "help" | "advocacy" | "er_ride" | "er_supplies" | "support";
 
 export const URGENT_NEED_CATEGORIES: ReadonlyArray<UrgentNeedCategory> = [
   "help",
   "advocacy",
   "er_ride",
+  "er_supplies",
   "support",
 ];
 
 export function isUrgentNeedCategory(raw: unknown): raw is UrgentNeedCategory {
   return (
-    raw === "help" || raw === "advocacy" || raw === "er_ride" || raw === "support"
+    raw === "help" ||
+    raw === "advocacy" ||
+    raw === "er_ride" ||
+    raw === "er_supplies" ||
+    raw === "support"
   );
 }
 
@@ -113,6 +120,8 @@ function urgentLabel(category: UrgentNeedCategory): string {
       return "advocacy";
     case "er_ride":
       return "ER ride";
+    case "er_supplies":
+      return "ER supplies";
     case "support":
       return "support";
     case "help":
