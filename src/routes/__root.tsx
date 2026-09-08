@@ -1,7 +1,9 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 
 import { AuthProvider } from "~/lib/auth";
+import { getLang } from "~/lib/i18n";
 import { WelcomeOverlay } from "~/components/welcome";
 import appCss from "~/styles/app.css?url";
 
@@ -58,6 +60,15 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+  // EN|ES (PR-B): reflect the persisted language on <html lang>. The toggle
+  // keeps it in sync after load; this covers first paint + SSR.
+  useEffect(() => {
+    try {
+      document.documentElement.lang = getLang();
+    } catch {
+      /* non-browser render — the static lang="en" stands in */
+    }
+  }, []);
   return (
     <html lang="en">
       <head>

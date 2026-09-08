@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { cn } from "~/lib/cn";
 import { useAuth } from "~/lib/auth";
+import { useLanguage } from "~/lib/i18n";
 import { listSweeps, getMyCheckIn, listTrustedPeers, demoUserId } from "~/lib/server";
 import { BellMoonIcon, CheckIcon, HomeIcon, InfoIcon, MenuIcon, MoonIcon, NightLampIcon } from "~/lib/appIcons";
 import { HeartIcon } from "~/lib/icons";
@@ -29,11 +30,44 @@ function FindIcon(props: { size?: number }) {
 }
 
 const TABS = [
-  { to: "/", label: "Home" },
-  { to: "/help", label: "Find help" },
-  { to: "/sweeps", label: "Sweeps" },
-  { to: "/checkin", label: "Check in" },
+  { to: "/", key: "nav_home" as const },
+  { to: "/help", key: "nav_help" as const },
+  { to: "/sweeps", key: "nav_sweeps" as const },
+  { to: "/checkin", key: "nav_checkin" as const },
 ] as const;
+
+/* ── EN|ES segmented toggle (PR-B) — calm two-state control in the
+ * header, persisted to localStorage (`sg.lang`). EN is always the
+ * fallback so nothing ever renders blank. */
+export function LanguageToggle() {
+  const { lang, setLang } = useLanguage();
+  return (
+    <div
+      className="flex items-center rounded-full border border-sg-line bg-sg-card p-0.5"
+      role="group"
+      aria-label="Language / Idioma"
+    >
+      {(["en", "es"] as const).map((l) => {
+        const on = lang === l;
+        return (
+          <button
+            key={l}
+            type="button"
+            onClick={() => setLang(l)}
+            aria-pressed={on}
+            aria-label={l === "en" ? "English" : "Espanol"}
+            className={cn(
+              "flex min-h-[40px] min-w-[44px] items-center justify-center rounded-full px-2.5 text-small font-semibold transition-colors",
+              on ? "bg-sg-sage text-white" : "text-sg-ink-soft hover:text-sg-ink",
+            )}
+          >
+            {l === "en" ? "EN" : "ES"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ── Header ─────────────────────────────────────────────────────── */
 
@@ -43,23 +77,25 @@ const TABS = [
 export const FAST_EXIT_URL = "https://weather.gov";
 
 export function FastExitPill() {
+  const { t } = useLanguage();
   return (
     <button
       type="button"
       onClick={() => {
         window.location.replace(FAST_EXIT_URL);
       }}
-      aria-label="Fast Exit — leave SafeGround now"
-      title="Leave SafeGround now"
+      aria-label={t("fast_exit_label")}
+      title={t("fast_exit_label")}
       className="flex min-h-[48px] items-center rounded-full border border-sg-sage px-4 text-small font-medium text-sg-sage-deep"
     >
-      Fast Exit
+      {t("fast_exit")}
     </button>
   );
 }
 
 function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () => void }) {
   const { signedIn, displayName } = useAuth();
+  const { t } = useLanguage();
   return (
     <header className="sticky top-0 z-30 border-b border-sg-line bg-sg-paper/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-[640px] items-center justify-between gap-2 px-4">
@@ -75,12 +111,13 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
           ) : null}
         </Link>
         <nav className="flex items-center" aria-label="Site">
+          <LanguageToggle />
           <FastExitPill />
           <Link
             to="/privacy"
             className="flex min-h-[48px] min-w-[44px] items-center justify-center text-sg-ink-soft hover:text-sg-ink"
-            aria-label="About and privacy"
-            title="About and privacy"
+            aria-label={t("menu_about")}
+            title={t("menu_about")}
           >
             <InfoIcon size={22} />
           </Link>
@@ -107,6 +144,7 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
 function BottomNav() {
   const { pathname } = useLocation();
   const { signedIn, displayName } = useAuth();
+  const { t } = useLanguage();
   const [sweepCount, setSweepCount] = useState<number | null>(null);
   const [selfOverdue, setSelfOverdue] = useState(false);
   const [incomingInvite, setIncomingInvite] = useState(false);
@@ -169,7 +207,7 @@ function BottomNav() {
               {tab.to === "/help" && <FindIcon size={22} />}
               {tab.to === "/sweeps" && <BellMoonIcon size={22} />}
               {tab.to === "/checkin" && <MoonIcon size={22} />}
-              <span>{tab.label}</span>
+              <span>{t(tab.key)}</span>
               {tab.to === "/sweeps" && active > 0 ? (
                 <span className="absolute right-1/2 top-0.5 flex h-4 min-w-4 translate-x-1/2 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white" aria-label={`${active} active sweeps`}>
                   {badgedSweeps}
@@ -189,18 +227,19 @@ function BottomNav() {
 /* ── Crisis sheet (always reachable, quiet, never a trap) ───────── */
 
 export function CrisisSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useLanguage();
   return (
-    <BottomSheet open={open} onClose={onClose} title="Talk to someone">
+    <BottomSheet open={open} onClose={onClose} title={t("crisis_title")}>
       <div className="flex flex-col gap-4 pb-2">
         <p className="text-body text-sg-ink-soft">
-          You're not alone tonight. These lines are free, private, and answered by people who listen.
+          {t("crisis_intro")}
         </p>
         <div className="flex flex-col gap-3">
           <a
             href="tel:988"
             className="flex min-h-[52px] items-center justify-between rounded-[12px] border border-sg-line bg-sg-card px-4 text-body font-medium text-sg-sky"
           >
-            Call or text 988 — Suicide &amp; Crisis Lifeline
+            {t("crisis_call")}
             <CheckIcon size={18} aria-hidden />
           </a>
           <a
@@ -209,11 +248,11 @@ export function CrisisSheet({ open, onClose }: { open: boolean; onClose: () => v
             rel="noopener noreferrer"
             className="flex min-h-[52px] items-center justify-between rounded-[12px] border border-sg-line bg-sg-card px-4 text-body font-medium text-sg-sky"
           >
-            Chat online at 988lifeline.org
+            {t("crisis_chat")}
             <CheckIcon size={18} aria-hidden />
           </a>
         </div>
-        <p className="text-small text-sg-ink-soft">No pressure and no rush — this sheet stays here for whenever you need it.</p>
+        <p className="text-small text-sg-ink-soft">{t("crisis_outro")}</p>
       </div>
     </BottomSheet>
   );
@@ -224,11 +263,12 @@ export function CrisisSheet({ open, onClose }: { open: boolean; onClose: () => v
 function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { signedIn, displayName, signIn, signOut } = useAuth();
   const { push } = useToasts();
+  const { t } = useLanguage();
   const [crisisOpen, setCrisisOpen] = useState(false);
 
   return (
     <>
-      <BottomSheet open={open && !crisisOpen} onClose={onClose} title="Menu">
+      <BottomSheet open={open && !crisisOpen} onClose={onClose} title={t("menu_title")}>
         <nav className="flex flex-col gap-1" aria-label="Menu">
           <Link
             to="/hometeam"
@@ -236,7 +276,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
             <HeartIcon size={22} aria-hidden />
-            HomeTeam — step in for a neighbor
+            {t("menu_hometeam")}
           </Link>
           <Link
             to="/privacy"
@@ -244,7 +284,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
             <InfoIcon size={22} aria-hidden />
-            About &amp; privacy
+            {t("menu_about")}
           </Link>
           <button
             type="button"
@@ -255,7 +295,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
             <InfoIcon size={22} aria-hidden />
-            Welcome — what SafeGround is
+            {t("menu_welcome")}
           </button>
           <Link
             to="/peer-support-queue"
@@ -263,7 +303,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
             <InfoIcon size={22} aria-hidden />
-            Peer-support queue (outreach)
+            {t("menu_queue")}
           </Link>
           <Link
             to="/push-test"
@@ -271,7 +311,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
             <InfoIcon size={22} aria-hidden />
-            Notifications test (team)
+            {t("menu_notify")}
           </Link>
           <button
             type="button"
@@ -279,11 +319,11 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
           >
             <NightLampIcon size={22} aria-hidden />
-            Crisis resources
+            {t("menu_crisis")}
           </button>
           {signedIn ? (
             <>
-              <p className="px-3 pt-1 text-small text-sg-ink-soft">Signed in as {displayName}</p>
+              <p className="px-3 pt-1 text-small text-sg-ink-soft">{t("menu_signed_in_as")} {displayName}</p>
               <button
                 type="button"
                 onClick={() => {
@@ -293,7 +333,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
                 }}
                 className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-danger-gentle hover:bg-sg-paper"
               >
-                Sign out
+                {t("menu_signout")}
               </button>
             </>
           ) : (
@@ -306,7 +346,7 @@ function MenuSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
               }}
               className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-sage-deep hover:bg-sg-paper"
             >
-              Sign in
+              {t("menu_signin")}
             </button>
           )}
         </nav>

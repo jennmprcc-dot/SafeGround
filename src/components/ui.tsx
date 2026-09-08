@@ -6,6 +6,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 import { cn } from "~/lib/cn";
+import { useLanguage } from "~/lib/i18n";
 import { CheckIcon, ClockIcon, InfoIcon, SearchIcon } from "~/lib/icons";
 
 /* ── 4.1 Buttons ─────────────────────────────────────────────── */
@@ -525,24 +526,29 @@ export function ConsentReceipt({
   onStop?: () => void;
   className?: string;
 }) {
+  // EN|ES (PR-B): the chrome labels translate; the who/what/howLong values
+  // stay caller-provided (the peer-support + hometeam pages pass translated
+  // copy in). EN fallback keeps this never-blank.
+  const { t } = useLanguage();
+  const chrome = { title: t("consent_title"), who: t("consent_who"), what: t("consent_what"), how: t("consent_howlong"), stop: t("consent_stop") };
   return (
     <div className={cn("rounded-[16px] border border-sg-line bg-sg-paper p-4", className)}>
-      <p className="text-small font-semibold text-sg-ink">Who sees this &amp; for how long</p>
+      <p className="text-small font-semibold text-sg-ink">{chrome.title}</p>
       <dl className="mt-2 flex flex-col gap-1.5 text-small text-sg-ink-soft">
         <div className="flex gap-2">
-          <dt className="w-20 shrink-0 font-medium text-sg-ink">Who sees</dt>
+          <dt className="w-20 shrink-0 font-medium text-sg-ink">{chrome.who}</dt>
           <dd>{who}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="w-20 shrink-0 font-medium text-sg-ink">What they see</dt>
+          <dt className="w-20 shrink-0 font-medium text-sg-ink">{chrome.what}</dt>
           <dd>{what}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="w-20 shrink-0 font-medium text-sg-ink">How long</dt>
+          <dt className="w-20 shrink-0 font-medium text-sg-ink">{chrome.how}</dt>
           <dd>{howLong}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="w-20 shrink-0 font-medium text-sg-ink">How to stop</dt>
+          <dt className="w-20 shrink-0 font-medium text-sg-ink">{chrome.stop}</dt>
           <dd>
             {onStop ? (
               <button type="button" onClick={onStop} className="text-sg-sky underline underline-offset-2">

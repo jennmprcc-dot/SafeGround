@@ -39,6 +39,7 @@ import { listResources, isAdminPhone } from "~/lib/server";
 import type { ResourceRow, DataSource } from "~/lib/server";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
+import { categoryChipLabel, categoryFullName, useLanguage } from "~/lib/i18n";
 import { PlusIcon, ChevronRightIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 
@@ -112,10 +113,14 @@ function ViewTabs({
   view,
   onChange,
   tabRefs,
+  listLabel,
+  mapLabel,
 }: {
   view: "list" | "map";
   onChange: (v: "list" | "map") => void;
   tabRefs: RefObject<Array<HTMLButtonElement | null>>;
+  listLabel: string;
+  mapLabel: string;
 }) {
   const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
     const tabs = tabRefs.current ?? [];
@@ -153,7 +158,7 @@ function ViewTabs({
             view === v ? "bg-sg-sage text-white" : "text-sg-ink-soft hover:text-sg-ink",
           )}
         >
-          {v === "list" ? "List" : "Map"}
+          {v === "list" ? listLabel : mapLabel}
         </button>
       ))}
     </div>
@@ -164,6 +169,7 @@ function ViewTabs({
 function NavigatorPage() {
   const { resources, loading, offline, source, retry } = useResources();
   const { push } = useToasts();
+  const { lang, t } = useLanguage();
   const [selected, setSelected] = useState<CategoryId[]>([]);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"list" | "map">("list");
@@ -222,7 +228,8 @@ function NavigatorPage() {
   }, [adapted, selected, query, near]);
 
   const openNow = filtered.filter((r) => r.openNow).length;
-  const chips = CATEGORIES.map((c) => ({ value: c.id, label: c.label, icon: c.icon }));
+  // Chips + names translate (EN fallback); analytics still logs category ids.
+  const chips = CATEGORIES.map((c) => ({ value: c.id, label: categoryChipLabel(c.id, lang), icon: c.icon }));
 
   /* Anonymous analytics: one `resource_search` event per COMMITTED category
    * selection (chip toggled ON) + on search submit. Category id only — NEVER
@@ -299,7 +306,6 @@ function NavigatorPage() {
           value={query}
           onChange={setQuery}
           onSubmit={() => {
-            // Committed search: log the SELECTED categories (never the raw text).
             try {
               if (selected.length > 0) {
                 for (const c of selected) logAnonymousEvent("resource_search", { category: c });
@@ -310,16 +316,16 @@ function NavigatorPage() {
               /* silent */
             }
           }}
-          placeholder="Search name or place…"
+          placeholder={t("help_search")}
         />
 
         {/* List | Map toggle — directly under search (WIREFRAMES §2a order,
          * lifted above the fold so the fixed bottom nav can never occlude it) */}
-        <ViewTabs view={view} onChange={setView} tabRefs={tabRefs} />
+        <ViewTabs view={view} onChange={setView} tabRefs={tabRefs} listLabel={t("help_list")} mapLabel={t("help_map")} />
 
         <div>
           <ChipGrid
-            label="Categories — choose any to filter"
+            label={t("help_chips")}
             options={chips}
             selected={selected}
             onToggle={(v) => {
@@ -380,13 +386,14 @@ function NavigatorPage() {
               <ul className="flex flex-col">
                 {filtered.map((r) => {
                   const cat = categoryOf(r.category);
+                  const catName = categoryFullName(r.category, lang);
                   return (
                     <ListRow key={r.id} onClick={() => setOpenResource(r)}>
                       <IconTile wash={cat.wash}>{cat.icon}</IconTile>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-body font-medium text-sg-ink">{r.name}</span>
                         <span className="mt-0.5 flex flex-wrap items-center gap-x-1 text-small text-sg-ink-soft">
-                          <span>{cat.name}</span>
+                          <span>{catName}</span>
                           {r.distanceMi !== undefined ? <span>· {r.distanceMi.toFixed(1)} mi</span> : null}
                           {r.hours ? <span>· {r.hours.split("·")[0].trim()}</span> : null}
                           {r.verifiedAt ? <VerifiedMark label="Verified" /> : null}

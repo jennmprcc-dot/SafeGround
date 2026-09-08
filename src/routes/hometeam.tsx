@@ -12,10 +12,11 @@ import { BottomSheet, Button, Card, ConsentReceipt, Dialog, EmptyState, Skeleton
 import { isOutreachPhone, logNeed, joinHomeTeam, claimNeed, markNeedDelivered, listNeeds, getHomeTeamStatus } from "~/lib/server";
 import { formatPhone, getAlertIdentity, normPhone, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import type { NeedRow } from "~/lib/hometeam";
-import { NEED_STATUS_LABEL, needBadgeKind, needHelpingLine } from "~/lib/hometeam";
+import { needBadgeKind, needHelpingLine } from "~/lib/hometeam";
 import { HandsIcon, PlusIcon, CheckIcon, PauseIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import type { BadgeKind } from "~/components/ui";
+import { useLanguage, needStatusKey } from "~/lib/i18n";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 
 export const Route = createFileRoute("/hometeam")({ component: HomeTeamPage });
@@ -61,6 +62,8 @@ function NeedCard({
   // First-name-only helper line; null-safe for the type checker.
   const helping = (needHelpingLine(need) ?? "").trim();
   const helperName = helping.split(" ")[0] ?? "";
+  // Labels translate; requester/time/notes stay as stored (EN fallback).
+  const { t } = useLanguage();
   return (
     <article className="rounded-[16px] border border-sg-line bg-sg-card p-4 shadow-[0_1px_2px_rgba(30,42,50,0.08)]">
       <div className="flex items-start justify-between gap-2">
@@ -72,36 +75,36 @@ function NeedCard({
             {need.requesterLabel} · {timeAgo(need.createdAt)}
           </p>
         </div>
-        <StatusBadge kind={badgeKindFor[needBadgeKind(need.status)]}>{NEED_STATUS_LABEL[need.status]}</StatusBadge>
+        <StatusBadge kind={badgeKindFor[needBadgeKind(need.status)]}>{t(needStatusKey(need.status))}</StatusBadge>
       </div>
       {need.visibility !== "open" ? (
-        <p className="mt-2 text-small text-sg-ink-soft">Arranged privately by the team — thank you for checking.</p>
+        <p className="mt-2 text-small text-sg-ink-soft">{t("ht_private_line")}</p>
       ) : need.note ? (
         <p className="mt-2 text-small leading-snug text-sg-ink-soft">{need.note}</p>
       ) : null}
       {helping ? (
         <p className="mt-2 flex items-center gap-1.5 text-small font-medium text-sg-sage-deep">
           <CheckIcon size={14} aria-hidden />
-          {helperName ? `${helperName} is on it` : helping}
+          {helperName ? `${helperName} ${t("ht_helping_on_it")}` : helping}
         </p>
       ) : null}
       {(canClaim || canDeliver) && !claimedByMe ? (
         <div className="mt-3">
           {canClaim ? (
             <Button full variant="secondary" disabled={busy} onClick={onClaim}>
-              <HandsIcon size={18} aria-hidden /> I got that
+              <HandsIcon size={18} aria-hidden /> {t("ht_claim")}
             </Button>
           ) : null}
           {canDeliver ? (
             <Button full variant="secondary" disabled={busy} onClick={onDeliver}>
-              <CheckIcon size={18} aria-hidden /> Mark delivered
+              <CheckIcon size={18} aria-hidden /> {t("ht_deliver")}
             </Button>
           ) : null}
         </div>
       ) : null}
       {claimedByMe ? (
         <div className="mt-3 rounded-[12px] border border-sg-sage bg-sg-sage-wash p-3">
-          <p className="text-small font-medium text-sg-sage-deep">You're on it — the neighbor can see you.</p>
+          <p className="text-small font-medium text-sg-sage-deep">{t("ht_claimed_me")}</p>
         </div>
       ) : null}
     </article>
@@ -121,6 +124,7 @@ function JoinSheet({
   onJoined: () => void;
 }) {
   const { push } = useToasts();
+  const { t } = useLanguage();
   const [name, setName] = useState("");
   const [afterHours, setAfterHours] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -154,25 +158,25 @@ function JoinSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Join the HomeTeam">
+    <BottomSheet open={open} onClose={onClose} title={t("ht_join")}>
       <div className="flex flex-col gap-4 pb-2">
-        <p className="text-small text-sg-ink-soft">Neighbors share what they need, and supporters step in — only what's shared, only when they ask.</p>
+        <p className="text-small text-sg-ink-soft">{t("ht_join_intro")}</p>
         <TextField
-          label="Your phone"
+          label={t("ht_join_phone")}
           value={phoneDraft}
           onChange={(e) => setPhoneDraft(e.target.value)}
           inputMode="tel"
           placeholder="(415) 555-0142"
-          helper="Used only to match you as a supporter — never shown to strangers."
+          helper={t("ht_join_phone_help")}
           error={phoneError ?? undefined}
         />
         <TextField
-          label="Your name"
+          label={t("ht_join_name")}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="First name is fine"
+          placeholder={t("ht_join_name_ph")}
           maxLength={40}
-          helper="How the people you help will see you."
+          helper={t("ht_join_name_help")}
         />
         <button
           type="button"
@@ -182,8 +186,8 @@ function JoinSheet({
           className="flex min-h-[52px] items-center justify-between gap-3 rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-left"
         >
           <span className="text-small">
-            <span className="block font-medium text-sg-ink">Also reach me after hours</span>
-            <span className="block text-sg-ink-soft">Emergency alerts outside 8am–6pm Mon–Fri. Off by default.</span>
+            <span className="block font-medium text-sg-ink">{t("ht_ah")}</span>
+            <span className="block text-sg-ink-soft">{t("ht_ah_sub")}</span>
           </span>
           <span className={cn("flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors", afterHours ? "bg-sg-sage" : "bg-sg-line")} aria-hidden>
             <span className={cn("h-5 w-5 rounded-full bg-white shadow transition-transform", afterHours ? "translate-x-5" : "translate-x-0")} />
@@ -196,9 +200,9 @@ function JoinSheet({
           stopLabel="Pause anytime"
         />
         <Button full onClick={save} disabled={busy || !name.trim()}>
-          Join the HomeTeam
+          {t("ht_join")}
         </Button>
-        <p className="text-small text-sg-ink-soft">No location is ever shared, and there's no account or app to install.</p>
+        <p className="text-small text-sg-ink-soft">{t("ht_join_no_loc")}</p>
       </div>
     </BottomSheet>
   );
@@ -227,6 +231,7 @@ function LogSheet({
   onNeighborNameChange: (v: string) => void;
 }) {
   const { push } = useToasts();
+  const { t } = useLanguage();
   const [items, setItems] = useState("");
   const [note, setNote] = useState("");
   const [pickup, setPickup] = useState("");
@@ -295,12 +300,12 @@ function LogSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={isOutreach ? "Log a need for someone" : "Log a need"}>
+    <BottomSheet open={open} onClose={onClose} title={isOutreach ? t("ht_log_for") : t("ht_log")}>
       <div className="flex flex-col gap-4 pb-2">
         {isOutreach ? (
           <div className="flex flex-col gap-4">
-            <TextField label="Their phone" value={neighborPhone} onChange={(e) => { setPhoneError(null); onNeighborPhoneChange(normPhone(e.target.value)); }} inputMode="tel" placeholder="10 digits, e.g. 4155550142" helper="Outreach logs on the neighbor's behalf — the need is attributed to them." error={phoneError ?? undefined} />
-            <TextField label="Their name" value={neighborName} onChange={(e) => onNeighborNameChange(e.target.value)} maxLength={40} helper="First name, the way they'd like it." />
+            <TextField label={t("ht_their_phone")} value={neighborPhone} onChange={(e) => { setPhoneError(null); onNeighborPhoneChange(normPhone(e.target.value)); }} inputMode="tel" placeholder={t("ht_their_phone_ph")} helper={t("ht_their_phone_help")} error={phoneError ?? undefined} />
+            <TextField label={t("ht_their_name")} value={neighborName} onChange={(e) => onNeighborNameChange(e.target.value)} maxLength={40} helper={t("ht_their_name_help")} />
           </div>
         ) : null}
         {/* Non-outreach: the phone lives on the page identity strip, so the
@@ -310,12 +315,12 @@ function LogSheet({
             {phoneError}
           </p>
         ) : null}
-        <TextField label="What's needed" value={items} onChange={(e) => setItems(e.target.value)} placeholder="tent, warm socks, bus pass" maxLength={200} helper="Comma-separated is fine — e.g. tent, sleeping bag." />
-        <TextArea label="Anything else to know (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Where to bring it, what works best — keep it general." maxLength={400} />
-        <TextField label="Pickup preference (optional)" value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. meet near the library" maxLength={200} />
+        <TextField label={t("ht_what")} value={items} onChange={(e) => setItems(e.target.value)} placeholder={t("ht_what_ph")} maxLength={200} helper={t("ht_what_help")} />
+        <TextArea label={t("ht_else")} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("ht_else_ph")} maxLength={400} />
+        <TextField label={t("ht_pickup")} value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder={t("ht_pickup_ph")} maxLength={200} />
         {isOutreach ? (
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-btn font-medium">Who may see this</legend>
+            <legend className="text-btn font-medium">{t("ht_who")}</legend>
             <div className="grid grid-cols-2 gap-2">
               {(["open", "assign_only", "private"] as const).map((v) => (
                 <button
@@ -328,15 +333,15 @@ function LogSheet({
                     visibility === v ? "border-sg-sage bg-sg-sage-wash text-sg-sage-deep" : "border-sg-line bg-sg-card text-sg-ink",
                   )}
                 >
-                  {v === "open" ? "Anyone can help" : v === "assign_only" ? "Coordinator assigns" : "Private"}
+                  {v === "open" ? t("ht_vis_open") : v === "assign_only" ? t("ht_vis_assign") : t("ht_vis_private")}
                 </button>
               ))}
             </div>
-            <p className="text-small text-sg-ink-soft">Private needs stay between the neighbor and the outreach team.</p>
+            <p className="text-small text-sg-ink-soft">{t("ht_priv_note")}</p>
           </fieldset>
         ) : null}
         <Button full onClick={save} disabled={busy} disabledReason={busy ? "Saving…" : undefined}>
-          Share the need
+          {t("ht_share")}
         </Button>
         {posted ? (
           <div className="flex flex-col gap-2">
@@ -346,7 +351,7 @@ function LogSheet({
             </Button>
           </div>
         ) : null}
-        <p className="text-small text-sg-ink-soft">First claim wins — the neighbor sees who's helping and when it arrives.</p>
+        <p className="text-small text-sg-ink-soft">{t("ht_first_win")}</p>
       </div>
     </BottomSheet>
   );
@@ -385,6 +390,7 @@ function PauseDialog({
 /** Main page: needs feed + join/pause + log actions. */
 function HomeTeamPage() {
   const { push } = useToasts();
+  const { t } = useLanguage();
   const [needs, setNeeds] = useState<NeedRow[]>([]);
   const [source, setSource] = useState<"db" | "demo">("db");
   const [loading, setLoading] = useState(true);
@@ -510,11 +516,11 @@ function HomeTeamPage() {
       return (
         <EmptyState
           icon={<HandsIcon size={28} />}
-          title="No open needs right now"
-          body="When a neighbor shares what they need, it will show here — calm and clear, with the first person to step up shown."
+          title={t("ht_none")}
+          body={t("ht_none_body")}
           steps={
             <Button full onClick={() => setLogOpen(true)}>
-              Log a need
+              {t("ht_log")}
             </Button>
           }
         />
@@ -524,7 +530,7 @@ function HomeTeamPage() {
       <div className="flex flex-col gap-3">
         {openNeeds.length ? (
           <section aria-label="Open needs">
-            <h2 className="mb-2 text-small font-semibold text-sg-ink">Needs right now</h2>
+            <h2 className="mb-2 text-small font-semibold text-sg-ink">{t("ht_now")}</h2>
             <div className="flex flex-col gap-3">
               {openNeeds.map((n) => (
                 <NeedCard key={n.id} need={n} phone={phone} claimedByMe={false} busy={busyId === n.id} onClaim={() => claim(n)} onDeliver={() => deliver(n)} />
@@ -534,7 +540,7 @@ function HomeTeamPage() {
         ) : null}
         {activeNeeds.length ? (
           <section aria-label="Needs being handled">
-            <h2 className="mb-2 text-small font-semibold text-sg-ink-soft">Being handled</h2>
+            <h2 className="mb-2 text-small font-semibold text-sg-ink-soft">{t("ht_handling")}</h2>
             <div className="flex flex-col gap-3">
               {activeNeeds.map((n) => (
                 <NeedCard key={n.id} need={n} phone={phone} claimedByMe={false} busy={busyId === n.id} onClaim={() => claim(n)} onDeliver={() => deliver(n)} />
@@ -544,7 +550,7 @@ function HomeTeamPage() {
         ) : null}
         {doneNeeds.length ? (
           <section aria-label="Delivered needs">
-            <h2 className="mb-2 text-small font-semibold text-sg-ink-soft">Delivered</h2>
+            <h2 className="mb-2 text-small font-semibold text-sg-ink-soft">{t("ht_delivered_sec")}</h2>
             <div className="flex flex-col gap-3">
               {doneNeeds.map((n) => (
                 <NeedCard key={n.id} need={n} phone={phone} claimedByMe={false} busy={busyId === n.id} onClaim={() => claim(n)} onDeliver={() => deliver(n)} />
@@ -565,13 +571,13 @@ function HomeTeamPage() {
         <header className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-h1">HomeTeam</h1>
-            <p className="mt-0.5 text-small text-sg-ink-soft">Neighbors share what they need — supporters step in when they can.</p>
+            <p className="mt-0.5 text-small text-sg-ink-soft">{t("ht_sub")}</p>
           </div>
           <button
             type="button"
             onClick={() => setLogOpen(true)}
             className="flex min-h-[48px] min-w-[48px] items-center justify-center rounded-full bg-sg-sage text-white"
-            aria-label="Log a need"
+            aria-label={t("ht_log")}
           >
             <PlusIcon size={20} />
           </button>
@@ -586,23 +592,23 @@ function HomeTeamPage() {
                   <HandsIcon size={16} />
                 </span>
                 <span>
-                  {joined ? `Supporting as ${memberStatus.name ?? "you"} · ${formatPhone(phone)}` : `Your number: ${formatPhone(phone)}`}
+                  {joined ? `${t("ht_supporting_as")} ${memberStatus.name ?? "you"} · ${formatPhone(phone)}` : `${t("ht_your_number")} ${formatPhone(phone)}`}
                 </span>
               </div>
               {joined ? (
                 <Button variant="text" onClick={() => setPauseOpen(true)} className="min-h-[40px] !px-1">
-                  <PauseIcon size={16} /> Pause
+                  <PauseIcon size={16} /> {t("ht_pause")}
                 </Button>
               ) : null}
             </div>
-            {outreach ? <p className="mt-1.5 text-small text-sg-sky">Outreach — you can log needs for neighbors too.</p> : null}
+            {outreach ? <p className="mt-1.5 text-small text-sg-sky">{t("ht_outreach_line")}</p> : null}
           </Card>
         ) : (
           <Card className="!p-3">
             <div className="flex flex-col gap-2">
-              <p className="text-small text-sg-ink-soft">To claim or share a need, add the number you'd like to be known by — it stays on this device.</p>
+              <p className="text-small text-sg-ink-soft">{t("ht_add_phone")}</p>
               <div className="flex gap-2">
-                <TextField label="Your phone" value={phone} onChange={(e) => needsPhone(e.target.value)} inputMode="tel" placeholder="(415) 555-0100" className="!min-h-[48px]" helper="Required to log a need — needs are attributed to a real number." error={!phoneLooksOk(phone) && phone.length > 0 ? "That number looks incomplete — please check it, no rush." : undefined} />
+                <TextField label={t("ht_join_phone")} value={phone} onChange={(e) => needsPhone(e.target.value)} inputMode="tel" placeholder="(415) 555-0100" className="!min-h-[48px]" helper={t("ht_phone_req")} error={!phoneLooksOk(phone) && phone.length > 0 ? t("ps_phone_bad") : undefined} />
               </div>
             </div>
           </Card>
@@ -623,14 +629,14 @@ function HomeTeamPage() {
         {/* Join CTA when not a member yet */}
         {!joined ? (
           <Button full onClick={() => setJoinOpen(true)}>
-            Join the HomeTeam
+            {t("ht_join")}
           </Button>
         ) : null}
 
         {phone && joined ? (
           <div className="flex flex-col gap-2">
             <Button full variant="secondary" onClick={() => setLogOpen(true)}>
-              Log a need
+              {t("ht_log")}
             </Button>
           </div>
         ) : null}
@@ -640,7 +646,7 @@ function HomeTeamPage() {
           <Feed />
         </main>
 
-        <p className="text-small text-sg-ink-soft">Your location is never shared, and needs disappear as soon as they're delivered.</p>
+        <p className="text-small text-sg-ink-soft">{t("ht_no_loc")}</p>
       </div>
 
       {/* sheets + pause */}

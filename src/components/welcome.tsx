@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { Button, Card } from "~/components/ui";
+import { useLanguage } from "~/lib/i18n";
 import { CrisisSheet } from "~/components/shell";
 import { cn } from "~/lib/cn";
 
@@ -73,6 +74,9 @@ export function WelcomeOverlay() {
   const [qrOpen, setQrOpen] = useState(false);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [linkText, setLinkText] = useState<string | null>(null);
+  // EN|ES (PR-B): the owner preface stays EN in v1 (human translator needed);
+  // the toggle only adds the honest coming-soon note below it.
+  const { lang } = useLanguage();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -165,6 +169,10 @@ export function WelcomeOverlay() {
         <div className="flex flex-col gap-4">
           <h1 className="text-h2">You&apos;re welcome here.</h1>
           <p className="text-body text-sg-ink">{PREFACE}</p>
+          {/* v1: preface is EN-only until a human translates it — say so plainly. */}
+          {lang === "es" ? (
+            <p className="text-small text-sg-ink-soft">Espanol proximamente · Spanish coming soon.</p>
+          ) : null}
           <p className="text-body text-sg-ink-soft">
             SafeGround is a free, private helper — find food and shelter, hear about sweeps nearby, and let your
             people know you&apos;re okay. No account needed. No background location, ever.

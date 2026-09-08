@@ -24,11 +24,13 @@ import {
   setAlertIdentity,
 } from "~/lib/alertIdentity";
 import { CheckCircleIcon } from "~/lib/icons";
+import { useLanguage } from "~/lib/i18n";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
 
 type Phase = "form" | "confirm" | "done";
 
 function RequestSupportPage() {
+  const { t } = useLanguage();
   const [identity] = useState(() => getAlertIdentity());
   const [phoneInput, setPhoneInput] = useState(identity?.phone ?? "");
   const [nameInput, setNameInput] = useState(identity?.name === "Neighbor" ? "" : (identity?.name ?? ""));
@@ -85,20 +87,20 @@ function RequestSupportPage() {
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-sg-sage-wash text-sg-sage" aria-hidden>
             <CheckCircleIcon size={32} />
           </span>
-          <h1 className="text-h1">An MPRCC peer will reach out. We&apos;re here.</h1>
+          <h1 className="text-h1">{t("ps_done")}</h1>
           <p className="max-w-xs text-body text-sg-ink-soft">
             {teamNotified
-              ? "The outreach team has your request and will contact you at the number you gave."
-              : "Your request is in the team's queue — a peer will follow up as soon as they're connected."}
+              ? t("ps_done_a")
+              : t("ps_done_b")}
           </p>
           <div className="mt-2 flex w-full max-w-xs flex-col gap-2">
             <NoticeConsentOptIn phone={phoneInput} source="peer-support" />
             <Link to="/" className="block w-full">
-              <Button full>Back home</Button>
+              <Button full>{t("ps_home")}</Button>
             </Link>
           </div>
           <p className="text-small text-sg-ink-soft">
-            This stays between you and the MPRCC outreach team — never 911, never anyone else.
+            {t("ps_done_privacy")}
           </p>
         </div>
       </AppShell>
@@ -111,38 +113,38 @@ function RequestSupportPage() {
       <AppShell>
         <div className="flex flex-col gap-4 px-4 pt-5">
           <header>
-            <h1 className="text-h1">Ready to send?</h1>
-            <p className="mt-0.5 text-small text-sg-ink-soft">Nothing has gone anywhere yet — this is still yours.</p>
+            <h1 className="text-h1">{t("ps_ready")}</h1>
+            <p className="mt-0.5 text-small text-sg-ink-soft">{t("ps_ready_sub")}</p>
           </header>
           <Card>
             <dl className="flex flex-col gap-2 text-body">
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 font-medium">They&apos;ll call</dt>
+                <dt className="w-24 shrink-0 font-medium">{t("ps_call")}</dt>
                 <dd>{formatPhone(phoneInput)}</dd>
               </div>
               {nameInput.trim() ? (
                 <div className="flex gap-2">
-                  <dt className="w-24 shrink-0 font-medium">Your name</dt>
+                  <dt className="w-24 shrink-0 font-medium">{t("ps_yourname")}</dt>
                   <dd>{nameInput.trim().slice(0, 40)}</dd>
                 </div>
               ) : null}
               {note.trim() ? (
                 <div className="flex gap-2">
-                  <dt className="w-24 shrink-0 font-medium">Your note</dt>
+                  <dt className="w-24 shrink-0 font-medium">{t("ps_yournote")}</dt>
                   <dd className="min-w-0 flex-1 break-words text-sg-ink-soft">{note.trim().slice(0, 500)}</dd>
                 </div>
               ) : null}
             </dl>
             <p className="mt-3 text-small text-sg-ink-soft">
-              Goes only to Jenn + Bambi on the MPRCC outreach team. Never 911, never anyone else.
+              {t("ps_scope")}
             </p>
           </Card>
           <div className="flex flex-col gap-2">
             <Button full disabled={sending} onClick={() => void doSend()}>
-              {sending ? "Sending…" : "Yes — ask for a peer"}
+              {sending ? "Sending…" : t("ps_yes")}
             </Button>
             <Button variant="quiet" full onClick={() => setPhase("form")}>
-              Not yet — let me change something
+              {t("ps_notyet")}
             </Button>
           </div>
         </div>
@@ -155,46 +157,46 @@ function RequestSupportPage() {
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
         <header>
-          <h1 className="text-h1">Request peer support</h1>
+          <h1 className="text-h1">{t("ps_title")}</h1>
           <p className="mt-0.5 text-small text-sg-ink-soft">
-            One tap asks an MPRCC peer to reach out. Never calls 911.
+            {t("ps_sub")}
           </p>
         </header>
 
         <Card>
           <div className="flex flex-col gap-4">
             <TextField
-              label="Your phone number"
-              helper="So a peer can reach you back. Stays on this device + the team's queue."
+              label={t("ps_phone")}
+              helper={t("ps_phone_help")}
               value={phoneInput}
               onChange={(e) => setPhoneInput(normPhone(e.target.value))}
               placeholder="e.g. 415 555-0142"
               inputMode="tel"
-              error={phoneInput.length > 0 && !phoneOk ? "That number looks incomplete — please check it, no rush." : undefined}
+              error={phoneInput.length > 0 && !phoneOk ? t("ps_phone_bad") : undefined}
             />
             <TextField
-              label="Your first name (optional)"
+              label={t("ps_name")}
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-              placeholder="Your first name"
+              placeholder={t("ps_name_ph")}
               maxLength={40}
             />
             <TextArea
-              label="Anything you'd like them to know? (optional)"
-              helper="Up to 500 characters — only the outreach team sees this"
+              label={t("ps_note")}
+              helper={t("ps_note_help")}
               maxLength={500}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Evenings are best, I'm near the library…"
+              placeholder={t("ps_note_ph")}
             />
           </div>
         </Card>
 
         <ConsentReceipt
-          who="Jenn + Bambi, MPRCC peer outreach — the only two people notified"
-          what="Your phone, your name if you gave one, and your note"
-          howLong="It stays in the team's queue until it's marked done"
-          stopLabel="Nothing is shared until you tap below"
+          who={t("ps_who")}
+          what={t("ps_what")}
+          howLong={t("ps_how")}
+          stopLabel={t("ps_stop")}
         />
 
         {error ? (
@@ -206,10 +208,10 @@ function RequestSupportPage() {
         <Button
           full
           disabled={!phoneOk || sending}
-          disabledReason={!phoneOk ? "A complete phone number first — no rush." : undefined}
+          disabledReason={!phoneOk ? t("ps_need_phone") : undefined}
           onClick={() => setPhase("confirm")}
         >
-          Request peer support
+          {t("ps_submit")}
         </Button>
 
         <button
@@ -217,7 +219,7 @@ function RequestSupportPage() {
           onClick={() => setCrisisOpen(true)}
           className="inline-flex min-h-[48px] items-center self-start text-sg-sky underline underline-offset-2"
         >
-          Talk to someone
+          {t("crisis_title")}
         </button>
       </div>
       <CrisisSheet open={crisisOpen} onClose={() => setCrisisOpen(false)} />
