@@ -28,6 +28,10 @@ const promises = [
     title: "No sirens, no surveillance",
     body: "This app uses calm words and gentle colors on purpose. No counts that feel like watching, no alarm styles, no automatic notifications to authorities.",
   },
+  {
+    title: "Anonymous counts, never tracked",
+    body: "Analytics are anonymous and zero-PII: we never log your phone, location, or device identifiers.",
+  },
 ];
 
 function PrivacyPage() {
