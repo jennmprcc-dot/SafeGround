@@ -47,6 +47,19 @@ async function claimRequest(c: { request: Request }) {
   if (!(await peerSupportTableReady())) {
     return Response.json({ ok: false, error: MISSING_TABLE_MSG, code: "no_table" }, { status: 503 });
   }
+  // Urgent-need columns (owner-directed 2026-09-08) may predate the DB
+  // migration on some hosts — probe once so this route never 500s on
+  // older schemas.
+  let urgentCols = false;
+  try {
+    const probe = (await sql()`
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'peer_support_requests'
+        and column_name = 'is_urgent' limit 1`) as unknown as Array<unknown>;
+    urgentCols = probe.length > 0;
+  } catch {
+    urgentCols = false;
+  }
   try {
     if (action === "claim") {
       await sql()`update public.peer_support_requests
@@ -65,9 +78,18 @@ async function claimRequest(c: { request: Request }) {
         where id = ${id}::uuid and status in ('open', 'claimed')`;
     } else if (action === "done") {
       const outcome = String(body.outcomeNote ?? "").trim().slice(0, 500);
-      await sql()`update public.peer_support_requests
-        set status = 'done', outcome_note = ${outcome || null}, updated_at = now()
-        where id = ${id}::uuid and status in ('open', 'claimed')`;
+      // Exact coords expire with the request: clearing exact on done keeps the
+      // queue view honest (fuzzed area + words stay for the report).
+      if (urgentCols) {
+        await sql()`update public.peer_support_requests
+          set status = 'done', outcome_note = ${outcome || null},
+              exact_lat = null, exact_lng = null, updated_at = now()
+          where id = ${id}::uuid and status in ('open', 'claimed')`;
+      } else {
+        await sql()`update public.peer_support_requests
+          set status = 'done', outcome_note = ${outcome || null}, updated_at = now()
+          where id = ${id}::uuid and status in ('open', 'claimed')`;
+      }
     } else {
       return Response.json(
         { ok: false, error: "Unknown action — use claim, delegate, or done." },

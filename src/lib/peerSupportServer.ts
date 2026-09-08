@@ -1,5 +1,7 @@
 /**
  * Shared peer-support server helpers (owner-directed 2026-09-06).
+ * Urgent-need action (owner-directed 2026-09-08) reuses this module: urgent
+ * needs ride the same peer_support_requests queue + the same admin push fan-out.
  *
  * SAFETY CONTRACT (non-negotiable):
  *  - Push goes ONLY to the two roster admins (PEER_SUPPORT_ADMIN_PHONES —
@@ -42,8 +44,30 @@ export async function peerSupportTableReady(): Promise<boolean> {
 /* ── Fan-out: push ONLY to the two admins ─────────────────────────
  * The ONLY dispatch in this feature. Iterates the two admin phones, looks
  * up their registered tokens, sends. The requester is never a target. */
+export type UrgentNeedCategory = "help" | "advocacy" | "er_ride" | "support";
+
+export const URGENT_NEED_CATEGORIES: ReadonlyArray<UrgentNeedCategory> = [
+  "help",
+  "advocacy",
+  "er_ride",
+  "support",
+];
+
+export function isUrgentNeedCategory(raw: unknown): raw is UrgentNeedCategory {
+  return (
+    raw === "help" || raw === "advocacy" || raw === "er_ride" || raw === "support"
+  );
+}
+
+export type UrgentNeedLocation = "none" | "fuzzed" | "exact";
+
+export function isUrgentNeedLocation(raw: unknown): raw is UrgentNeedLocation {
+  return raw === "none" || raw === "fuzzed" || raw === "exact";
+}
+
 export async function fanOutToAdmins(
   displayName: string,
+  opts?: { urgentCategory?: UrgentNeedCategory | null },
 ): Promise<{ notifiedPhones: number; tokensSent: number }> {
   let notifiedPhones = 0;
   let tokensSent = 0;
@@ -56,14 +80,21 @@ export async function fanOutToAdmins(
     }
     if (tokens.length === 0) continue;
     notifiedPhones += 1;
-    const body = displayName
-      ? `${displayName} asked for peer support. Open the queue to reach out.`
-      : `A neighbor asked for peer support. Open the queue to reach out.`;
+    const urgent = opts?.urgentCategory ?? null;
+    const body = urgent
+      ? displayName
+        ? `${displayName} needs help now (${urgentLabel(urgent)}). Open the queue to reach out.`
+        : `A neighbor needs help now (${urgentLabel(urgent)}). Open the queue to reach out.`
+      : displayName
+        ? `${displayName} asked for peer support. Open the queue to reach out.`
+        : `A neighbor asked for peer support. Open the queue to reach out.`;
     for (const token of tokens) {
       try {
         const r = await sendFcmMessage({
           token,
-          title: "SafeGround — peer support requested",
+          title: urgent
+            ? "SafeGround — urgent need, please reach out"
+            : "SafeGround — peer support requested",
           body,
           link: "/peer-support-queue",
         });
@@ -74,4 +105,29 @@ export async function fanOutToAdmins(
     }
   }
   return { notifiedPhones, tokensSent };
+}
+
+function urgentLabel(category: UrgentNeedCategory): string {
+  switch (category) {
+    case "advocacy":
+      return "advocacy";
+    case "er_ride":
+      return "ER ride";
+    case "support":
+      return "support";
+    case "help":
+    default:
+      return "help";
+  }
+}
+
+/* -- Urgent-need queue shape: the queue row plus the urgent flag/category -- */
+export interface UrgentQueueFields {
+  isUrgent: boolean;
+  needCategory: UrgentNeedCategory | null;
+  location: UrgentNeedLocation | null;
+  fuzzLat: number | null;
+  fuzzLng: number | null;
+  hasExact: boolean;
+  expiresAt: string | null;
 }

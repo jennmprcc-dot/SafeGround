@@ -30,7 +30,21 @@ interface QueueRow {
   outcomeNote: string | null;
   createdAt: string;
   updatedAt: string;
+  isUrgent?: boolean;
+  needCategory?: string | null;
+  location?: string | null;
+  fuzzLat?: number | null;
+  fuzzLng?: number | null;
+  hasExact?: boolean;
+  expiresAt?: string | null;
 }
+
+const URGENT_LABEL: Record<string, string> = {
+  help: "Help",
+  advocacy: "Advocacy",
+  er_ride: "ER ride",
+  support: "Support",
+};
 
 type LoadState =
   | { kind: "loading" }
@@ -68,6 +82,11 @@ function RequestCard({
 
   return (
     <Card>
+      {row.isUrgent ? (
+        <p className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-sg-clay px-2.5 py-1 text-small font-semibold text-white">
+          <span aria-hidden>!</span> Urgent need{row.needCategory ? ` — ${URGENT_LABEL[row.needCategory] ?? row.needCategory}` : ""}
+        </p>
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-h2">{row.name || "A neighbor"}</h2>
@@ -88,6 +107,16 @@ function RequestCard({
       ) : (
         <p className="mt-2 text-small text-sg-ink-soft">No note — just asked for a peer.</p>
       )}
+
+      {row.isUrgent && (row.location || row.fuzzLat != null || row.hasExact) ? (
+        <p className="mt-2 text-small text-sg-ink-soft">
+          Location: {row.location === "exact" ? "exact spot (team only)" : row.location === "fuzzed" ? "approximate area" : "none"}
+          {row.location === "fuzzed" && row.fuzzLat != null && row.fuzzLng != null
+            ? ` — ${row.fuzzLat.toFixed(3)}, ${row.fuzzLng.toFixed(3)}`
+            : ""}
+          {row.hasExact ? " — exact on file, clears when done" : ""}
+        </p>
+      ) : null}
 
       {row.claimedBy ? (
         <p className="mt-2 text-small text-sg-ink-soft">
@@ -274,7 +303,7 @@ function QueuePage() {
       <div className="flex flex-col gap-4 px-4 pt-5">
         <header>
           <h1 className="text-h1">Peer-support queue</h1>
-          <p className="mt-0.5 text-small text-sg-ink-soft">Neighbors who asked for a peer — newest first.</p>
+          <p className="mt-0.5 text-small text-sg-ink-soft">Neighbors who asked for a peer — urgent needs first, then newest.</p>
         </header>
 
         <Card>

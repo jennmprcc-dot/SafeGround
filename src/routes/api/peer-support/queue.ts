@@ -31,14 +31,35 @@ async function listQueue(c: { request: Request }) {
   }
   const status = String(url.searchParams.get("status") ?? "open").toLowerCase();
   const filter = status === "all" ? ["open", "claimed", "done", "closed"] : ["open", "claimed"];
+  let urgentCols = false;
   try {
-    const rows = (await sql()`
+    const probe = (await sql()`
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'peer_support_requests'
+        and column_name = 'is_urgent' limit 1`) as unknown as Array<unknown>;
+    urgentCols = probe.length > 0;
+  } catch {
+    urgentCols = false;
+  }
+  try {
+    const rows = (urgentCols
+      ? ((await sql()`
+      select id, phone, name_optional, note, status, claimed_by_phone,
+             delegate_to_phone, outcome_note, created_at, updated_at,
+             coalesce(is_urgent, false) as is_urgent, need_category, location,
+             fuzz_lat, fuzz_lng, (exact_lat is not null and exact_lng is not null) as has_exact,
+             expires_at
+      from public.peer_support_requests
+      where status = any(${filter})
+      order by is_urgent desc, created_at desc
+      limit 50`) as unknown as Array<Record<string, unknown>>)
+      : ((await sql()`
       select id, phone, name_optional, note, status, claimed_by_phone,
              delegate_to_phone, outcome_note, created_at, updated_at
       from public.peer_support_requests
       where status = any(${filter})
       order by created_at desc
-      limit 50`) as unknown as Array<Record<string, unknown>>;
+      limit 50`) as unknown as Array<Record<string, unknown>>));
     return Response.json({
       ok: true,
       requests: rows.map((r) => ({
@@ -50,6 +71,13 @@ async function listQueue(c: { request: Request }) {
         claimedBy: r.claimed_by_phone == null ? null : String(r.claimed_by_phone),
         delegateTo: r.delegate_to_phone == null ? null : String(r.delegate_to_phone),
         outcomeNote: r.outcome_note == null ? null : String(r.outcome_note),
+        isUrgent: r.is_urgent === true,
+        needCategory: r.need_category == null ? null : String(r.need_category),
+        location: r.location == null ? null : String(r.location),
+        fuzzLat: r.fuzz_lat == null || r.fuzz_lat === "" ? null : Number(r.fuzz_lat),
+        fuzzLng: r.fuzz_lng == null || r.fuzz_lng === "" ? null : Number(r.fuzz_lng),
+        hasExact: r.has_exact === true,
+        expiresAt: r.expires_at == null ? null : String(r.expires_at),
         createdAt: String(r.created_at),
         updatedAt: String(r.updated_at),
       })),
