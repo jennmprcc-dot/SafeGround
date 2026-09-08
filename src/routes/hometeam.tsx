@@ -553,7 +553,7 @@ function HomeTeamPage() {
           </section>
         ) : null}
         {source === "demo" && needs.length > 0 ? (
-          <p className="text-small text-sg-ink-soft">Demo needs — shown so the shape is clear; live ones arrive when the database connects.</p>
+          <p className="text-small text-sg-ink-soft">Offline copy — live needs arrive when the database connects.</p>
         ) : null}
       </div>
     );

@@ -5,7 +5,7 @@
  * States (top→bottom per spec):
  *  - no-connections EmptyState (Invite a peer / How it works)
  *  - revoked notice line (dismissable, never names who)
- *  - incoming invites (sage card TOP): "Maya wants to share check-ins with
+ *  - incoming invites (sage card TOP): "A peer wants to share check-ins with
  *    you." + Accept / Not now
  *  - pending-out (gold row): "Waiting for them to accept" (phone invite — no
  *    expiry) | "Invite sent · expires in 2d" (code invite), quiet Cancel

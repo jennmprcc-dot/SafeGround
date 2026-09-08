@@ -1,8 +1,15 @@
 /**
- * SafeGround demo data layer (typed, clearly labeled demo).
- * Fictional-but-plausible resources + sweeps for the MVP build wave.
- * Everything here is demo content — the real data will come from the
- * Supabase-ready schema (see /home/team/shared/schema.sql) when wired.
+ * SafeGround shared data layer (typed UI contract — real data only).
+ *
+ * Owner-directed 2026-09-07 (Option A): the live app starts with REAL data
+ * only. There is NO fictional seed content in this module — no invented
+ * people, places, or events. Resource rows come from the live database
+ * (seeded from REAL_MARIN_RESOURCES in src/lib/marinResources.ts); sweeps,
+ * needs, peers, and alerts come from their live tables. When the database is
+ * unreachable, server fns return honest empty states (never fabricated rows).
+ *
+ * What lives here: category taxonomy, the DemoResource view type (the shape
+ * the Navigator UI consumes — rows are real), pure geo math, and calm labels.
  */
 import type { ReactNode } from "react";
 import {
@@ -42,12 +49,15 @@ export interface Category {
   wash: string; // category-tinted wash for the icon tile
 }
 
+/** A resource as the Navigator UI consumes it. Rows are REAL — from the live
+ * database (or the real-Marin offline copy); never invented. */
 export interface DemoResource {
   id: string;
   name: string;
   category: CategoryId;
   address: string;
-  /** Optional distance in miles — set by simulated "near me" lookup in Build A. */
+  /** Optional distance in miles — set by the "near me" lookup from the user's
+   * real one-time location read. */
   distanceMi?: number;
   hours: string;
   phone?: string;
@@ -63,23 +73,7 @@ export interface DemoResource {
   lng?: number;
 }
 
-export type SweepStatus = "reported" | "active" | "planned" | "resolved";
-
-export interface DemoSweep {
-  id: string;
-  title: string;
-  status: SweepStatus;
-  source: string; // e.g. "Reported by a neighbor · 2h ago"
-  verified?: boolean;
-  window: string; // e.g. "Happening now"
-  note: string;
-  lat: number;
-  lng: number;
-  distanceMi?: number;
-  reportedMinutesAgo: number;
-}
-
-/* ── Categories (8, per PRD F1 / WIREFRAMES 2a) ─────────────────── */
+/* ── Categories (10, per PRD F1 / WIREFRAMES 2a) ────────────────── */
 
 export const CATEGORIES: Category[] = [
   { id: "food", label: "Food", name: "Food", icon: <BowlIcon size={24} />, wash: "bg-sg-sage-wash" },
@@ -99,290 +93,13 @@ export const CATEGORY_MAP: Record<CategoryId, Category> = Object.fromEntries(
   CATEGORIES.map((c) => [c.id, c]),
 ) as Record<CategoryId, Category>;
 
-/* ── Demo resources (15: 13 fictional across all 8 categories + 2 real Marin ⭐
-   owner-requested providers) ────────────────────────────────────
-   Fictional places in a fictional waterfront district. Verified dates
-   are recent (within the last ~3 weeks). Demo — not real listings.
-   Real: The Street Chaplaincy (San Rafael) + The Bethany Project Marin
-   (Novato) — owner-requested, idempotently seeded into the live DB. */
-
-export const DEMO_RESOURCES: DemoResource[] = [
-  {
-    id: "r-st-marys",
-    name: "St. Mary's Kitchen",
-    category: "food",
-    address: "412 Harbor Ave",
-    hours: "Mon–Fri 11am–7pm · Sat 12–6pm",
-    phone: "(555) 014-2288",
-    note: "No ID needed. Hot meal served 5:30–7pm. Dog-friendly patio and to-go bags.",
-    verifiedAt: "2026-08-28",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8124,
-    lng: -122.2742,
-  },
-  {
-    id: "r-bayview-meals",
-    name: "Bayview Community Meals",
-    category: "food",
-    address: "88 Cedar St (back entrance)",
-    hours: "Daily breakfast 7–9am · dinner 5–7pm",
-    phone: "(555) 014-7710",
-    note: "Breakfast line starts at 6:45. No questions asked — everyone eats.",
-    verifiedAt: "2026-08-30",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8101,
-    lng: -122.2704,
-  },
-  {
-    id: "r-harbor-night",
-    name: "Harbor Night Shelter",
-    category: "shelter",
-    address: "201 Dock Rd",
-    hours: "Open nightly 6pm–8am",
-    phone: "(555) 014-5590",
-    note: "Line forms at 6pm. Mats on a first-come basis. Storage bins available overnight. No same-sex checks — come as you are.",
-    verifiedAt: "2026-08-25",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8159,
-    lng: -122.2793,
-  },
-  {
-    id: "r-crescent-inn",
-    name: "Crescent Motel Vouchers",
-    category: "shelter",
-    address: "310 Crescent Way",
-    hours: "Front desk 8am–10pm",
-    phone: "(555) 014-9021",
-    note: "Same-night motel vouchers when weather turns. Call ahead — vouchers go fast.",
-    verifiedAt: "2026-08-20",
-    verifiedBy: "Outreach Team Lena",
-    openNow: false,
-    lat: 37.8190,
-    lng: -122.2631,
-  },
-  {
-    id: "r-water-pavilion",
-    name: "Water Pavilion",
-    category: "water",
-    address: "Pier 3, Harbor Ave",
-    hours: "Always open",
-    note: "Filtered bottle-fill station and hose tap. Outdoor only.",
-    verifiedAt: "2026-08-31",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8110,
-    lng: -122.2801,
-  },
-  {
-    id: "r-bath-house",
-    name: "Bath House",
-    category: "showers",
-    address: "1500 Riverside Way",
-    hours: "Tue & Fri 3–7pm",
-    phone: "(555) 014-3320",
-    note: "Hot showers, towels and soap provided. No appointment needed.",
-    verifiedAt: "2026-08-26",
-    verifiedBy: "Outreach Team Lena",
-    openNow: false,
-    lat: 37.8135,
-    lng: -122.2688,
-  },
-  {
-    id: "r-open-gate-clinic",
-    name: "Open Gate Clinic",
-    category: "clinics",
-    address: "77 Juniper Ave",
-    hours: "Wed only, walk-ins 9am–3pm",
-    phone: "(555) 014-4403",
-    note: "Free walk-in care. Wound care, blood-pressure checks, prescription refills.",
-    verifiedAt: "2026-08-24",
-    verifiedBy: "Outreach Team Lena",
-    openNow: false,
-    lat: 37.8088,
-    lng: -122.2755,
-  },
-  {
-    id: "r-community-health-bus",
-    name: "Community Health Bus",
-    category: "clinics",
-    address: "Parking lot, 4th & Cedar",
-    hours: "Tue mornings 8–11am",
-    phone: "(555) 014-1187",
-    note: "Mobile clinic. Flu shots, foot care, and referrals. Bus has a ramp.",
-    verifiedAt: "2026-09-02",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8095,
-    lng: -122.2720,
-  },
-  {
-    id: "r-lighthouse-charge",
-    name: "Lighthouse Lounge",
-    category: "charging",
-    address: "960 Beacon St",
-    hours: "Mon–Sat 9am–8pm",
-    phone: "(555) 014-6654",
-    note: "Indoor tables, phone charging lockers, free Wi-Fi. Staff are kind. Buy nothing — resting is okay.",
-    verifiedAt: "2026-08-27",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8143,
-    lng: -122.2660,
-    unconfirmed: ["phone"],
-  },
-  {
-    id: "r-harbor-wifi",
-    name: "Harbor Library Wi-Fi Bench",
-    category: "charging",
-    address: "Corner of Harbor Ave & 6th",
-    hours: "24h outdoor",
-    note: "Library Wi-Fi reaches the benches outside. Power outlet on the east wall.",
-    verifiedAt: "2026-08-29",
-    verifiedBy: "Outreach Team Lena",
-    openNow: true,
-    lat: 37.8165,
-    lng: -122.2770,
-    unconfirmed: ["phone", "note"],
-  },
-  {
-    id: "r-justice-clinic",
-    name: "Justice Street Legal Clinic",
-    category: "legal",
-    address: "25 Justice St, 2nd floor",
-    hours: "Thu 10am–2pm · no appointment",
-    phone: "(555) 014-8122",
-    note: "Free 15-minute advice. Helps with tickets, IDs, and housing questions. Takes a number, waits are calm.",
-    verifiedAt: "2026-08-22",
-    verifiedBy: "Outreach Team Maya",
-    openNow: false,
-    lat: 37.8117,
-    lng: -122.2644,
-  },
-  {
-    id: "r-morning-star",
-    name: "Morning Star Day Center",
-    category: "daycenters",
-    address: "340 Harbor Ave",
-    hours: "Daily 8am–4pm",
-    phone: "(555) 014-9055",
-    note: "A place to rest inside: chairs, coffee, laundry, and case workers who listen. No referral needed.",
-    verifiedAt: "2026-09-01",
-    verifiedBy: "Outreach Team Maya",
-    openNow: true,
-    lat: 37.8128,
-    lng: -122.2711,
-  },
-  {
-    id: "r-welcome-day",
-    name: "Welcome Table Day Center",
-    category: "daycenters",
-    address: "500 Pine St",
-    hours: "Sat–Sun 9am–3pm",
-    note: "Weekend day center with board games, a warm floor, and snacks. Blankets welcome.",
-    verifiedAt: "2026-08-19",
-    verifiedBy: "Outreach Team Lena",
-    openNow: false,
-    lat: 37.8178,
-    lng: -122.2692,
-    unconfirmed: ["phone", "note"],
-  },
-  {
-    id: "r-street-chaplaincy",
-    name: "The Street Chaplaincy",
-    category: "daycenters",
-    address: "1510 5th Ave, San Rafael, CA 94901",
-    hours: "Call ahead — support hours vary",
-    phone: "(415) 685-5058",
-    note: "Spiritual and wellness support with a welcoming ear — hot drinks, conversation, and a calm place to rest. Founded by Kieawnie Clar (Executive Director).",
-    verifiedAt: "2026-09-06",
-    verifiedBy: "Outreach Team Maya",
-    openNow: false,
-    lat: 37.9739,
-    lng: -122.5290,
-    unconfirmed: ["hours"],
-  },
-  {
-    id: "r-bethany-project",
-    name: "The Bethany Project Marin",
-    category: "food",
-    address: "Hamilton Community Church, 5400 Nave Dr, Novato, CA 94949",
-    hours: "Thursdays 1:30–4pm (community meal)",
-    phone: null,
-    note: "Thursday community meal at Hamilton Community Church — nobody heals alone. Founded by Kieawnie Clar (Jan 2025). Reach out at info@thebethanyprojectmarin.org.",
-    verifiedAt: "2026-09-06",
-    verifiedBy: "Outreach Team Maya",
-    openNow: false,
-    lat: 38.0680,
-    lng: -122.5220,
-    unconfirmed: ["phone", "hours"],
-  },
-];
-
-/* ── Demo sweeps (for Home heads-up card + Sweeps tab later) ───── */
-
-export const DEMO_SWEEPS: DemoSweep[] = [
-  {
-    id: "s-river-underpass",
-    title: "River St underpass",
-    status: "active",
-    source: "Reported by a neighbor · 2h ago",
-    verified: false,
-    window: "Happening now",
-    note: "Officers posted notices for Thursday cleanup along the underpass.",
-    lat: 37.8100,
-    lng: -122.2760,
-    distanceMi: 0.6,
-    reportedMinutesAgo: 120,
-  },
-  {
-    id: "s-park-side",
-    title: "Parkside, Friday 8am",
-    status: "planned",
-    source: "Verified by outreach · Team Maya · 1h ago",
-    verified: true,
-    window: "Planned · Fri 8am",
-    note: "Planned clearance of the east lawn. Outreach will be on site Thursday evening with storage help.",
-    lat: 37.8180,
-    lng: -122.2680,
-    distanceMi: 1.1,
-    reportedMinutesAgo: 60,
-  },
-  {
-    id: "s-resolved-cedar",
-    title: "Cedar & 4th corner",
-    status: "resolved",
-    source: "Verified by outreach · Team Lena · 3d ago",
-    verified: true,
-    window: "Resolved",
-    note: "Cleanup complete; outreach confirmed the area is clear.",
-    lat: 37.8089,
-    lng: -122.2704,
-    distanceMi: 0.9,
-    reportedMinutesAgo: 3 * 24 * 60,
-  },
-];
-
-export const ACTIVE_SWEEP_COUNT = DEMO_SWEEPS.filter((s) => s.status === "active" || s.status === "planned").length;
-
 /* ── Helpers ────────────────────────────────────────────────────── */
 
 export function categoryOf(id: CategoryId): Category {
   return CATEGORY_MAP[id];
 }
 
-export function resourceOpenCount(resources: DemoResource[]): number {
-  return resources.filter((r) => r.openNow).length;
-}
-
-/** Simulated "use my location once" — returns a synthetic near-me point. */
-export function demoNearMePoint() {
-  return { lat: 37.8135, lng: -122.2731 };
-}
-
-/** Rough haversine-ish distance in miles for demo points (Build A stands in for real geocoding).
+/** Rough haversine-ish distance in miles between two real points.
  * Rows without a confirmed pin get undefined (never a fake distance). */
 export function approxDistanceMi(a: { lat: number; lng: number }, b: { lat?: number; lng?: number }): number | undefined {
   if (b.lat === undefined || b.lng === undefined) return undefined;
@@ -391,7 +108,7 @@ export function approxDistanceMi(a: { lat: number; lng: number }, b: { lat?: num
   return Math.sqrt(dLat * dLat + dLng * dLng);
 }
 
-export function withDemoDistances(resources: DemoResource[], from: { lat: number; lng: number }): DemoResource[] {
+export function withDistances(resources: DemoResource[], from: { lat: number; lng: number }): DemoResource[] {
   return resources.map((r) => ({ ...r, distanceMi: approxDistanceMi(from, r) }));
 }
 

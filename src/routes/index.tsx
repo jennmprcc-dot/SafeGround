@@ -125,11 +125,11 @@ function NearYouCard() {
             if (typeof navigator !== "undefined" && "geolocation" in navigator) {
               navigator.geolocation.getCurrentPosition(
                 () => push({ kind: "success", message: "Thanks — location used once. Nothing was stored." }),
-                () => push({ kind: "info", message: "Couldn't fetch location — showing nearby demo places instead. Nothing was stored." }),
+                () => push({ kind: "info", message: "Couldn't fetch location — the list stays as it is. Nothing was stored." }),
                 { maximumAge: 0, timeout: 8000 },
               );
             } else {
-              push({ kind: "info", message: "Showing nearby demo places — nothing was stored." });
+              push({ kind: "info", message: "Location isn't available here — the list stays as it is. Nothing was stored." });
             }
           }}
         />

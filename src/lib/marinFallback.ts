@@ -1,13 +1,11 @@
 /**
- * Branding pass: replace the fictional demo-resource fallback with the REAL
- * Marin County providers from src/lib/marinResources.ts (the compiled form of
- * /home/team/shared/MARIN_RESOURCES.md — verbatim names/addresses/hours/notes,
- * 2026-09-06).
+ * Offline copy: the REAL Marin County providers from src/lib/marinResources.ts
+ * (the compiled form of /home/team/shared/MARIN_RESOURCES.md — verbatim
+ * names/addresses/hours/notes, 2026-09-06).
  *
- * DEMO_RESOURCES stays as the typed demo dataset (used by data-layer helpers),
- * but the server's demo fallback (demoResources() in server.ts) now returns
- * REAL_MARIN_RESOURCES → the UI's offline/demo card no longer shows fictional
- * Harbor-ave places. `openNow` derived from category: rolling hours marked 7am–
+ * The server's DB-unreachable fallback (demoResources() in server.ts) returns
+ * these REAL rows → the UI's offline card shows real Marin listings, never
+ * invented places. `openNow` derived from category: rolling hours marked 7am–
  * 9pm local; call-ahead entries not claimed open. Verified: 2026-09-06, by
  * "MPRCC (verify before launch)" — honest label, no invented names.
  */

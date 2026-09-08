@@ -1,5 +1,5 @@
 /**
- * SafeGround database bootstrap — schema apply + demo seed (server-only).
+ * SafeGround database bootstrap — schema apply + real-data seed (server-only).
  *
  * Used two ways:
  *  1. `bun scripts/apply-schema.ts` / `bun scripts/seed.ts` — one-shot ops scripts.
@@ -8,15 +8,16 @@
  *
  * Everything here is idempotent: already-present objects are skipped, and seed
  * rows use deterministic UUIDv5 ids with ON CONFLICT DO NOTHING, so re-running
- * never duplicates.
+ * never duplicates. REAL data only — no fictional seed content (Option A,
+ * owner-directed 2026-09-07).
  *
  * NOTE: this source file deliberately avoids literal double-dollar sequences,
  * because they collide with shell-style templating in the authoring toolchain.
  * SQL dollar-quoting is built at runtime or via single-quoted bodies.
  */
-import { createHash } from "node:crypto";
 import { sql } from "~/db";
-import { DEMO_RESOURCES, DEMO_SWEEPS } from "~/lib/data";
+import { MARIN_VERIFIED_AT, REAL_MARIN_RESOURCES, KEPT_EXISTING_RESOURCES } from "~/lib/marinResources";
+import { uuid5 } from "~/lib/uuid5";
 
 /* ── Statement splitting ──────────────────────────────────────────
  * schema.sql contains semicolons inside string literals (the privacy-comment
@@ -181,28 +182,14 @@ export async function applySchema(): Promise<SchemaApplyResult> {
   return result;
 }
 
-/* ── Seed: the SAME fictional demo data, clearly marked ──────────── */
+/* ── Seed: REAL Marin County resources + real outreach roster ──────
+ * Owner-directed 2026-09-07 (Option A): zero fictional seed data. Resources
+ * come from REAL_MARIN_RESOURCES (+ the kept owner-requested rows) in
+ * src/lib/marinResources.ts — the compiled form of MARIN_RESOURCES.md.
+ * Sweeps are never seeded (neighbors + outreach report real ones). */
 
-/** Deterministic UUIDv5 in a SafeGround namespace — stable across runs. */
-const SG_NS = "a7e40a32-4f2e-5f6a-9d0e-6b1c2d3e4f50"; // safeground-seed namespace
-function uuid5(name: string): string {
-  const h = createHash("sha1").update(SG_NS.replace(/-/g, ""), "hex").update(name).digest();
-  const b = Uint8Array.from(h.subarray(0, 16));
-  b[6] = (b[6] & 0x0f) | 0x50;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  const hex = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-/** Next Friday 08:00 local (for the "Planned · Fri 8am" demo sweep). */
-function nextFriday8am(): Date {
-  const d = new Date();
-  d.setHours(8, 0, 0, 0);
-  do {
-    d.setDate(d.getDate() + 1);
-  } while (d.getDay() !== 5);
-  return d;
-}
+/* Deterministic seed ids come from ~/lib/uuid5 (SafeGround namespace) —
+ * the same ids scripts/apply-resources-real.ts uses, so the two paths agree. */
 
 export interface SeedResult {
   resourcesInserted: number;
@@ -216,82 +203,21 @@ export interface SeedResult {
 }
 
 export async function seedDemoData(): Promise<SeedResult> {
-  const now = Date.now();
-  const min = (m: number) => new Date(now - m * 60_000);
-
-  for (const r of DEMO_RESOURCES) {
+  // REAL resources, upserted by deterministic id (same rows + same ids as
+  // scripts/apply-resources-real.ts, so re-running never duplicates). Null
+  // address/phone/lat/lng pass straight through — the UI renders them as
+  // "Not confirmed yet — call ahead if you can" (never invented values).
+  const realRows = [...REAL_MARIN_RESOURCES, ...KEPT_EXISTING_RESOURCES];
+  for (const r of realRows) {
     await sql()`
       insert into resources (id, name, category, address, hours, phone, note, lat, lng, verified_at, verified_by)
       values (${uuid5("resource:" + r.id)}, ${r.name}, ${r.category}, ${r.address}, ${r.hours},
-              ${r.phone ?? null}, ${r.note}, ${r.lat}, ${r.lng}, ${r.verifiedAt}::date, null)
-      on conflict (id) do nothing`;
-  }
-
-  for (const s of DEMO_SWEEPS) {
-    // Map demo sweep → schema lifecycle: reported/verified status + severity enum.
-    const createdAt = min(s.reportedMinutesAgo);
-    const isActive = s.status === "active";
-    const isPlanned = s.status === "planned";
-    const dbStatus = s.status === "resolved" ? "verified" : s.verified ? "verified" : "reported";
-    const severity = s.status === "resolved" ? "resolved_recent" : isActive ? "active" : "planned";
-    const eventAt = isPlanned ? nextFriday8am() : isActive ? createdAt : min(s.reportedMinutesAgo);
-    const resolvedAt = s.status === "resolved" ? createdAt : null;
-    const verifiedAt = s.verified ? createdAt : null;
-    await sql()`
-      insert into sweeps (id, reported_by, status, severity, event_at, resolved_at, lat, lng, note, verified_at, verified_by, created_at)
-      values (${uuid5("sweep:" + s.id)}, null, ${dbStatus}::sweep_status, ${severity}::sweep_severity,
-              ${eventAt.toISOString()}, ${resolvedAt ? resolvedAt.toISOString() : null},
-              ${s.lat}, ${s.lng}, ${s.note},
-              ${verifiedAt ? verifiedAt.toISOString() : null}, null, ${createdAt.toISOString()})
+              ${r.phone}, ${r.note}, ${r.lat}, ${r.lng}, ${MARIN_VERIFIED_AT}::date, null)
       on conflict (id) do nothing`;
   }
 
   const r1 = await sql()`select count(*)::int as n from resources`;
   const r2 = await sql()`select count(*)::int as n from sweeps`;
-
-  // ── HomeTeam wave seed (idempotent, same fictional-demo style) ──
-  // Two demo supporters with explicit consent + one open need + one resolved
-  // demo alert. The need's location is a place NAME only ("Skatepark,
-  // San Rafael") — no pin, no coordinates (privacy-first demo shapes).
-  // requested_by needs a users row: reuse a deterministic demo neighbor.
-  const janePhone = "14155550101";
-  const baoPhone = "14155550102";
-  const joePhone = "14155550103";
-  const seedUserId = uuid5("seed:neighbor:joe");
-  try {
-    await sql()`
-      insert into auth.users (id, email)
-      values (${seedUserId}, ${`demo+${seedUserId.slice(0, 8)}@safeground.local`})
-      on conflict (id) do nothing`;
-  } catch { /* auth.users may be locked down; public.users insert below still works if the FK allows */ }
-  await sql()`
-    insert into public.users (id, display_name, role)
-    values (${seedUserId}, 'Joe (demo)', 'neighbor')
-    on conflict (id) do nothing`;
-  await sql()`select public.hometeam_join(${janePhone}, 'Jane')`;
-  await sql()`select public.hometeam_join(${baoPhone}, 'Bao')`;
-  await sql()`
-    insert into supply_requests (id, requested_by, items, note, pickup_preference, status, visibility)
-    values (${uuid5("seed:need:joe-tent")}, ${seedUserId},
-            array['tent']::text[], 'Joe needs a tent at the skatepark',
-            'Skatepark, San Rafael', 'open', 'open')
-    on conflict (id) do nothing`;
-  // Resolved demo alert — shows the shape without looking like a live emergency.
-  // Text location_shared with explicit 'none' (new rev-10 column shape);
-  // resolved_by_role='sender' + outcome_note show the outcome-tracking shape.
-  try {
-    await sql()`
-      insert into emergency_alerts
-        (id, sender_phone, kind, note, location_shared, audience,
-         resolved_at, resolved_by_phone, resolved_by_role, outcome_note, created_at)
-      values (${uuid5("seed:alert:demo-resolved")}, ${joePhone}, 'help_needed',
-              'Demo alert — already resolved, just showing the shape.',
-              'none', array['friends', 'peers', 'hometeam']::text[],
-              now() - interval '2 hours', ${joePhone}, 'sender',
-              'Safely reached a friend nearby — all good. (Demo outcome note.)',
-              now() - interval '3 hours')
-      on conflict (id) do nothing`;
-  } catch { /* emergency_alerts may not exist on very old DBs mid-migration; schema apply precedes seed */ }
 
   // ── Outreach roster seed (owner-directed 2026-09-06) ───────────────
   // Jenn Mallow + Carrie "Bambi" Klyse (admins), Tracey Cohen (staff_limited).
@@ -326,8 +252,8 @@ export async function seedDemoData(): Promise<SeedResult> {
     rosterTotal = Number(r6[0]?.n ?? 0);
   } catch { /* table may be absent if schema apply was skipped */ }
   return {
-    resourcesInserted: DEMO_RESOURCES.length,
-    sweepsInserted: DEMO_SWEEPS.length,
+    resourcesInserted: realRows.length,
+    sweepsInserted: 0,
     resourcesTotal: Number(r1[0]?.n ?? 0),
     sweepsTotal: Number(r2[0]?.n ?? 0),
     hometeamTotal: Number(r3[0]?.n ?? 0),

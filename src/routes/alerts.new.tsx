@@ -21,7 +21,6 @@ import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertSource } from "
 import { ALERT_LIFE_COPY } from "~/lib/alerts";
 import { CheckCircleIcon } from "~/lib/icons";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
-import { demoNearMePoint } from "~/lib/data";
 import { cn } from "~/lib/cn";
 
 /* ── Business-hours line (dynamic, Marin local) ────────────────────
@@ -288,12 +287,31 @@ function SendAlertPage() {
     if (location === "fuzzed" || location === "exact") {
       // The SEPARATE fuzz point the sender chose (server fuzzes exact internally;
       // we never send exact unless location === "exact").
+      // REAL location only: a single one-time device read, user-initiated for
+      // this alert. No stored fallback, no invented point — if the read fails,
+      // the location choice can't be honored and the sender sees a calm error.
+      let p: { lat: number; lng: number } | null = null;
+      try {
+        p = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
+          if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+            reject(new Error("no geolocation"));
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            () => reject(new Error("denied")),
+            { maximumAge: 0, timeout: 8000 },
+          );
+        });
+      } catch {
+        setError("Couldn't read your location — pick “No location” to send with words only, or try again when you can.");
+        setSending(false);
+        return;
+      }
       if (location === "exact") {
-        const p = demoNearMePoint();
         exactLat = p.lat;
         exactLng = p.lng;
       } else {
-        const p = demoNearMePoint();
         fuzzLat = p.lat;
         fuzzLng = p.lng;
       }

@@ -35,7 +35,6 @@ import {
   demoUserId,
 } from "~/lib/server";
 import type { CheckInRow, PeerCheckInRow, PeerRow, DataSource } from "~/lib/server";
-import { demoNearMePoint } from "~/lib/data";
 import { MoonBlanketIcon, HeartIcon, PauseIcon, PersonIcon, LockIcon } from "~/lib/icons";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
 import { getAlertIdentity } from "~/lib/alertIdentity";
@@ -320,25 +319,26 @@ function CheckInPage() {
   const selfOverdue = mine?.overdue ?? false;
 
   const share = async (opts: { mode: "once" | "pin"; note: string }) => {
+    setConfirmOpen(false);
+    // REAL location only — a single user-initiated device read, used once for
+    // this check-in. No stored fallback, no invented point: if the read fails
+    // or isn't available, the sender sees a calm notice and tries again.
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      push({ kind: "error", message: "Location isn't available on this device right now — try again when you can." });
+      return;
+    }
     let lat: number;
     let lng: number;
-    setConfirmOpen(false);
-    if (opts.mode === "once" && typeof navigator !== "undefined" && "geolocation" in navigator) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(resolve, reject, { maximumAge: 0, timeout: 8000 }),
-        );
-        lat = pos.coords.latitude;
-        lng = pos.coords.longitude;
-      } catch {
-        const p = demoNearMePoint();
-        lat = p.lat;
-        lng = p.lng;
-      }
-    } else {
-      const p = demoNearMePoint();
-      lat = p.lat;
-      lng = p.lng;
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { maximumAge: 0, timeout: 8000 }),
+      );
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+    } catch {
+      setCheckinConfirmed({ saved: false, kind: "draft", line: "Couldn't read your location — allow it once, or try again when you can." });
+      push({ kind: "error", message: "Couldn't read your location — allow it once, or try again when you can." });
+      return;
     }
     const res = await createCheckIn({ data: { userId, lat, lng, note: opts.note } });
     if (res.ok) {
