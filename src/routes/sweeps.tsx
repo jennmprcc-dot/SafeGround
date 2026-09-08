@@ -27,6 +27,7 @@ import {
 import { useAuth } from "~/lib/auth";
 import { listSweeps, reportSweep } from "~/lib/server";
 import type { SweepRow, DataSource } from "~/lib/server";
+import { useLanguage } from "~/lib/i18n";
 import { BellMoonIcon, MapPinIcon, PenIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
@@ -77,6 +78,7 @@ function SweepPins({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: SweepRo
 
 /* ── map pane: calm no-key fallback, pins over the backstop ─────── */
 function SweepMapPane({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: SweepRow) => void }) {
+  const { t } = useLanguage();
   return (
     <div className="relative flex h-[280px] flex-col overflow-hidden rounded-[16px] border border-sg-line bg-sg-sky-wash">
       <div
@@ -93,19 +95,19 @@ function SweepMapPane({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: Swee
       <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-3 rounded-full bg-sg-card px-3 py-1.5 text-small font-medium text-sg-ink shadow-md">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-sg-clay" aria-hidden />
-          Active
+          {t("sw_active")}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-sg-gold" aria-hidden />
-          Planned
+          {t("sw_planned")}
         </span>
       </div>
       <div className="absolute bottom-3 right-3 flex flex-col overflow-hidden rounded-[12px] border border-sg-line bg-sg-card shadow-md">
-        <button type="button" aria-label="Zoom in" className="flex h-12 w-12 items-center justify-center text-sg-ink hover:bg-sg-paper">+</button>
-        <button type="button" aria-label="Zoom out" className="flex h-12 w-12 items-center justify-center border-t border-sg-line text-sg-ink hover:bg-sg-paper">−</button>
+        <button type="button" aria-label={t("sw_zoom_in")} className="flex h-12 w-12 items-center justify-center text-sg-ink hover:bg-sg-paper">+</button>
+        <button type="button" aria-label={t("sw_zoom_out")} className="flex h-12 w-12 items-center justify-center border-t border-sg-line text-sg-ink hover:bg-sg-paper">−</button>
       </div>
       <div className="absolute inset-x-4 bottom-16 rounded-[12px] bg-sg-card p-3 shadow-md">
-        <p className="text-small text-sg-ink-soft">Heads-ups shown as approximate areas — the list below has each one.</p>
+        <p className="text-small text-sg-ink-soft">{t("sw_map_note")}</p>
       </div>
     </div>
   );
@@ -115,69 +117,97 @@ function SweepMapPane({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: Swee
  * Tier 1 — verified by MPRCC outreach. Tier 2 — a neighbor's report that
  * outreach hasn't confirmed yet. We never say bare "Unverified". */
 function SweepTrustBadge({ verified }: { verified: boolean }) {
+  const { t } = useLanguage();
   if (verified) {
-    return <StatusBadge kind="Verified">MPRCC Verified</StatusBadge>;
+    return <StatusBadge kind="Verified">{t("badge_verified")}</StatusBadge>;
   }
   return (
     <span className="inline-flex flex-col gap-1">
-      <StatusBadge kind="Reported">Community report</StatusBadge>
-      <span className="text-small text-sg-ink-soft">shared by a neighbor — outreach hasn't confirmed it yet</span>
+      <StatusBadge kind="Reported">{t("badge_community")}</StatusBadge>
+      <span className="text-small text-sg-ink-soft">{t("badge_community_sub")}</span>
     </span>
   );
 }
 
 /* ── Sweep detail bottom sheet (§3c) ────────────────────────────── */
-function SweepSheet({ sweep, onClose, onReport }: { sweep: SweepRow | null; onClose: () => void; onReport: () => void }) {
+function SweepSheet({
+  sweep,
+  onClose,
+  onReport,
+}: {
+  sweep: SweepRow | null;
+  onClose: () => void;
+  /* Opened with the sweep's context (window + note) so the problem report
+   * pre-fills the real flow — never a toast-only dead end (owner P0). */
+  onReport: (sweep: SweepRow) => void;
+}) {
   const { push } = useToasts();
+  const { t } = useLanguage();
   if (!sweep) return null;
   const statusKind: SweepRow["status"] = sweep.status;
+  const sheetTitle = statusKind === "active" ? t("sw_sheet_active") : statusKind === "planned" ? t("sw_sheet_planned") : t("sw_sheet_resolved");
+  const statusLabel = statusKind === "active" ? t("sw_active") : statusKind === "planned" ? t("sw_planned") : t("sw_resolved");
   return (
-    <BottomSheet open={!!sweep} onClose={onClose} title={sweep.status === "active" ? "Active heads-up" : sweep.status === "planned" ? "Planned heads-up" : "Resolved heads-up"}>
+    <BottomSheet open={!!sweep} onClose={onClose} title={sheetTitle}>
       <div className="flex flex-col gap-4 pb-2">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge kind={statusKind === "active" ? "Active" : statusKind === "planned" ? "Planned" : "Resolved"}>
-            {statusKind === "active" ? "Active" : statusKind === "planned" ? "Planned" : "Resolved"}
+            {statusLabel}
           </StatusBadge>
           <SweepTrustBadge verified={sweep.verified} />
         </div>
-        <p className="text-body text-sg-ink-soft">Window: {sweep.window}</p>
+        <p className="text-body text-sg-ink-soft">{t("sw_window")} {sweep.window}</p>
         {sweep.note ? <p className="text-body text-sg-ink">{sweep.note}</p> : null}
 
         <div className="rounded-[16px] border border-sg-line bg-sg-paper p-4">
-          <h3 className="text-h2">Tonight, you can</h3>
+          <h3 className="text-h2">{t("sw_tonight_title")}</h3>
           <ol className="mt-2 flex list-none flex-col gap-2 text-body text-sg-ink-soft">
-            <li>1. Move to a quiet spot away from this area if you can.</li>
-            <li>2. Keep important papers and medicines on you.</li>
-            <li>3. Check the nearby shelter and food list for a warm place.</li>
+            <li>1. {t("sw_tip1")}</li>
+            <li>2. {t("sw_tip2")}</li>
+            <li>3. {t("sw_tip3")}</li>
           </ol>
         </div>
 
         <div className="flex flex-col gap-2">
-          <Button variant="secondary" full onClick={() => push({ kind: "info", message: "Sharing this heads-up helps neighbors nearby." })}>
-            Share this heads-up
+          <Button variant="secondary" full onClick={() => push({ kind: "info", message: t("sw_share_toast") })}>
+            {t("sw_share")}
           </Button>
-          <Button variant="quiet" full onClick={onReport}>
+          <Button variant="quiet" full onClick={() => onReport(sweep)}>
             <PenIcon size={18} aria-hidden />
-            Report what you see
+            {t("sw_report_cta")}
           </Button>
         </div>
 
         <ConsentReceipt
-          who="Everyone who opens the app"
-          what="The area you described + your words"
-          howLong="Until outreach marks it resolved"
-          stopLabel="Report a problem with this heads-up"
-          onStop={() => push({ kind: "info", message: "Thanks — outreach will take a look." })}
+          who={t("sw_consent_who")}
+          what={t("sw_consent_what")}
+          howLong={t("sw_consent_how")}
+          stopLabel={t("sw_report_problem")}
+          onStop={() => onReport(sweep)}
         />
       </div>
     </BottomSheet>
   );
 }
 
-/* ── Report flow (§3b) — 3 steps, draft survives, record kept ──── */
-function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: (created: boolean, source: DataSource) => void }) {
-  const { signedIn, displayName, signIn } = useAuth();
+/* ── Report flow (§3b) — 3 steps, draft survives, record kept ────
+ * Anonymous-first (owner P0): no sign-in gate. reportSweep attributes
+ * signed-in reporters by device id and stays anonymous (null reported_by)
+ * for everyone else. */
+function ReportSheet({
+  open,
+  onClose,
+  onDone,
+  seedNote,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onDone: (created: boolean, source: DataSource) => void;
+  seedNote?: string;
+}) {
+  const { signedIn, displayName } = useAuth();
   const { push } = useToasts();
+  const { t } = useLanguage();
   const [step, setStep] = useState(1);
   const [point, setPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [happened, setHappened] = useState(true);
@@ -186,17 +216,18 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [done, setDone] = useState<SubmitConfirmState | null>(null);
 
-  // Reset when the sheet opens.
+  // Reset when the sheet opens (problem-report seeds carry the heads-up's
+  // window as context so outreach sees which heads-up it's about).
   useEffect(() => {
     if (open) {
       setStep(1);
       setPoint(null);
       setHappened(true);
-      setNote("");
+      setNote(seedNote ?? "");
       setPublishing(false);
       setDone(null);
     }
-  }, [open]);
+  }, [open, seedNote]);
 
   /* REAL location only: a single user-initiated device read places the pin for
    * this report. Nothing is stored afterwards. If the read fails or isn't
@@ -204,11 +235,11 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
    * ever substituted. */
   const once = () => {
     const fail = () => {
-      push({ kind: "info", message: "Couldn't read your location — place the pin yourself, no rush." });
+      push({ kind: "info", message: t("sw_loc_fail") });
     };
     const done = (p: { lat: number; lng: number }) => {
       setPoint(p);
-      push({ kind: "info", message: "Pin placed from your location — used once, nothing stored." });
+      push({ kind: "info", message: t("sw_pin_ok") });
     };
     if (typeof navigator !== "undefined" && "geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -230,34 +261,32 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
       setDone({ saved: res.source === "db", kind: res.source === "db" ? "saved" : "draft" });
       onDone(true, res.source);
     } catch {
-      setDone({ saved: false, kind: "draft", line: "No connection right now — your draft is saved. Try again when you can." });
+      setDone({ saved: false, kind: "draft", line: t("sw_offline_draft") });
       onDone(false, "demo");
     } finally {
       setPublishing(false);
     }
   };
 
-  const needsSignIn = !signedIn && step >= 2;
-
   return (
     <>
-      <BottomSheet open={open} onClose={onClose} title="Report what you see">
+      <BottomSheet open={open} onClose={onClose} title={t("sw_report_title")}>
         <div className="flex flex-col gap-4 pb-2">
           {done ? (
             <>
               <SubmitConfirm state={done} />
               <p className="text-small text-sg-ink-soft">
                 {done.kind === "draft"
-                  ? "You can close this — the draft stays on this phone until you're connected."
-                  : "It's now on the sweeps list for neighbors and the outreach team."}
+                  ? t("sw_draft_stays")
+                  : t("sw_live_now")}
               </p>
               <Button variant="quiet" full onClick={onClose}>
-                Close
+                {t("sw_close")}
               </Button>
             </>
           ) : (
             <>
-          <p className="text-small text-sg-ink-soft">Step {needsSignIn ? 2 : step} of 3 — no rush, and no photos needed. Words are enough.</p>
+          <p className="text-small text-sg-ink-soft">{t("sw_step")} {step} {t("sw_step_suffix")}</p>
 
           {step === 1 && (
             <>
@@ -271,77 +300,66 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
                   <button
                     type="button"
                     className="absolute left-1/2 top-1/2 z-10 -ml-3.5 -mt-3.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-sg-clay shadow-md"
-                    aria-label="Move the pin"
+                    aria-label={t("sw_move_pin")}
                   >
                     <MapPinIcon size={16} className="text-white" />
                   </button>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <p className="max-w-[220px] text-center text-small text-sg-ink-soft">Tap below to drop a pin on the map, or use your location once.</p>
+                    <p className="max-w-[220px] text-center text-small text-sg-ink-soft">{t("sw_pin_hint")}</p>
                   </div>
                 )}
               </div>
-              <LocationOnceButton onClick={once} caption="Only this report — nothing stored afterwards." />
-              <Button full onClick={() => { if (!point) push({ kind: "info", message: "First place a pin — it's the approximate area of what you saw." }); }}>
-                {point ? "Keep this pin" : "Place pin at a spot I choose"}
+              <LocationOnceButton onClick={once} caption={t("sw_loc_caption")} />
+              <Button full onClick={() => { if (!point) push({ kind: "info", message: t("sw_need_pin") }); }}>
+                {point ? t("sw_keep_pin") : t("sw_place_pin")}
               </Button>
-              <Button variant="quiet" full onClick={() => (point ? setStep(2) : push({ kind: "info", message: "First place a pin — it's the approximate area of what you saw." }))}>
-                Continue
+              <Button variant="quiet" full onClick={() => (point ? setStep(2) : push({ kind: "info", message: t("sw_need_pin") }))}>
+                {t("sw_continue")}
               </Button>
-              <p className="text-small text-sg-ink-soft">No auto-location — the pin is what you place. Privacy stays with you.</p>
+              <p className="text-small text-sg-ink-soft">{t("sw_no_autoloc")}</p>
             </>
           )}
 
           {step === 2 && (
             <>
-              {!signedIn ? (
-                <EmptyState
-                  icon={<PenIcon size={28} />}
-                  title="Sign in so outreach can follow up"
-                  body="Your name isn't shown anywhere — just lets the team know who shared the heads-up."
-                  steps={<Button full onClick={() => { signIn(); push({ kind: "info", message: "Signed in — your report will be attributed to you." }); }}>Sign in to continue</Button>}
-                />
-              ) : (
-                <>
-                  <ChipGrid
-                    label="When did this happen or is it coming?"
-                    options={[
-                      { value: "now", label: "Happening now" },
-                      { value: "planned", label: "Planned" },
-                    ]}
-                    selected={[happened ? "now" : "planned"]}
-                    onToggle={(v) => setHappened(v === "now")}
-                  />
-                  <TextArea
-                    label="What do you see?"
-                    helper="e.g. officers posting notices for Thursday"
-                    maxLength={500}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Words are enough — no photos needed."
-                  />
-                  <Button full onClick={() => setStep(3)}>Continue</Button>
-                  <Button variant="quiet" full onClick={() => setStep(1)}>Back</Button>
-                </>
-              )}
+              <ChipGrid
+                label={t("sw_when")}
+                options={[
+                  { value: "now", label: t("sw_now") },
+                  { value: "planned", label: t("sw_planned") },
+                ]}
+                selected={[happened ? "now" : "planned"]}
+                onToggle={(v) => setHappened(v === "now")}
+              />
+              <TextArea
+                label={t("sw_what")}
+                helper={t("sw_what_ex")}
+                maxLength={500}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={t("sw_what_ph")}
+              />
+              <Button full onClick={() => setStep(3)}>{t("sw_continue")}</Button>
+              <Button variant="quiet" full onClick={() => setStep(1)}>{t("sw_back")}</Button>
             </>
           )}
 
           {step === 3 && (
             <>
               <ConsentReceipt
-                who="Everyone who opens the app"
-                what="The pin I placed + my words"
-                howLong="Until outreach marks it resolved"
+                who={t("sw_consent_who")}
+                what={t("sw_consent_what2")}
+                howLong={t("sw_consent_how")}
               />
               <p className="text-small text-sg-ink-soft">
-                {point ? `Pin at ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)} · ${happened ? "happening now" : "planned"}` : "No pin yet."}
+                {point ? `${t("sw_pin_at")} ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)} · ${happened ? t("sw_now") : t("sw_planned")}` : t("sw_need_pin")}
                 {note ? ` · "${note.slice(0, 80)}${note.length > 80 ? "…" : ""}"` : ""}
               </p>
               <Button full disabled={publishing} onClick={() => setConfirmOpen(true)}>
-                {publishing ? "Sending…" : "Publish heads-up"}
+                {publishing ? t("sw_sending") : t("sw_publish")}
               </Button>
-              <Button variant="quiet" full onClick={() => setStep(2)}>Back</Button>
+              <Button variant="quiet" full onClick={() => setStep(2)}>{t("sw_back")}</Button>
             </>
           )}
             </>
@@ -351,12 +369,12 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
 
       <Dialog
         open={confirmOpen}
-        title="Publish this heads-up?"
-        confirmLabel="Yes, publish"
+        title={t("sw_publish_q")}
+        confirmLabel={t("sw_yes_publish")}
         onConfirm={() => { setConfirmOpen(false); void publish(); }}
         onClose={() => setConfirmOpen(false)}
       >
-        Everyone who opens the app sees the area you described and your words, until outreach marks it resolved. Nothing else is shared.
+        {t("sw_publish_body")}
       </Dialog>
     </>
   );
@@ -384,11 +402,14 @@ function demoDeviceId(displayName: string): string {
 
 /* ── Sweeps page ────────────────────────────────────────────────── */
 function SweepsPage() {
-  const { push } = useToasts();
+  const { t } = useLanguage();
   const [state, setState] = useState<{ rows: SweepRow[]; source: DataSource; loading: boolean }>({ rows: [], source: "demo", loading: true });
   const [filter, setFilter] = useState<"all" | "active" | "planned">("all");
   const [selected, setSelected] = useState<SweepRow | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  /* Problem-report seed: which heads-up the report is about (window + first
+   * line), pre-filled into the note so outreach has the context. */
+  const [problemSeed, setProblemSeed] = useState<string | undefined>(undefined);
   const tabRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -422,6 +443,20 @@ function SweepsPage() {
     }
   };
 
+  /* Fresh report: empty flow. Problem report: open the REAL report flow with
+   * the heads-up's window + first line seeded into the note (owner P0 —
+   * the old toast-only path never filed anything). */
+  const openFreshReport = () => {
+    setProblemSeed(undefined);
+    setReportOpen(true);
+  };
+  const openProblemReport = (s: SweepRow) => {
+    const headline = s.note?.split(".")[0]?.trim() ?? s.window;
+    setSelected(null);
+    setProblemSeed(`${t("sw_problem_prefix")}${s.window} — ${headline}`);
+    setReportOpen(true);
+  };
+
   const activeCount = state.rows.filter((s) => s.status === "active" || s.status === "planned").length;
 
   const filtered = useMemo(() => {
@@ -429,13 +464,15 @@ function SweepsPage() {
     return state.rows.filter((s) => s.status === filter);
   }, [state.rows, filter]);
 
+  const statusLabelFor = (s: SweepRow["status"]) => (s === "active" ? t("sw_active") : s === "planned" ? t("sw_planned") : t("sw_resolved"));
+
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
         <header className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-h1">Sweeps</h1>
-            <p className="mt-0.5 text-small text-sg-ink-soft">Heads-ups from neighbors, kept calm.</p>
+            <h1 className="text-h1">{t("nav_sweeps")}</h1>
+            <p className="mt-0.5 text-small text-sg-ink-soft">{t("sw_sub")}</p>
           </div>
         </header>
 
@@ -447,21 +484,21 @@ function SweepsPage() {
               <SweepMapPane sweeps={state.rows} onPick={openSweep} />
               <div className="mb-1 flex items-center justify-between px-1">
                 <p className="text-small text-sg-ink-soft">
-                  {activeCount} active or planned {activeCount === 1 ? "heads-up" : "heads-ups"} · {state.source === "db" ? "live" : "offline"}
+                  {activeCount} {activeCount === 1 ? t("sw_count_one") : t("sw_count_many")} · {state.source === "db" ? t("sw_live") : t("sw_offline")}
                 </p>
                 <button ref={tabRef} type="button" onClick={refresh} className="min-h-[44px] px-1 text-small font-semibold text-sg-sky underline underline-offset-2">
-                  Refresh
+                  {t("sw_refresh")}
                 </button>
               </div>
             </div>
 
             <div className={cn("flex flex-col gap-2")}>
               <ChipGrid
-                label="Filter heads-ups"
+                label={t("sw_filter")}
                 options={[
-                  { value: "all", label: "All" },
-                  { value: "active", label: `Active ${state.rows.filter((s) => s.status === "active").length}` },
-                  { value: "planned", label: `Planned ${state.rows.filter((s) => s.status === "planned").length}` },
+                  { value: "all", label: t("sw_all") },
+                  { value: "active", label: `${t("sw_active")} ${state.rows.filter((s) => s.status === "active").length}` },
+                  { value: "planned", label: `${t("sw_planned")} ${state.rows.filter((s) => s.status === "planned").length}` },
                 ]}
                 selected={[filter]}
                 onToggle={(v) => setFilter(v as "all" | "active" | "planned")}
@@ -473,9 +510,9 @@ function SweepsPage() {
         {!state.loading && filtered.length === 0 ? (
           <EmptyState
             icon={<BellMoonIcon size={28} />}
-            title="No sweeps reported in this area right now"
-            body="Rest easy — check back anytime. And if you do see something, a quiet report helps neighbors nearby."
-            steps={<Button full onClick={() => setReportOpen(true)}>Report what you see</Button>}
+            title={t("sw_empty_title")}
+            body={t("sw_empty_body")}
+            steps={<Button full onClick={openFreshReport}>{t("sw_report_cta")}</Button>}
           />
         ) : (
           <ul className="flex flex-col">
@@ -488,19 +525,19 @@ function SweepsPage() {
                   </IconTile>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
-                      <span className="truncate text-body font-medium text-sg-ink">{s.note?.split(".")[0] ?? `${s.status} heads-up`}</span>
+                      <span className="truncate text-body font-medium text-sg-ink">{s.note?.split(".")[0] ?? `${statusLabelFor(s.status)} heads-up`}</span>
                     </span>
                     <span className="mt-0.5 flex flex-wrap items-center gap-x-1 text-small text-sg-ink-soft">
-                      <StatusBadge kind={kind as "Active"}>{kind}</StatusBadge>
+                      <StatusBadge kind={kind as "Active"}>{statusLabelFor(s.status)}</StatusBadge>
                       <span>· {s.window}</span>
                     </span>
                     <span className="mt-0.5 block text-small text-sg-ink-soft">
-                      {s.reportedMinutesAgo < 60 ? `${Math.max(1, s.reportedMinutesAgo)} min ago` : `${Math.round(s.reportedMinutesAgo / 60)}h ago`} ·{" "}
-                      {s.verified ? "MPRCC Verified" : "Community report"}
+                      {s.reportedMinutesAgo < 60 ? `${Math.max(1, s.reportedMinutesAgo)} ${t("sw_min_ago")}` : `${Math.round(s.reportedMinutesAgo / 60)}${t("sw_hr_ago")}`} ·{" "}
+                      {s.verified ? t("badge_verified") : t("badge_community")}
                     </span>
                     {s.verified ? null : (
                       <span className="mt-0.5 block text-small text-sg-ink-soft">
-                        shared by a neighbor — outreach hasn't confirmed it yet
+                        {t("badge_community_sub")}
                       </span>
                     )}
                   </span>
@@ -512,8 +549,8 @@ function SweepsPage() {
 
         <p className="text-small text-sg-ink-soft">
           {state.source === "db"
-            ? "Live heads-ups from the outreach database."
-            : "Offline — showing what's saved here. New heads-ups appear when you're connected."}
+            ? t("sw_src_live")
+            : t("sw_src_off")}
         </p>
       </div>
 
@@ -521,11 +558,12 @@ function SweepsPage() {
       <ReportSheet
         open={reportOpen}
         onClose={() => setReportOpen(false)}
+        seedNote={problemSeed}
         onDone={() => {
           refresh();
         }}
       />
-      <SweepSheet sweep={selected} onClose={() => setSelected(null)} onReport={() => setReportOpen(true)} />
+      <SweepSheet sweep={selected} onClose={() => setSelected(null)} onReport={openProblemReport} />
     </AppShell>
   );
 }

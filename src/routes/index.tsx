@@ -15,16 +15,18 @@ import { MoonBlanketIcon, PersonIcon } from "~/lib/icons";
 
 /* Time-aware greeting — computed client-side so SSR never mismatches (calm default first). */
 function Greeting() {
-  const [greeting, setGreeting] = useState("Good day.");
+  const { t } = useLanguage();
+  const [part, setPart] = useState<"m" | "a" | "e">("a");
   useEffect(() => {
     const h = new Date().getHours();
-    setGreeting(h < 12 ? "Good morning." : h < 17 ? "Good afternoon." : "Good evening.");
+    setPart(h < 12 ? "m" : h < 17 ? "a" : "e");
   }, []);
+  const greeting = part === "m" ? t("home_morning") : part === "e" ? t("home_evening") : t("home_afternoon");
   return (
     <h1 className="text-display text-sg-ink">
       {greeting}
       <span className="mt-1 block text-body font-normal text-sg-ink-soft">
-        Find rest, food, and people who care.
+        {t("home_greet_sub")}
       </span>
     </h1>
   );
@@ -56,6 +58,7 @@ function useHomeStats(): { activeSweeps: number; resourceCount: number; openCoun
 }
 
 function HeadsUpCard() {
+  const { t } = useLanguage();
   const { activeSweeps, source, loading } = useHomeStats();
   if (loading) {
     return (
@@ -65,7 +68,7 @@ function HeadsUpCard() {
             <MoonBlanketIcon size={24} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-small font-semibold text-sg-ink-soft">Heads-up near you</p>
+            <p className="text-small font-semibold text-sg-ink-soft">{t("home_headsup")}</p>
             <div className="mt-2 h-6 w-44 animate-pulse rounded-[8px] bg-sg-line" aria-hidden />
           </div>
         </div>
@@ -80,8 +83,8 @@ function HeadsUpCard() {
             <MoonBlanketIcon size={24} />
           </span>
           <div>
-            <h2 className="text-h2">Heads-up near you</h2>
-            <p className="mt-1 text-body text-sg-ink-soft">No sweeps reported in your saved area. Rest easy.</p>
+            <h2 className="text-h2">{t("home_headsup")}</h2>
+            <p className="mt-1 text-body text-sg-ink-soft">{t("home_headsup_none")}</p>
           </div>
         </div>
       </Card>
@@ -94,16 +97,16 @@ function HeadsUpCard() {
           <MoonBlanketIcon size={24} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-small font-semibold text-sg-clay">Heads-up near you</p>
+          <p className="text-small font-semibold text-sg-clay">{t("home_headsup")}</p>
           <h2 className="text-h2">
-            {activeSweeps} active sweeps reported in your saved area
+            {activeSweeps} {t("home_headsup_count")}
           </h2>
           <p className="mt-1 text-small text-sg-ink-soft">
-            {source === "db" ? "Live heads-ups from the outreach database." : "Demo data — shown in your saved area."}
+            {source === "db" ? t("home_live") : t("home_demo")}
           </p>
           <div className="mt-3">
             <Link to="/sweeps" className="block">
-              <Button variant="secondary">See sweeps</Button>
+              <Button variant="secondary">{t("home_see_sweeps")}</Button>
             </Link>
           </div>
         </div>
@@ -113,27 +116,28 @@ function HeadsUpCard() {
 }
 
 function NearYouCard() {
+  const { t } = useLanguage();
   const { push } = useToasts();
   const { resourceCount, openCount, source, loading, timedOut, retry } = useHomeStats();
   return (
     <Card>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-h2">Near you</h2>
+          <h2 className="text-h2">{t("home_near")}</h2>
           <p className="mt-1 text-body text-sg-ink-soft">
-            {loading ? "Checking the list…" : `${resourceCount} places on the list · open now: ${openCount}`}
+            {loading ? t("home_checking") : `${resourceCount} ${t("home_places")} · ${t("home_open_now")} ${openCount}`}
           </p>
           {/* 3s fetch timed out or failed after one retry → calm notice naming
            * the cached Marin essentials + one-tap retry (same budget again). */}
           {!loading && timedOut ? (
             <p className="mt-1 text-small text-sg-ink-soft">
-              Taking a while — showing the saved Marin list for now.{" "}
+              {t("home_slow")}{" "}
               <button
                 type="button"
                 onClick={retry}
                 className="min-h-[44px] px-1 font-semibold text-sg-sky underline underline-offset-2"
               >
-                Try again
+                {t("home_retry")}
               </button>
             </p>
           ) : null}
@@ -145,14 +149,14 @@ function NearYouCard() {
             // One-shot read, 3s budget, still user-initiated and nothing
             // stored — on timeout the list simply stays as it is.
             readLocationOnce()
-              .then(() => push({ kind: "success", message: "Thanks — location used once. Nothing was stored." }))
-              .catch(() => push({ kind: "info", message: "Couldn't fetch location — the list stays as it is. Nothing was stored." }));
+              .then(() => push({ kind: "success", message: t("home_loc_ok") }))
+              .catch(() => push({ kind: "info", message: t("home_loc_fail") }));
           }}
         />
         <p className="mt-3 text-small text-sg-ink-soft">
           {source === "db"
-            ? "Live listings — maintained and verified by MPRCC outreach."
-            : "Real Marin County listings — call ahead if you can; hours change."}
+            ? t("home_live_list")
+            : t("home_real_list")}
         </p>
       </div>
     </Card>
@@ -162,14 +166,15 @@ function NearYouCard() {
 function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { signIn } = useAuth();
   const { push } = useToasts();
+  const { t } = useLanguage();
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Sign in to check in">
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={t("home_si_title")}>
       <div className="absolute inset-0 bg-[rgba(30,42,50,0.6)]" onClick={onClose} aria-hidden />
       <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[560px] rounded-t-[20px] bg-sg-card p-6 pb-[max(env(safe-area-inset-bottom),16px)] shadow-[0_8px_32px_rgba(30,42,50,0.18)]">
-        <h2 className="text-h2">Sign in to check in</h2>
+        <h2 className="text-h2">{t("home_si_title")}</h2>
         <p className="mt-2 text-body text-sg-ink-soft">
-          Check-ins are private, and they go only to people you choose — so your peers know it's you.
+          {t("home_si_body")}
         </p>
         <div className="mt-5 flex flex-col gap-2">
           <Button
@@ -177,13 +182,13 @@ function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
             onClick={() => {
               signIn();
               onClose();
-              push({ kind: "info", message: "You're signed in — check in with the people you trust." });
+              push({ kind: "info", message: t("home_signed_toast") });
             }}
           >
-            Sign in
+            {t("home_signin_needed")}
           </Button>
           <Button variant="quiet" full onClick={onClose}>
-            Not now
+            {t("home_notnow")}
           </Button>
         </div>
       </div>
@@ -208,7 +213,7 @@ function HomePage() {
             height={160}
             className="h-40 w-auto object-contain"
           />
-          <p className="mt-1 text-center text-small font-medium text-sg-ink-soft">by MPRCC — Marin Peer Resource Community Collective</p>
+          <p className="mt-1 text-center text-small font-medium text-sg-ink-soft">{t("home_by_mprcc")}</p>
         </div>
         <Greeting />
 
@@ -237,13 +242,12 @@ function HomePage() {
               <PersonIcon size={24} />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-h2">Talk to MPRCC</h2>
+              <h2 className="text-h2">{t("home_talk")}</h2>
               <p className="mt-1 text-body text-sg-ink">
-                Request support from MPRCC&apos;s peer team — a real person will reach out to you.
-                You&apos;re in control: nothing is sent until you tap, and nothing goes to police or any agency.
+                {t("home_talk_body")}
               </p>
               <Link to="/peer-support" className="mt-3 block">
-                <Button full>Request peer support</Button>
+                <Button full>{t("home_peer_cta")}</Button>
               </Link>
             </div>
           </div>
@@ -251,28 +255,28 @@ function HomePage() {
 
         <div className="flex flex-col gap-2">
           <Link to="/help" className="block">
-            <Button full>Find food &amp; shelter</Button>
+            <Button full>{t("home_find")}</Button>
           </Link>
           <Link to="/sweeps" className="block">
             <Button variant="secondary" full>
-              See sweep heads-ups
+              {t("home_see_heads")}
             </Button>
           </Link>
           <Link to="/alerts/new" className="block">
             <Button variant="secondary" full>
-              Get help from my people
+              {t("home_get_help")}
             </Button>
           </Link>
           {signedIn ? (
             <Link to="/checkin" className="block">
               <Button variant="secondary" full>
-                Check in for tonight
+                {t("home_checkin")}
               </Button>
             </Link>
           ) : (
             <button type="button" onClick={() => setSignInOpen(true)} className="w-full text-left">
-              <Button variant="secondary" full disabledReason="Sign in to check in">
-                Check in for tonight
+              <Button variant="secondary" full disabledReason={t("home_signin_needed")}>
+                {t("home_checkin")}
               </Button>
             </button>
           )}
@@ -286,9 +290,9 @@ function HomePage() {
             onClick={() => setCrisisOpen(true)}
             className="text-sg-sky underline underline-offset-2 min-h-[48px] inline-flex items-center"
           >
-            Talk to someone
+            {t("home_talk")}
           </button>
-          <p className="text-small text-sg-ink-soft">No background location, ever — you choose what's shared.</p>
+          <p className="text-small text-sg-ink-soft">{t("home_noloc")}</p>
         </footer>
       </div>
 

@@ -221,6 +221,18 @@ export function CrisisSheet({ open, onClose }: { open: boolean; onClose: () => v
         <p className="text-body text-sg-ink-soft">
           {t("crisis_intro")}
         </p>
+        {/* MPRCC Safe Team: one-tap in-app peer-support request — never 911. */}
+        <div className="rounded-[12px] border border-sg-sage/60 bg-sg-sage-wash/60 p-4">
+          <h3 className="text-h2">{t("crisis_safe_title")}</h3>
+          <p className="mt-1 text-small text-sg-ink-soft">{t("crisis_safe_body")}</p>
+          <Link
+            to="/peer-support"
+            onClick={onClose}
+            className="mt-3 flex min-h-[52px] items-center justify-center rounded-[12px] bg-sg-sage px-4 text-body font-semibold text-white"
+          >
+            {t("crisis_safe_cta")}
+          </Link>
+        </div>
         <div className="flex flex-col gap-3">
           <a
             href="tel:988"

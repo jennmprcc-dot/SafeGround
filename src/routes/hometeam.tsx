@@ -217,6 +217,7 @@ function LogSheet({
   isOutreach,
   onClose,
   onLogged,
+  onPhoneChange,
   onNeighborPhoneChange,
   onNeighborNameChange,
 }: {
@@ -227,6 +228,7 @@ function LogSheet({
   isOutreach: boolean;
   onClose: () => void;
   onLogged: () => void;
+  onPhoneChange: (v: string) => void;
   onNeighborPhoneChange: (v: string) => void;
   onNeighborNameChange: (v: string) => void;
 }) {
@@ -264,7 +266,7 @@ function LogSheet({
     // required — no phone means no server call (2026-09-07 dead-end fix).
     const whoPhone = isOutreach ? neighborPhone : phone;
     if (!phoneLooksOk(whoPhone)) {
-      setPhoneError("Add your 10-digit phone so the need can reach the HomeTeam — it stays private.");
+      setPhoneError(t("ht_phone_err"));
       return;
     }
     setPhoneError(null);
@@ -308,8 +310,20 @@ function LogSheet({
             <TextField label={t("ht_their_name")} value={neighborName} onChange={(e) => onNeighborNameChange(e.target.value)} maxLength={40} helper={t("ht_their_name_help")} />
           </div>
         ) : null}
-        {/* Non-outreach: the phone lives on the page identity strip, so the
-            required-phone error shows here inside the sheet (2026-09-07). */}
+        {/* Non-outreach: calm phone input (JoinSheet pattern) — stored
+            on-device under sg.alert.phone via setAlertIdentity, prefilled from
+            alert identity, sent only when the need is explicitly shared. */}
+        {!isOutreach ? (
+          <TextField
+            label={t("ht_phone")}
+            value={phone}
+            onChange={(e) => { setPhoneError(null); onPhoneChange(e.target.value); }}
+            inputMode="tel"
+            placeholder="(415) 555-0142"
+            helper={t("ht_phone_help")}
+            error={phoneError ?? undefined}
+          />
+        ) : null}
         {!isOutreach && phoneError ? (
           <p className="rounded-[12px] border border-sg-clay/40 bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
             {phoneError}
@@ -659,6 +673,7 @@ function HomeTeamPage() {
         isOutreach={outreach}
         onClose={() => setLogOpen(false)}
         onLogged={() => setTick((t) => t + 1)}
+        onPhoneChange={(v) => needsPhone(v)}
         onNeighborPhoneChange={(v) => setNeighborPhone(v)}
         onNeighborNameChange={(v) => setNeighborName(v)}
       />
