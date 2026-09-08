@@ -183,9 +183,11 @@ export function Toast({
 
 /** Toast provider: renders a stack above the bottom nav. Copy bank §4.8 — no names, no locations, no overdue status. */
 export function ToastStack({ toasts, onDismiss }: { toasts: ToastState[]; onDismiss: (id: number) => void }) {
-  return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[72px] z-50 flex flex-col gap-2" aria-live="polite">
-      {toasts.map((t) => (
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-[72px] z-50 flex flex-col gap-2">
+        {/* A11y: no aria-live here — each Toast already carries role="status"
+         * (or "alert" for errors); a live container would double-announce. */}
+        {toasts.map((t) => (
         <Toast key={t.id} kind={t.kind} message={t.message} action={t.action} onAction={t.onAction} onDismiss={() => onDismiss(t.id)} />
       ))}
     </div>
@@ -568,7 +570,7 @@ export function ConsentReceipt({
 
 export function OfflineBanner({ message, onRetry }: { message?: string; onRetry?: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 bg-sg-sky-wash px-4 py-2.5 text-small text-sg-sky">
+    <div role="status" className="flex items-center justify-between gap-3 bg-sg-sky-wash px-4 py-2.5 text-small text-sg-sky">
       <span className="flex items-center gap-2">
         <InfoIcon size={16} aria-hidden />
         {message ?? "No connection — showing saved list."}

@@ -588,7 +588,7 @@ function CheckInPage() {
                           How to help &rarr;
                         </Button>
                       ) : (
-                        <Button variant="quiet" onClick={() => openComposer(p.peerName, p.peerId, "Thinking of you \u2665")} className="!min-h-[44px] !px-2">
+                        <Button variant="quiet" onClick={() => openComposer(p.peerName, p.peerId, "Thinking of you \u2665")} className="!min-h-[44px] !px-2" aria-label={`Send a kind note to ${p.peerName}`}>
                           <HeartIcon size={18} aria-hidden />
                         </Button>
                       )}

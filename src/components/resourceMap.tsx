@@ -169,7 +169,7 @@ export function ResourceMapPane({
   return (
     <div ref={paneRef} tabIndex={-1} role="tabpanel" id="view-pane" aria-label="Map view" className="outline-none">
       <div className="relative overflow-hidden rounded-[16px] border border-sg-line" style={{ height, background: WASH }}>
-        <div ref={hostRef} className="absolute inset-0" aria-label="Map of resources" />
+        <div ref={hostRef} className="absolute inset-0" role="region" aria-label="Map of resources" />
       </div>
       <p className="mt-1.5 px-1 text-small text-sg-ink-soft">
         {resources.some((r) => r.lat != null)
