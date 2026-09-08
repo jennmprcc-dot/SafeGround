@@ -25,9 +25,6 @@ const EN = {
   nav_help: "Find help",
   nav_sweeps: "Sweeps",
   nav_checkin: "Check in",
-  // Fast Exit
-  fast_exit: "Fast Exit",
-  fast_exit_label: "Fast Exit — leave SafeGround now",
   // Menu sheet
   menu_title: "Menu",
   menu_hometeam: "HomeTeam — step in for a neighbor",
@@ -178,8 +175,6 @@ const ES: Partial<Record<I18nKey, string>> = {
   nav_help: "Buscar ayuda",
   nav_sweeps: "Desalojos",
   nav_checkin: "Estoy bien",
-  fast_exit: "Salida rápida",
-  fast_exit_label: "Salida rápida — salir de SafeGround ahora",
   menu_title: "Menú",
   menu_hometeam: "HomeTeam — ayuda a un vecino",
   menu_about: "Acerca de y privacidad",
