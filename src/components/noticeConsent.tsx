@@ -61,6 +61,7 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
           type="checkbox"
           checked={checked}
           disabled={saving}
+          aria-busy={saving}
           onChange={(e) => void save(e.target.checked, afterHours)}
           className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
         />
@@ -75,6 +76,7 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
             type="checkbox"
             checked={afterHours}
             disabled={saving}
+            aria-busy={saving}
             onChange={(e) => void save(true, e.target.checked)}
             className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
           />

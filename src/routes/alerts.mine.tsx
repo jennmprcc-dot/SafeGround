@@ -122,7 +122,7 @@ function MineView() {
         </header>
 
         {loading ? (
-          <div className="rounded-[16px] border border-sg-line bg-sg-card p-4 text-small text-sg-ink-soft">Checking for an active alert…</div>
+          <div className="rounded-[16px] border border-sg-line bg-sg-card p-4 text-small text-sg-ink-soft" role="status">Checking for an active alert…</div>
         ) : clearConfirmed ? (
           <div className="flex flex-col gap-2">
             <SubmitConfirm state={clearConfirmed} />

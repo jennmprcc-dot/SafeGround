@@ -55,7 +55,7 @@ export function LanguageToggle() {
             type="button"
             onClick={() => setLang(l)}
             aria-pressed={on}
-            aria-label={l === "en" ? "English" : "Espanol"}
+            aria-label={l === "en" ? "English" : "Español"}
             className={cn(
               "flex min-h-[40px] min-w-[44px] items-center justify-center rounded-full px-2.5 text-small font-semibold transition-colors",
               on ? "bg-sg-sage text-white" : "text-sg-ink-soft hover:text-sg-ink",
@@ -111,7 +111,7 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
           <button
             type="button"
             onClick={onOpenMenu}
-            aria-haspopup="menu"
+            aria-haspopup="dialog"
             aria-expanded={menuOpen}
             className="flex min-h-[48px] min-w-[44px] items-center justify-center text-sg-ink-soft hover:text-sg-ink"
             aria-label="Menu"
@@ -119,8 +119,6 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
             <MenuIcon size={22} />
           </button>
         </nav>
-        {/* Screen-reader-only heading for the shell — real H1s live per-page */}
-        <span className="sr-only">SafeGround — a calm place to find help, rest, and people who care</span>
       </div>
     </header>
   );

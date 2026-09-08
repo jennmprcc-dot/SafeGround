@@ -319,7 +319,7 @@ function NoticeComposerPage() {
                   maxLength={80}
                   className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
                 />
-                <span className="text-small text-sg-ink-soft">{title.length}/80</span>
+                <span className="text-small text-sg-ink-soft" aria-live="polite">{title.length}/80</span>
               </label>
               <label className="mt-3 flex flex-col gap-1.5">
                 <span className="text-btn font-medium">Message</span>
@@ -331,12 +331,12 @@ function NoticeComposerPage() {
                   rows={4}
                   className="w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 py-3 text-body text-sg-ink outline-none focus:border-sg-ink"
                 />
-                <span className="text-small text-sg-ink-soft">{body.length}/500 · Links won&apos;t be tappable — keep it to words, place names, and times.</span>
+                <span className="text-small text-sg-ink-soft" aria-live="polite">{body.length}/500 · Links won&apos;t be tappable — keep it to words, place names, and times.</span>
               </label>
             </Card>
 
             <Card className="bg-sg-sky/10">
-              <p className="text-small">
+              <p className="text-small" aria-live="polite">
                 {eligLoading
                   ? "Counting who's opted in…"
                   : audience && elig
