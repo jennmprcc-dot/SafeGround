@@ -16,7 +16,7 @@
  */
 import { createHash } from "node:crypto";
 import { sql } from "~/db";
-import { DEMO_RESOURCES, DEMO_SWEEPS } from "~/lib/data";
+import { DEMO_RESOURCES } from "~/lib/data";
 
 /* ── Statement splitting ──────────────────────────────────────────
  * schema.sql contains semicolons inside string literals (the privacy-comment
@@ -194,16 +194,6 @@ function uuid5(name: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** Next Friday 08:00 local (for the "Planned · Fri 8am" demo sweep). */
-function nextFriday8am(): Date {
-  const d = new Date();
-  d.setHours(8, 0, 0, 0);
-  do {
-    d.setDate(d.getDate() + 1);
-  } while (d.getDay() !== 5);
-  return d;
-}
-
 export interface SeedResult {
   resourcesInserted: number;
   sweepsInserted: number;
@@ -216,8 +206,6 @@ export interface SeedResult {
 }
 
 export async function seedDemoData(): Promise<SeedResult> {
-  const now = Date.now();
-  const min = (m: number) => new Date(now - m * 60_000);
 
   for (const r of DEMO_RESOURCES) {
     await sql()`
@@ -227,71 +215,8 @@ export async function seedDemoData(): Promise<SeedResult> {
       on conflict (id) do nothing`;
   }
 
-  for (const s of DEMO_SWEEPS) {
-    // Map demo sweep → schema lifecycle: reported/verified status + severity enum.
-    const createdAt = min(s.reportedMinutesAgo);
-    const isActive = s.status === "active";
-    const isPlanned = s.status === "planned";
-    const dbStatus = s.status === "resolved" ? "verified" : s.verified ? "verified" : "reported";
-    const severity = s.status === "resolved" ? "resolved_recent" : isActive ? "active" : "planned";
-    const eventAt = isPlanned ? nextFriday8am() : isActive ? createdAt : min(s.reportedMinutesAgo);
-    const resolvedAt = s.status === "resolved" ? createdAt : null;
-    const verifiedAt = s.verified ? createdAt : null;
-    await sql()`
-      insert into sweeps (id, reported_by, status, severity, event_at, resolved_at, lat, lng, note, verified_at, verified_by, created_at)
-      values (${uuid5("sweep:" + s.id)}, null, ${dbStatus}::sweep_status, ${severity}::sweep_severity,
-              ${eventAt.toISOString()}, ${resolvedAt ? resolvedAt.toISOString() : null},
-              ${s.lat}, ${s.lng}, ${s.note},
-              ${verifiedAt ? verifiedAt.toISOString() : null}, null, ${createdAt.toISOString()})
-      on conflict (id) do nothing`;
-  }
-
   const r1 = await sql()`select count(*)::int as n from resources`;
   const r2 = await sql()`select count(*)::int as n from sweeps`;
-
-  // ── HomeTeam wave seed (idempotent, same fictional-demo style) ──
-  // Two demo supporters with explicit consent + one open need + one resolved
-  // demo alert. The need's location is a place NAME only ("Skatepark,
-  // San Rafael") — no pin, no coordinates (privacy-first demo shapes).
-  // requested_by needs a users row: reuse a deterministic demo neighbor.
-  const janePhone = "14155550101";
-  const baoPhone = "14155550102";
-  const joePhone = "14155550103";
-  const seedUserId = uuid5("seed:neighbor:joe");
-  try {
-    await sql()`
-      insert into auth.users (id, email)
-      values (${seedUserId}, ${`demo+${seedUserId.slice(0, 8)}@safeground.local`})
-      on conflict (id) do nothing`;
-  } catch { /* auth.users may be locked down; public.users insert below still works if the FK allows */ }
-  await sql()`
-    insert into public.users (id, display_name, role)
-    values (${seedUserId}, 'Joe (demo)', 'neighbor')
-    on conflict (id) do nothing`;
-  await sql()`select public.hometeam_join(${janePhone}, 'Jane')`;
-  await sql()`select public.hometeam_join(${baoPhone}, 'Bao')`;
-  await sql()`
-    insert into supply_requests (id, requested_by, items, note, pickup_preference, status, visibility)
-    values (${uuid5("seed:need:joe-tent")}, ${seedUserId},
-            array['tent']::text[], 'Joe needs a tent at the skatepark',
-            'Skatepark, San Rafael', 'open', 'open')
-    on conflict (id) do nothing`;
-  // Resolved demo alert — shows the shape without looking like a live emergency.
-  // Text location_shared with explicit 'none' (new rev-10 column shape);
-  // resolved_by_role='sender' + outcome_note show the outcome-tracking shape.
-  try {
-    await sql()`
-      insert into emergency_alerts
-        (id, sender_phone, kind, note, location_shared, audience,
-         resolved_at, resolved_by_phone, resolved_by_role, outcome_note, created_at)
-      values (${uuid5("seed:alert:demo-resolved")}, ${joePhone}, 'help_needed',
-              'Demo alert — already resolved, just showing the shape.',
-              'none', array['friends', 'peers', 'hometeam']::text[],
-              now() - interval '2 hours', ${joePhone}, 'sender',
-              'Safely reached a friend nearby — all good. (Demo outcome note.)',
-              now() - interval '3 hours')
-      on conflict (id) do nothing`;
-  } catch { /* emergency_alerts may not exist on very old DBs mid-migration; schema apply precedes seed */ }
 
   // ── Outreach roster seed (owner-directed 2026-09-06) ───────────────
   // Jenn Mallow + Carrie "Bambi" Klyse (admins), Tracey Cohen (staff_limited).
@@ -327,7 +252,7 @@ export async function seedDemoData(): Promise<SeedResult> {
   } catch { /* table may be absent if schema apply was skipped */ }
   return {
     resourcesInserted: DEMO_RESOURCES.length,
-    sweepsInserted: DEMO_SWEEPS.length,
+    sweepsInserted: 0,
     resourcesTotal: Number(r1[0]?.n ?? 0),
     sweepsTotal: Number(r2[0]?.n ?? 0),
     hometeamTotal: Number(r3[0]?.n ?? 0),

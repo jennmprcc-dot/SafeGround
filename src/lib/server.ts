@@ -25,7 +25,6 @@ import { DEMO_SWEEPS } from "~/lib/data";
 import type { CategoryId } from "~/lib/data";
 import { realMarinAsDemoResources } from "~/lib/marinFallback";
 import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertRow, AlertSource } from "~/lib/alerts";
-import { DEMO_SENDER } from "~/lib/alerts";
 import type { NeedRow, NeedStatus, NeedVisibility, NeedSource, MemberStatusRow } from "~/lib/hometeam";
 import { demoNeeds } from "~/lib/hometeam";
 
@@ -660,40 +659,10 @@ export const listPeerCheckIns = createServerFn({ method: "GET" })
         limit 50`) as unknown as Parameters<typeof mapPeerCheckIn>[0][];
       return { rows: rows.map((r) => mapPeerCheckIn(r)), source: "db" };
     } catch {
-      // Calm demo fallback: two friendly sample peers, fuzzed points.
-      const now = new Date();
-      const threeH = now.getTime() - 3 * 3_600_000;
-      const fourteenH = now.getTime() - 14 * 3_600_000;
-      const future24 = new Date(now.getTime() + 21 * 3_600_000).toISOString();
-      return {
-        rows: [
-          {
-            id: "demo-peer-1",
-            peerId: "demo-peer-1",
-            peerName: "Maya",
-            fuzzLat: 37.814,
-            fuzzLng: -122.273,
-            checkedInAt: new Date(threeH).toISOString(),
-            note: "out tonight, phone low",
-            visibleUntil: future24,
-            sharing: true,
-            overdue: false,
-          },
-          {
-            id: "demo-peer-2",
-            peerId: "demo-peer-2",
-            peerName: "Jae",
-            fuzzLat: 37.81,
-            fuzzLng: -122.269,
-            checkedInAt: new Date(fourteenH).toISOString(),
-            note: null,
-            visibleUntil: "",
-            sharing: false,
-            overdue: true, // gentle check-in card, never auto-escalated
-          },
-        ],
-        source: "demo",
-      };
+      // DB-unreachable fallback: return an EMPTY list, never fabricated people.
+      // No invented peers, no fake fuzzed points — a real user sees an honest
+      // empty "demo" state, not fiction passing as real check-ins.
+      return { rows: [], source: "demo" };
     }
   });
 
@@ -858,66 +827,12 @@ function mapAlert(r: DbAlertRow, viewer: { phone: string; staff: boolean; admin:
   };
 }
 
-function demoAlertRows(phone: string): AlertRow[] {
-  const now = Date.now();
-  const mine = phone === DEMO_SENDER.phone;
-  const threeH = new Date(now - 3 * 3_600_000).toISOString();
-  const twoH = new Date(now - 2 * 3_600_000).toISOString();
-  const expires = new Date(now + 21 * 3_600_000).toISOString();
-  const active: AlertRow = {
-    id: "demo-alert-active",
-    kind: "help_needed",
-    note: "On the bench by the library — the phone is at 8%. Just want someone to know I'm here.",
-    location: "fuzzed",
-    fuzzLat: 37.813,
-    fuzzLng: -122.273,
-    exactLat: null,
-    exactLng: null,
-    canSeeExact: false,
-    audience: ["friends", "peers", "hometeam"],
-    senderName: DEMO_SENDER.name,
-    senderPhone: DEMO_SENDER.phone,
-    claimedBy: null,
-    claimedByName: null,
-    claimedAt: null,
-    resolved: false,
-    resolvedAt: null,
-    resolvedByRole: null,
-    outcomeNote: null,
-    expiresAt: expires,
-    createdAt: threeH,
-    source: "demo",
-  };
-  const resolved: AlertRow = {
-    id: "demo-alert-resolved",
-    kind: "unsafe_place",
-    note: "A patrol car drove through the underpass twice tonight.",
-    location: "none",
-    fuzzLat: null,
-    fuzzLng: null,
-    exactLat: null,
-    exactLng: null,
-    canSeeExact: false,
-    audience: ["friends", "peers"],
-    senderName: DEMO_SENDER.name,
-    senderPhone: DEMO_SENDER.phone,
-    claimedBy: null,
-    claimedByName: null,
-    claimedAt: null,
-    resolved: true,
-    resolvedAt: twoH,
-    resolvedByRole: "sender",
-    outcomeNote: "Made it to the library, all good.",
-    expiresAt: new Date(now - 1 * 3_600_000).toISOString(),
-    createdAt: threeH,
-    source: "demo",
-  };
-  return [active, resolved];
+function demoAlertRows(_phone: string): AlertRow[] {
+  // DB-unreachable fallback: return an EMPTY list, never fabricated events.
+  // No invented sender, no fake emergencies — a real user sees an honest
+  // empty "demo" state, not fiction passing as real alerts.
+  return [];
 }
-
-/** Send an emergency alert. Location NEVER pre-selected — the inbound payload
- * must carry an explicit 'none' | 'fuzzed' | 'exact' (the RPC hard-rejects
- * NULL/empty too; we validate on the client AND here). */
 export const sendEmergencyAlert = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const v = (input ?? {}) as {
