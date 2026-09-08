@@ -8,7 +8,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { useAuth } from "~/lib/auth";
 import { Button, Card, LocationOnceButton, useToasts } from "~/components/ui";
-import { getHomeStats } from "~/lib/server";
+import { getHomeStatsResilient, readLocationOnce } from "~/lib/homeStatsResilience";
 import type { DataSource } from "~/lib/server";
 import { useLanguage } from "~/lib/i18n";
 import { MoonBlanketIcon, PersonIcon } from "~/lib/icons";
@@ -30,24 +30,29 @@ function Greeting() {
   );
 }
 
-/* Shared hook: Home aggregates from the live database (demo fallback keeps the
- * page calm and honest if the database is unreachable — never an error wall). */
-function useHomeStats(): { activeSweeps: number; resourceCount: number; openCount: number; source: DataSource; loading: boolean } {
-  const [state, setState] = useState({ activeSweeps: 0, resourceCount: 0, openCount: 0, source: "demo" as DataSource, loading: true });
+/* Shared hook: Home aggregates from the live database with a 3s budget per
+ * attempt + one same-budget retry; on timeout or network failure it settles on
+ * the cached Marin essentials (computed on-device — nothing sent anywhere).
+ * The page stays calm and honest either way — never an error wall.
+ * `timedOut` drives the gentle "saved list" notice in NearYouCard. */
+function useHomeStats(): { activeSweeps: number; resourceCount: number; openCount: number; source: DataSource; loading: boolean; timedOut: boolean; retry: () => void } {
+  const [state, setState] = useState({ activeSweeps: 0, resourceCount: 0, openCount: 0, source: "demo" as DataSource, loading: true, timedOut: false });
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
-    getHomeStats()
+    getHomeStatsResilient()
       .then((s) => {
-        if (alive) setState({ ...s, loading: false });
+        if (alive) setState({ ...s, loading: false, timedOut: s.source === "demo" });
       })
       .catch(() => {
-        if (alive) setState({ activeSweeps: 0, resourceCount: 0, openCount: 0, source: "demo", loading: false });
+        // getHomeStatsResilient never rejects; this is belt-and-braces only.
+        if (alive) setState({ activeSweeps: 0, resourceCount: 0, openCount: 0, source: "demo", loading: false, timedOut: true });
       });
     return () => {
       alive = false;
     };
-  }, []);
-  return state;
+  }, [tick]);
+  return { ...state, retry: () => { setState((s) => ({ ...s, loading: true, timedOut: false })); setTick((t) => t + 1); } };
 }
 
 function HeadsUpCard() {
@@ -109,7 +114,7 @@ function HeadsUpCard() {
 
 function NearYouCard() {
   const { push } = useToasts();
-  const { resourceCount, openCount, source, loading } = useHomeStats();
+  const { resourceCount, openCount, source, loading, timedOut, retry } = useHomeStats();
   return (
     <Card>
       <div className="flex items-start gap-3">
@@ -118,20 +123,30 @@ function NearYouCard() {
           <p className="mt-1 text-body text-sg-ink-soft">
             {loading ? "Checking the list…" : `${resourceCount} places on the list · open now: ${openCount}`}
           </p>
+          {/* 3s fetch timed out or failed after one retry → calm notice naming
+           * the cached Marin essentials + one-tap retry (same budget again). */}
+          {!loading && timedOut ? (
+            <p className="mt-1 text-small text-sg-ink-soft">
+              Taking a while — showing the saved Marin list for now.{" "}
+              <button
+                type="button"
+                onClick={retry}
+                className="min-h-[44px] px-1 font-semibold text-sg-sky underline underline-offset-2"
+              >
+                Try again
+              </button>
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="mt-3">
         <LocationOnceButton
           onClick={() => {
-            if (typeof navigator !== "undefined" && "geolocation" in navigator) {
-              navigator.geolocation.getCurrentPosition(
-                () => push({ kind: "success", message: "Thanks — location used once. Nothing was stored." }),
-                () => push({ kind: "info", message: "Couldn't fetch location — the list stays as it is. Nothing was stored." }),
-                { maximumAge: 0, timeout: 8000 },
-              );
-            } else {
-              push({ kind: "info", message: "Location isn't available here — the list stays as it is. Nothing was stored." });
-            }
+            // One-shot read, 3s budget, still user-initiated and nothing
+            // stored — on timeout the list simply stays as it is.
+            readLocationOnce()
+              .then(() => push({ kind: "success", message: "Thanks — location used once. Nothing was stored." }))
+              .catch(() => push({ kind: "info", message: "Couldn't fetch location — the list stays as it is. Nothing was stored." }));
           }}
         />
         <p className="mt-3 text-small text-sg-ink-soft">
