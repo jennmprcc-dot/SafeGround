@@ -32,8 +32,7 @@ import {
   CATEGORIES,
   CATEGORY_MAP,
   categoryOf,
-  demoNearMePoint,
-  withDemoDistances,
+  withDistances,
 } from "~/lib/data";
 import type { CategoryId, DemoResource } from "~/lib/data";
 import { listResources, isAdminPhone } from "~/lib/server";
@@ -217,7 +216,7 @@ function NavigatorPage() {
     if (q) {
       list = list.filter((r) => r.name.toLowerCase().includes(q) || r.address.toLowerCase().includes(q) || CATEGORY_MAP[r.category].name.toLowerCase().includes(q));
     }
-    if (near) list = withDemoDistances(list, near).sort((a, b) => (a.distanceMi ?? 0) - (b.distanceMi ?? 0));
+    if (near) list = withDistances(list, near).sort((a, b) => (a.distanceMi ?? 0) - (b.distanceMi ?? 0));
     else list = [...list].sort((a, b) => a.name.localeCompare(b.name));
     return list;
   }, [adapted, selected, query, near]);
@@ -237,14 +236,25 @@ function NavigatorPage() {
     }
   };
 
+  /* REAL location only: a single user-initiated device read ("use my location
+   * once") sorts REAL resources by distance. Nothing is stored; if the read
+   * fails or isn't available, the list simply stays name-sorted — no invented
+   * point is ever substituted. */
   const locationOnce = () => {
-    const done = () => {
-      setNear(demoNearMePoint());
+    const fail = () => {
+      push({ kind: "info", message: "Couldn't read your location — the list stays in name order. Nothing was stored." });
+    };
+    const done = (p: { lat: number; lng: number }) => {
+      setNear(p);
       push({ kind: "success", message: "Sorted by distance once — nothing was stored." });
     };
     if (typeof navigator !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(done, done, { maximumAge: 0, timeout: 8000 });
-    } else done();
+      navigator.geolocation.getCurrentPosition(
+        (pos) => done({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        fail,
+        { maximumAge: 0, timeout: 8000 },
+      );
+    } else fail();
   };
 
   /* Get directions — opens the phone's own Maps app (geo: on Android,
@@ -345,7 +355,7 @@ function NavigatorPage() {
                 {filtered.length} {filtered.length === 1 ? "place" : "places"} · open now: {openNow}
               </p>
               <p className="text-small text-sg-ink-soft">
-                {source === "db" ? "Live database" : "Demo data"}
+                {source === "db" ? "Live database" : "Real Marin listings (offline copy)"}
               </p>
             </div>
 

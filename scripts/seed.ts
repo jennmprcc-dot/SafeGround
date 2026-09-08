@@ -1,5 +1,5 @@
 /**
- * One-shot ops script: seed the SAME fictional demo content into live tables.
+ * One-shot ops script: seed the REAL Marin resources + roster into live tables.
  * Idempotent (deterministic UUIDv5 ids + ON CONFLICT DO NOTHING).
  *
  *   bun scripts/seed.ts

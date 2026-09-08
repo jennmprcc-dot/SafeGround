@@ -21,12 +21,10 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
-import { DEMO_SWEEPS } from "~/lib/data";
 import type { CategoryId } from "~/lib/data";
 import { realMarinAsDemoResources } from "~/lib/marinFallback";
 import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertRow, AlertSource } from "~/lib/alerts";
 import type { NeedRow, NeedStatus, NeedVisibility, NeedSource, MemberStatusRow } from "~/lib/hometeam";
-import { demoNeeds } from "~/lib/hometeam";
 
 /* ── Public row shapes (serializable) ──────────────────────────── */
 
@@ -406,17 +404,11 @@ function demoResources(): ResourceRow[] {
   }));
 }
 
+/* Owner-directed 2026-09-07 (Option A): DB-unreachable sweeps fallback is an
+ * honest EMPTY list — never fabricated events. The map + list render their
+ * calm "no heads-ups right now" empty state instead of fiction. */
 function demoSweeps(): SweepRow[] {
-  return DEMO_SWEEPS.map((s) => ({
-    id: s.id,
-    status: s.status === "reported" ? "active" : s.status,
-    verified: s.verified ?? false,
-    window: s.window,
-    note: s.note,
-    lat: s.lat,
-    lng: s.lng,
-    reportedMinutesAgo: s.reportedMinutesAgo,
-  }));
+  return [];
 }
 
 /* ── Server functions ───────────────────────────────────────────── */
@@ -1030,7 +1022,10 @@ export const listNeeds = createServerFn({ method: "GET" }).handler(
         limit 60`) as unknown as DbNeedRow[];
       return { rows: rows.map(mapNeed), source: "db" };
     } catch {
-      return { rows: demoNeeds(), source: "demo" };
+      // Owner-directed 2026-09-07 (Option A): DB-unreachable needs fallback is
+      // an honest EMPTY list — never fabricated needs with invented names.
+      // The feed renders its calm "No open needs right now" empty state.
+      return { rows: [], source: "demo" };
     }
   },
 );

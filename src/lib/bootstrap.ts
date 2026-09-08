@@ -1,5 +1,5 @@
 /**
- * SafeGround database bootstrap — schema apply + demo seed (server-only).
+ * SafeGround database bootstrap — schema apply + real-data seed (server-only).
  *
  * Used two ways:
  *  1. `bun scripts/apply-schema.ts` / `bun scripts/seed.ts` — one-shot ops scripts.
@@ -8,15 +8,16 @@
  *
  * Everything here is idempotent: already-present objects are skipped, and seed
  * rows use deterministic UUIDv5 ids with ON CONFLICT DO NOTHING, so re-running
- * never duplicates.
+ * never duplicates. REAL data only — no fictional seed content (Option A,
+ * owner-directed 2026-09-07).
  *
  * NOTE: this source file deliberately avoids literal double-dollar sequences,
  * because they collide with shell-style templating in the authoring toolchain.
  * SQL dollar-quoting is built at runtime or via single-quoted bodies.
  */
-import { createHash } from "node:crypto";
 import { sql } from "~/db";
-import { DEMO_RESOURCES } from "~/lib/data";
+import { MARIN_VERIFIED_AT, REAL_MARIN_RESOURCES, KEPT_EXISTING_RESOURCES } from "~/lib/marinResources";
+import { uuid5 } from "~/lib/uuid5";
 
 /* ── Statement splitting ──────────────────────────────────────────
  * schema.sql contains semicolons inside string literals (the privacy-comment
@@ -181,18 +182,14 @@ export async function applySchema(): Promise<SchemaApplyResult> {
   return result;
 }
 
-/* ── Seed: the SAME fictional demo data, clearly marked ──────────── */
+/* ── Seed: REAL Marin County resources + real outreach roster ──────
+ * Owner-directed 2026-09-07 (Option A): zero fictional seed data. Resources
+ * come from REAL_MARIN_RESOURCES (+ the kept owner-requested rows) in
+ * src/lib/marinResources.ts — the compiled form of MARIN_RESOURCES.md.
+ * Sweeps are never seeded (neighbors + outreach report real ones). */
 
-/** Deterministic UUIDv5 in a SafeGround namespace — stable across runs. */
-const SG_NS = "a7e40a32-4f2e-5f6a-9d0e-6b1c2d3e4f50"; // safeground-seed namespace
-function uuid5(name: string): string {
-  const h = createHash("sha1").update(SG_NS.replace(/-/g, ""), "hex").update(name).digest();
-  const b = Uint8Array.from(h.subarray(0, 16));
-  b[6] = (b[6] & 0x0f) | 0x50;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  const hex = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
+/* Deterministic seed ids come from ~/lib/uuid5 (SafeGround namespace) —
+ * the same ids scripts/apply-resources-real.ts uses, so the two paths agree. */
 
 export interface SeedResult {
   resourcesInserted: number;
@@ -206,12 +203,16 @@ export interface SeedResult {
 }
 
 export async function seedDemoData(): Promise<SeedResult> {
-
-  for (const r of DEMO_RESOURCES) {
+  // REAL resources, upserted by deterministic id (same rows + same ids as
+  // scripts/apply-resources-real.ts, so re-running never duplicates). Null
+  // address/phone/lat/lng pass straight through — the UI renders them as
+  // "Not confirmed yet — call ahead if you can" (never invented values).
+  const realRows = [...REAL_MARIN_RESOURCES, ...KEPT_EXISTING_RESOURCES];
+  for (const r of realRows) {
     await sql()`
       insert into resources (id, name, category, address, hours, phone, note, lat, lng, verified_at, verified_by)
       values (${uuid5("resource:" + r.id)}, ${r.name}, ${r.category}, ${r.address}, ${r.hours},
-              ${r.phone ?? null}, ${r.note}, ${r.lat}, ${r.lng}, ${r.verifiedAt}::date, null)
+              ${r.phone}, ${r.note}, ${r.lat}, ${r.lng}, ${MARIN_VERIFIED_AT}::date, null)
       on conflict (id) do nothing`;
   }
 
@@ -251,7 +252,7 @@ export async function seedDemoData(): Promise<SeedResult> {
     rosterTotal = Number(r6[0]?.n ?? 0);
   } catch { /* table may be absent if schema apply was skipped */ }
   return {
-    resourcesInserted: DEMO_RESOURCES.length,
+    resourcesInserted: realRows.length,
     sweepsInserted: 0,
     resourcesTotal: Number(r1[0]?.n ?? 0),
     sweepsTotal: Number(r2[0]?.n ?? 0),

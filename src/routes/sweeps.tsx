@@ -27,7 +27,6 @@ import {
 import { useAuth } from "~/lib/auth";
 import { listSweeps, reportSweep } from "~/lib/server";
 import type { SweepRow, DataSource } from "~/lib/server";
-import { approxDistanceMi, demoNearMePoint } from "~/lib/data";
 import { BellMoonIcon, CheckIcon, MapPinIcon, PenIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
@@ -45,7 +44,7 @@ function SweepPins({ sweeps, onPick }: { sweeps: SweepRow[]; onPick: (s: SweepRo
     <div className="absolute inset-0" aria-hidden>
       {sweeps.map((s, i) => {
         const style = PIN_STYLE[s.status] ?? PIN_STYLE.active;
-        // Spread demo pins across the calm backstop so every status is visible.
+        // Spread pins across the calm backstop so every status is visible.
         const left = 18 + ((i * 37) % 58);
         const top = 14 + ((i * 53) % 46);
         return (
@@ -190,7 +189,14 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
     }
   }, [open]);
 
+  /* REAL location only: a single user-initiated device read places the pin for
+   * this report. Nothing is stored afterwards. If the read fails or isn't
+   * available, the sender places the pin themselves — no invented point is
+   * ever substituted. */
   const once = () => {
+    const fail = () => {
+      push({ kind: "info", message: "Couldn't read your location — place the pin yourself, no rush." });
+    };
     const done = (p: { lat: number; lng: number }) => {
       setPoint(p);
       push({ kind: "info", message: "Pin placed from your location — used once, nothing stored." });
@@ -198,10 +204,10 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
     if (typeof navigator !== "undefined" && "geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => done({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => done(demoNearMePoint()),
+        fail,
         { maximumAge: 0, timeout: 8000 },
       );
-    } else done(demoNearMePoint());
+    } else fail();
   };
 
   const publish = async () => {
@@ -267,7 +273,7 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
                 )}
               </div>
               <LocationOnceButton onClick={once} caption="Only this report — nothing stored afterwards." />
-              <Button full onClick={() => setPoint((p) => p ?? demoNearMePoint())}>
+              <Button full onClick={() => { if (!point) push({ kind: "info", message: "First place a pin — it's the approximate area of what you saw." }); }}>
                 {point ? "Keep this pin" : "Place pin at a spot I choose"}
               </Button>
               <Button variant="quiet" full onClick={() => (point ? setStep(2) : push({ kind: "info", message: "First place a pin — it's the approximate area of what you saw." }))}>
@@ -347,7 +353,7 @@ function ReportSheet({ open, onClose, onDone }: { open: boolean; onClose: () => 
   );
 }
 
-/** Deterministic demo device id (#alias#tokens-on-this-browser). Mirrors server helper. */
+/** Deterministic device id (#alias#tokens-on-this-browser). Mirrors server helper. */
 function demoDeviceId(displayName: string): string {
   let token = "";
   if (typeof localStorage !== "undefined") {
@@ -432,7 +438,7 @@ function SweepsPage() {
               <SweepMapPane sweeps={state.rows} onPick={openSweep} />
               <div className="mb-1 flex items-center justify-between px-1">
                 <p className="text-small text-sg-ink-soft">
-                  {activeCount} active or planned {activeCount === 1 ? "heads-up" : "heads-ups"} · {state.source === "db" ? "live" : "demo"}
+                  {activeCount} active or planned {activeCount === 1 ? "heads-up" : "heads-ups"} · {state.source === "db" ? "live" : "offline"}
                 </p>
                 <button ref={tabRef} type="button" onClick={refresh} className="min-h-[44px] px-1 text-small font-semibold text-sg-sky underline underline-offset-2">
                   Refresh
@@ -481,8 +487,7 @@ function SweepsPage() {
                     </span>
                     <span className="mt-0.5 block text-small text-sg-ink-soft">
                       {s.reportedMinutesAgo < 60 ? `${Math.max(1, s.reportedMinutesAgo)} min ago` : `${Math.round(s.reportedMinutesAgo / 60)}h ago`} ·{" "}
-                      {s.verified ? "verified by outreach" : "awaiting verification"} ·{" "}
-                      {(approxDistanceMi(demoNearMePoint(), s) ?? 0).toFixed(1)} mi
+                      {s.verified ? "verified by outreach" : "awaiting verification"}
                     </span>
                   </span>
                 </ListRow>
@@ -494,7 +499,7 @@ function SweepsPage() {
         <p className="text-small text-sg-ink-soft">
           {state.source === "db"
             ? "Live heads-ups from the outreach database."
-            : "Demo data — the live sweep list appears when the database connects."}
+            : "Offline — showing what's saved here. New heads-ups appear when you're connected."}
         </p>
       </div>
 

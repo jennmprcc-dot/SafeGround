@@ -92,61 +92,10 @@ export function needHelpingLine(n: NeedRow): string | null {
   if (n.assignedToName) return `${n.assignedToName.split(" ")[0]} was asked to take this`;
   return null;
 }
-/** Demo feed (clearly labeled) — the calm fallback when the DB is unreachable. */
+/* Owner-directed 2026-09-07 (Option A): the DB-unreachable needs fallback is an
+ * honest EMPTY list — never fabricated needs with invented names/places.
+ * The feed renders its calm "No open needs right now" empty state instead
+ * of fiction. Kept as a named function so the call site stays readable. */
 export function demoNeeds(): NeedRow[] {
-  const now = new Date();
-  const ago = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
-  return [
-    {
-      id: "demo-need-1",
-      items: ["tent", "sleeping bag"],
-      note: "A tent that closes up tight and a warm sleeping bag — rain is coming tonight.",
-      status: "open",
-      visibility: "open",
-      requesterLabel: "Jamie · near the skatepark",
-      loggedByOutreach: false,
-      claimedByName: null,
-      claimedAt: null,
-      assignedToName: null,
-      assignedAt: null,
-      deliveredByName: null,
-      deliveredAt: null,
-      createdAt: ago(5),
-      source: "demo",
-    },
-    {
-      id: "demo-need-2",
-      items: ["phone charger"],
-      note: "Need to charge a phone — anywhere with an outlet helps.",
-      status: "in_progress",
-      visibility: "open",
-      requesterLabel: "Maya · downtown",
-      loggedByOutreach: false,
-      claimedByName: "a HomeTeam neighbor",
-      claimedAt: ago(2),
-      assignedToName: null,
-      assignedAt: null,
-      deliveredByName: null,
-      deliveredAt: null,
-      createdAt: ago(9),
-      source: "demo",
-    },
-    {
-      id: "demo-need-3",
-      items: ["bus pass"],
-      note: "Two bus fares for a medical appointment tomorrow morning.",
-      status: "delivered",
-      visibility: "open",
-      requesterLabel: "Rosa · by the library",
-      loggedByOutreach: false,
-      claimedByName: "Lee",
-      claimedAt: ago(30),
-      assignedToName: null,
-      assignedAt: null,
-      deliveredByName: "Lee",
-      deliveredAt: ago(20),
-      createdAt: ago(40),
-      source: "demo",
-    },
-  ];
+  return [];
 }
