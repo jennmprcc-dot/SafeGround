@@ -19,14 +19,16 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
   const clean = normPhone(phone);
   const [checked, setChecked] = useState(false);
   const [afterHours, setAfterHours] = useState(false);
+  const [textMe, setTextMe] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const save = async (optIn: boolean, ah: boolean) => {
+  const save = async (optIn: boolean, ah: boolean, sms: boolean) => {
     if (!optIn || clean.length < 7) {
       setChecked(optIn);
       setAfterHours(ah);
+      setTextMe(sms);
       return;
     }
     setSaving(true);
@@ -35,12 +37,13 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
       const res = await fetch("/api/directory/consent", {
         method: "POST",
         headers: { "content-type": "application/json", "x-sg-phone": clean },
-        body: JSON.stringify({ phone: clean, afterHours: ah, source }),
+        body: JSON.stringify({ phone: clean, afterHours: ah, sms, source }),
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && data?.ok) {
         setChecked(true);
         setAfterHours(ah);
+        setTextMe(sms);
         setSaved(true);
       } else {
         setError(data?.error ?? "That choice didn't save — try again when you can.");
@@ -62,7 +65,7 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
           checked={checked}
           disabled={saving}
           aria-busy={saving}
-          onChange={(e) => void save(e.target.checked, afterHours)}
+          onChange={(e) => void save(e.target.checked, afterHours, textMe)}
           className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
         />
         <span className="text-small">
@@ -71,19 +74,34 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
         </span>
       </label>
       {checked ? (
+        <>
         <label className="ml-8 mt-1 flex min-h-[48px] cursor-pointer items-start gap-3">
           <input
             type="checkbox"
             checked={afterHours}
             disabled={saving}
             aria-busy={saving}
-            onChange={(e) => void save(true, e.target.checked)}
+            onChange={(e) => void save(true, e.target.checked, textMe)}
             className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
           />
           <span className="text-small text-sg-ink-soft">
             Yes, reach me for urgent community updates after hours too. Most people leave this off — that&apos;s fine.
           </span>
         </label>
+        <label className="ml-8 mt-1 flex min-h-[48px] cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={textMe}
+            disabled={saving}
+            aria-busy={saving}
+            onChange={(e) => void save(true, afterHours, e.target.checked)}
+            className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
+          />
+          <span className="text-small text-sg-ink-soft">
+            Text me updates. We only text when you opt in — reply STOP anytime.
+          </span>
+        </label>
+        </>
       ) : null}
       {error ? (
         <p className="ml-8 mt-1 text-small text-sg-clay" role="alert">

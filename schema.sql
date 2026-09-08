@@ -659,7 +659,17 @@ $sgfn$;
 
 -- "Join the HomeTeam": name + phone + explicit consent. Idempotent — joining
 -- twice with the same phone reactivates + refreshes consent, never duplicates.
-create or replace function public.hometeam_join(p_phone text, p_display_name text)
+create or replace function public.sg_column_exists(p_table text, p_column text)
+returns boolean language plpgsql stable security definer set search_path = public
+as $sg$
+begin
+  return exists (select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = p_table and column_name = p_column);
+end;
+$sg$;
+-- hometeam_join keeps its 2-arg signature (all existing callers unchanged);
+-- the SMS opt-in travels via an optional 3rd arg with a default.
+create or replace function public.hometeam_join(p_phone text, p_display_name text, p_sms boolean default null)
 returns uuid language plpgsql security definer set search_path = public
 as $sg$
 declare
@@ -673,13 +683,27 @@ begin
   if char_length(v_name) < 1 or char_length(v_name) > 40 then
     raise exception 'Please share the name you would like us to use (1–40 characters).';
   end if;
-  insert into public.hometeam_members (phone, display_name, consented_to_contact_at, status)
-  values (v_phone, v_name, now(), 'active')
-  on conflict (phone) do update
-    set display_name = excluded.display_name,
-        consented_to_contact_at = now(),
-        status = 'active'
-  returning id into v_id;
+  if public.sg_column_exists('hometeam_members', 'sms_consent') then
+    execute format('insert into public.hometeam_members (phone, display_name, consented_to_contact_at, status, sms_consent)'
+                   ' values (%L, %L, now(), ''active'', %s)'
+                   ' on conflict (phone) do update'
+                   ' set display_name = excluded.display_name,'
+                   ' consented_to_contact_at = now(),'
+                   ' status = ''active'','
+                   ' sms_consent = case when %s then true else public.hometeam_members.sms_consent end'
+                   ' returning id', v_phone, v_name,
+                   case when coalesce(p_sms, false) then 'true' else 'false' end,
+                   case when coalesce(p_sms, false) then 'true' else 'false' end)
+    into v_id;
+  else
+    insert into public.hometeam_members (phone, display_name, consented_to_contact_at, status)
+    values (v_phone, v_name, now(), 'active')
+    on conflict (phone) do update
+      set display_name = excluded.display_name,
+          consented_to_contact_at = now(),
+          status = 'active'
+    returning id into v_id;
+  end if;
   return v_id;
 end;
 $sg$;
@@ -1422,7 +1446,7 @@ $sg$;
 -- the x-sg-phone parity pattern). Idempotent — refreshes timestamps.
 -- ---------------------------------------------------------------------------
 create or replace function public.sg_notice_consents_upsert(
-  p_phone text, p_after_hours boolean, p_source text
+  p_phone text, p_after_hours boolean, p_source text, p_sms boolean default null
 )
 returns boolean
 language plpgsql security definer set search_path = public
@@ -1434,13 +1458,31 @@ begin
   if char_length(v_phone) < 7 or char_length(v_phone) > 15 then
     raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
   end if;
-  insert into public.notice_consents (phone, consented_at, consents_to_after_hours, source)
-  values (v_phone, now(), coalesce(p_after_hours, false),
-          nullif(v_source, ''))
-  on conflict (phone) do update
-    set consented_at = now(),
-        consents_to_after_hours = coalesce(p_after_hours, false),
-        source = nullif(v_source, '');
+  -- SMS consent (owner-approved 2026-09-08): set ONLY on explicit opt-in
+  -- (p_sms true); later saves never clear an existing opt-in or opt-out.
+  if public.sg_column_exists('notice_consents', 'sms_consent') then
+    execute format('insert into public.notice_consents (phone, consented_at, consents_to_after_hours, source, sms_consent)'
+                   ' values (%L, now(), %s, %L, %s)'
+                   ' on conflict (phone) do update'
+                   ' set consented_at = now(),'
+                   ' consents_to_after_hours = %s,'
+                   ' source = %L,'
+                   ' sms_consent = case when %s then true else public.notice_consents.sms_consent end',
+                   v_phone,
+                   case when coalesce(p_after_hours, false) then 'true' else 'false' end,
+                   nullif(v_source, ''), case when coalesce(p_sms, false) then 'true' else 'false' end,
+                   case when coalesce(p_after_hours, false) then 'true' else 'false' end,
+                   nullif(v_source, ''),
+                   case when coalesce(p_sms, false) then 'true' else 'false' end);
+  else
+    insert into public.notice_consents (phone, consented_at, consents_to_after_hours, source)
+    values (v_phone, now(), coalesce(p_after_hours, false),
+            nullif(v_source, ''))
+    on conflict (phone) do update
+      set consented_at = now(),
+          consents_to_after_hours = coalesce(p_after_hours, false),
+          source = nullif(v_source, '');
+  end if;
   return true;
 end;
 $sg$;
@@ -2051,3 +2093,48 @@ create table if not exists public.analytics_events (
 comment on column public.analytics_events.install_id is
   'ANALYTICS: no PII — never join to users/check_ins/push_tokens/outreach_roster';
 create index if not exists idx_analytics_events_month on public.analytics_events (created_at, event_type);
+-- ---------------------------------------------------------------------------
+-- SMS opt-in layer (owner-approved 2026-09-08) — consent-first outbound
+-- texting as a reliability layer over push.
+--
+-- Floor (enforced in src/lib/smsServer.ts + the send routes, never client):
+--  - sms_consent (default false) beside consents_to_after_hours on BOTH
+--    consent stores (hometeam_members + notice_consents). No consent = no SMS.
+--  - sms_unsubscribed (default false): Reply-STOP sets it; send skips it.
+--  - Business hours (Mon–Fri 8am–6pm America/Los_Angeles) unless
+--    consents_to_after_hours — EXCEPT true emergency dispatch, which sends
+--    regardless. Analytics: aggregate counters only, zero PII — never log
+--    phone numbers. Twilio creds live in env (TWILIO_ACCOUNT_SID /
+--    TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER), referenced server-side only.
+--  - Twilio inbound webhook: POST <live-base>/api/sms/inbound (set in the
+--    Twilio console). Always 2xx, empty TwiML.
+-- ---------------------------------------------------------------------------
+alter table public.hometeam_members
+  add column if not exists sms_consent boolean not null default false;
+alter table public.hometeam_members
+  add column if not exists sms_unsubscribed boolean not null default false;
+alter table public.notice_consents
+  add column if not exists sms_consent boolean not null default false;
+alter table public.notice_consents
+  add column if not exists sms_unsubscribed boolean not null default false;
+-- Group-notice SMS fan-out counters (aggregate only — no per-phone rows).
+alter table public.group_notices
+  add column if not exists sms_sent int not null default 0 check (sms_sent >= 0);
+alter table public.group_notices
+  add column if not exists sms_skipped int not null default 0 check (sms_skipped >= 0);
+-- sg_sms_unsubscribe(p_phone): Reply-STOP handler — idempotent, never raises
+-- for unknown numbers (STOP must never 500). Callable by the inbound webhook.
+create or replace function public.sg_sms_unsubscribe(p_phone text)
+returns boolean
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone text := public.sg_norm_phone(p_phone);
+begin
+  update public.hometeam_members set sms_unsubscribed = true
+  where substring(phone from length(phone) - 9) = substring(v_phone from length(v_phone) - 9);
+  update public.notice_consents set sms_unsubscribed = true
+  where substring(phone from length(phone) - 9) = substring(v_phone from length(v_phone) - 9);
+  return true;
+end;
+$sg$;

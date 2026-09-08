@@ -8,6 +8,13 @@
  * phones. Fan-out happens here in the route layer: sendFcmMessage per
  * registered token (best-effort per token), then sent_count /
  * skipped_no_token are written back to the log row for MPRCC reporting.
+ *
+ * SMS (owner-approved 2026-09-08): the same eligible phones ALSO get the
+ * notice as a text when they opted in (sms_consent, not unsubscribed,
+ * business-hours unless consents_to_after_hours) — push stays as-is, calm
+ * copy unchanged, no new broadcast tool. SMS fan-out is best-effort per
+ * phone; aggregate sms_sent / sms_skipped counters go on the log row
+ * (zero PII — no per-phone SMS rows anywhere).
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "~/db";
@@ -58,31 +65,64 @@ async function sendNotice(c: { request: Request }) {
     const phones = Array.isArray(v.phones) ? v.phones.map(String) : [];
     let sent = 0;
     let skippedNoToken = 0;
+    let smsSent = 0;
+    let smsSkipped = 0;
+    // Lazy import: smsServer reads Twilio secrets — server-only, never the
+    // client bundle (2026-09-08 client-bundle-leak lesson).
+    let sms: typeof import("~/lib/smsServer") | null = null;
+    try {
+      sms = await import("~/lib/smsServer");
+    } catch {
+      sms = null;
+    }
+    const smsText = `${title} — ${text} (MPRCC SafeGround. Reply STOP to stop texts.)`;
     for (const p of phones) {
       const tokens = await tokensForPhone(p);
       if (tokens.length === 0) {
         skippedNoToken += 1;
-        continue;
+      } else {
+        let delivered = false;
+        for (const t of tokens) {
+          try {
+            const r = await sendFcmMessage({ token: t, title, body: text });
+            if (r.status === "sent") delivered = true;
+          } catch {
+            /* best-effort per token — counted below */
+          }
+        }
+        if (delivered) sent += 1;
+        else skippedNoToken += 1;
       }
-      let delivered = false;
-      for (const t of tokens) {
+      // SMS twin-send: same notice, same audience, consent-gated per phone.
+      // gateSms enforces sms_consent + STOP + hours server-side; unconfigured
+      // Twilio or no consent just counts as skipped (push already delivered).
+      if (sms) {
         try {
-          const r = await sendFcmMessage({ token: t, title, body: text });
-          if (r.status === "sent") delivered = true;
+          const r = await sms.sendSms(p, smsText);
+          if (r.ok) smsSent += 1;
+          else smsSkipped += 1;
         } catch {
-          /* best-effort per token — counted below */
+          smsSkipped += 1;
         }
       }
-      if (delivered) sent += 1;
-      else skippedNoToken += 1;
     }
     try {
       await sql()`
         update public.group_notices
-        set sent_count = ${sent}, skipped_no_token = ${skippedNoToken}
+        set sent_count = ${sent}, skipped_no_token = ${skippedNoToken},
+            sms_sent = ${smsSent}, sms_skipped = ${smsSkipped}
         where id = ${v.notice_id}::uuid`;
     } catch {
-      /* counts update is best-effort — the log row already exists */
+      // Pre-migration DBs lack the sms_* columns — fall back to push-only
+      // counts so the log row still records the push fan-out.
+      try {
+        await sql()`
+          update public.group_notices
+          set sent_count = ${sent}, skipped_no_token = ${skippedNoToken}
+          where id = ${v.notice_id}::uuid`;
+      } catch {
+        /* counts update is best-effort — the log row already exists */
+      }
     }
     return Response.json({
       ok: true,
@@ -91,6 +131,8 @@ async function sendNotice(c: { request: Request }) {
       sent,
       skippedAfterHours: Number(v.skipped_after_hours ?? 0),
       skippedNoToken,
+      smsSent,
+      smsSkipped,
     });
   } catch (e) {
     return Response.json({ ok: false, error: errOf(e) }, { status: 403 });

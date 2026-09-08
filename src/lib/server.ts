@@ -1033,18 +1033,20 @@ export const listNeeds = createServerFn({ method: "GET" }).handler(
  * emergency-alert consent is DEFAULT OFF; the toggle sets it when present. */
 export const joinHomeTeam = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
-    const v = (input ?? {}) as { phone?: unknown; name?: unknown; consentsToAfterHours?: unknown };
+    const v = (input ?? {}) as { phone?: unknown; name?: unknown; consentsToAfterHours?: unknown; smsConsent?: unknown };
     return {
       phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
       name: typeof v.name === "string" ? v.name.replace(/\s+/g, " ").trim().slice(0, 40) : "",
       consentsToAfterHours: v.consentsToAfterHours === true,
+      // SMS opt-in (owner-approved 2026-09-08): explicit checkbox only.
+      smsConsent: v.smsConsent === true,
     };
   })
   .handler(async ({ data }): Promise<{ ok: boolean; memberId: string | null; error: string | null; source: NeedSource }> => {
-    const { phone, name, consentsToAfterHours } = data;
+    const { phone, name, consentsToAfterHours, smsConsent } = data;
     try {
       const rows = (await sql()`
-        select public.hometeam_join(${phone}, ${name}) as id`) as unknown as Array<{ id: string }>;
+        select public.hometeam_join(${phone}, ${name}, ${smsConsent}) as id`) as unknown as Array<{ id: string }>;
       if (consentsToAfterHours) {
         // After-hours toggle is DEFAULT OFF; setting it is a graceful, non-blocking
         // update — the saver must never fail the join (older DBs lack the column).
