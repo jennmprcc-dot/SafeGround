@@ -19,7 +19,7 @@ const sections: Array<{ title: string; body: string }> = [
   },
   {
     title: "Your information & consent",
-    body: "We only contact you by text or notification when you opt in. Consent is stored when you enter your number and tick the box — never assumed. You can change your mind anytime, and your data is only used to coordinate care you asked for. Everything shared ("find my friend", alerts, location) is shared by you, in the moment, and never tracked in the background.",
+    body: "We only contact you by text or notification when you opt in. Consent is stored when you enter your number and tick the box — never assumed. You can change your mind anytime, and your data is only used to coordinate care you asked for. Everything shared ('find my friend', alerts, location) is shared by you, in the moment, and never tracked in the background.",
   },
   {
     title: "Text (SMS) terms",
