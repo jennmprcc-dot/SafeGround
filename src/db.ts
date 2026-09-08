@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import type { Pool as PgPool } from "pg";
 
 /**
  * Server-only handle to the team's database (Supabase Postgres via `pg`).
@@ -131,31 +131,48 @@ function projectRefFromSupabaseUrl(): string {
  * One lazy pool for the whole server process. TLS stays ON (Supabase requires
  * it on the wire) with strict verification off (see header comment). Per-call
  * clients were slower and left sockets around; a single small pool is fast and
- * clean. `max: 3` keeps the sandbox footprint tiny (free-tier friendly). */
-let pool: Pool | null = null;
+ * clean. `max: 3` keeps the sandbox footprint tiny (free-tier friendly).
+ *
+ * The `pg` module is loaded lazily (dynamic import inside getPoolAsync) so
+ * that merely importing THIS module never evaluates Node-only code at module
+ * top level. A static `import { Pool } from "pg"` at the top used to pull the
+ * whole pg graph (which references Node's Buffer at module scope) into any
+ * client chunk that transitively imported this file — crashing /sweeps, /help
+ * and /checkin in the browser with "Buffer is not defined" (P0 2026-09-08).
+ * This file is still server-only (process.env.DATABASE_URL), but laziness is
+ * the belt-and-suspenders boundary. NEVER add a static Node-only import here. */
 
-function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: databaseUrl(),
-      ssl: { rejectUnauthorized: false },
-      max: 3,
-      connectionTimeoutMillis: 8_000,
-      idleTimeoutMillis: 30_000,
-      application_name: "safeground",
-    });
-    pool.on("error", (err) => {
-      // Log-and-continue: the calm demo fallback in the server fns is the
-      // user-facing layer; never crash the process on a stale pooled socket.
-      console.error("[safeground-db] pool error:", err.message);
-    });
+let pool: PgPool | null = null;
+let poolPromise: Promise<PgPool> | null = null;
+
+async function getPoolAsync(): Promise<PgPool> {
+  if (pool) return pool;
+  if (!poolPromise) {
+    poolPromise = (async () => {
+      const { Pool } = await import("pg");
+      const p: PgPool = new Pool({
+        connectionString: databaseUrl(),
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+        connectionTimeoutMillis: 8_000,
+        idleTimeoutMillis: 30_000,
+        application_name: "safeground",
+      });
+      p.on("error", (err) => {
+        // Log-and-continue: the calm demo fallback in the server fns is the
+        // user-facing layer; never crash the process on a stale pooled socket.
+        console.error("[safeground-db] pool error:", err.message);
+      });
+      pool = p;
+      return p;
+    })();
   }
-  return pool;
+  return poolPromise;
 }
 
 /** Run a parameterized query and return the rows. Never logs the connection string. */
 export async function query(text: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
-  const client = await getPool().connect();
+  const client = await (await getPoolAsync()).connect();
   try {
     const result = await client.query(text, params.map((v) => (v === undefined ? null : v)));
     return result.rows;
