@@ -71,28 +71,6 @@ export function LanguageToggle() {
 
 /* ── Header ─────────────────────────────────────────────────────── */
 
-/* Fast Exit — a quiet, non-alarming way to leave SafeGround instantly.
- * Replaces the page with weather.gov (no history entry, no state change,
- * NO analytics event, no tracking). Sage outline, never red. */
-export const FAST_EXIT_URL = "https://weather.gov";
-
-export function FastExitPill() {
-  const { t } = useLanguage();
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        window.location.replace(FAST_EXIT_URL);
-      }}
-      aria-label={t("fast_exit_label")}
-      title={t("fast_exit_label")}
-      className="flex min-h-[48px] items-center rounded-full border border-sg-sage px-4 text-small font-medium text-sg-sage-deep"
-    >
-      {t("fast_exit")}
-    </button>
-  );
-}
-
 function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () => void }) {
   const { signedIn, displayName } = useAuth();
   const { t } = useLanguage();
@@ -112,7 +90,6 @@ function Header({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () =>
         </Link>
         <nav className="flex items-center" aria-label="Site">
           <LanguageToggle />
-          <FastExitPill />
           <Link
             to="/privacy"
             className="flex min-h-[48px] min-w-[44px] items-center justify-center text-sg-ink-soft hover:text-sg-ink"
