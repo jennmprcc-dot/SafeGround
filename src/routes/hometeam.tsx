@@ -127,6 +127,7 @@ function JoinSheet({
   const { t } = useLanguage();
   const [name, setName] = useState("");
   const [afterHours, setAfterHours] = useState(false);
+  const [textMe, setTextMe] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState(phone);
@@ -134,6 +135,7 @@ function JoinSheet({
     if (open) {
       setName("");
       setAfterHours(false);
+      setTextMe(false);
       setPhoneError(null);
       setPhoneDraft(phone);
     }
@@ -146,7 +148,7 @@ function JoinSheet({
       return;
     }
     setBusy(true);
-    const res = await joinHomeTeam({ data: { phone: p, name, consentsToAfterHours: afterHours } });
+    const res = await joinHomeTeam({ data: { phone: p, name, consentsToAfterHours: afterHours, smsConsent: textMe } });
     setBusy(false);
     if (res.ok) {
       push({ kind: "success", message: afterHours ? "You're on the HomeTeam — thank you. After-hours alerts are on." : "You're on the HomeTeam — thank you for being there." });
@@ -193,6 +195,18 @@ function JoinSheet({
             <span className={cn("h-5 w-5 rounded-full bg-white shadow transition-transform", afterHours ? "translate-x-5" : "translate-x-0")} />
           </span>
         </button>
+        <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-[12px] border-2 border-sg-line bg-sg-card px-4 py-3 text-left">
+          <input
+            type="checkbox"
+            checked={textMe}
+            onChange={(e) => setTextMe(e.target.checked)}
+            className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
+          />
+          <span className="text-small">
+            <span className="block font-medium text-sg-ink">{t("ht_sms")}</span>
+            <span className="block text-sg-ink-soft">{t("ht_sms_sub")}</span>
+          </span>
+        </label>
         <ConsentReceipt
           who="Outreach team + the people you help"
           what="Your name, your phone, and which needs you've offered to help with"

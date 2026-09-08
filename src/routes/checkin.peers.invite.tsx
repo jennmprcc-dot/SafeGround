@@ -29,6 +29,7 @@ function InvitePage() {
   const [identity] = useState(() => getAlertIdentity());
   const [phoneInput, setPhoneInput] = useState("");
   const [consented, setConsented] = useState(false);
+  const [textMe, setTextMe] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
@@ -67,6 +68,19 @@ function InvitePage() {
           return;
         }
         if (!identity?.phone) setAlertIdentity(phoneInput, identity?.name ?? "Neighbor");
+        // SMS opt-in for the inviter's OWN phone (explicit checkbox only).
+        if (textMe) {
+          try {
+            const mine = normPhone(identity?.phone ?? phoneInput);
+            await fetch("/api/directory/consent", {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-sg-phone": mine },
+              body: JSON.stringify({ phone: mine, afterHours: false, sms: true, source: "peer-invite" }),
+            });
+          } catch {
+            /* opt-in save is best-effort — the invite already went out */
+          }
+        }
         push({ kind: "success", message: "Invite sent — nothing is shared until they accept." });
         navigate({ to: "/checkin/peers" });
       } else {
@@ -237,6 +251,15 @@ function InvitePage() {
             className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
           />
           <span>I understand only this person will get my invite, and nothing is shared until they accept.</span>
+        </label>
+        <label className="flex min-h-[48px] cursor-pointer items-start gap-3 rounded-[12px] bg-sg-paper px-3 text-small text-sg-ink">
+          <input
+            type="checkbox"
+            checked={textMe}
+            onChange={(e) => setTextMe(e.target.checked)}
+            className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
+          />
+          <span>Text me updates. We only text when you opt in — reply STOP anytime.</span>
         </label>
 
         {error ? (

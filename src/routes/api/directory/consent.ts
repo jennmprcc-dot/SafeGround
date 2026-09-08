@@ -8,14 +8,13 @@
  */
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  callerFrom,
   errOf,
   normOutreachPhone,
   rpc,
 } from "~/lib/directoryServer";
 
 async function consent(c: { request: Request }) {
-  let body: { phone?: unknown; afterHours?: unknown; source?: unknown } = {};
+  let body: { phone?: unknown; afterHours?: unknown; source?: unknown; sms?: unknown } = {};
   try {
     body = (await c.request.json()) as typeof body;
   } catch {
@@ -31,7 +30,7 @@ async function consent(c: { request: Request }) {
   }
   const source = String(body.source ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || "app";
   try {
-    await rpc("sg_notice_consents_upsert", [phone, body.afterHours === true, source]);
+    await rpc("sg_notice_consents_upsert", [phone, body.afterHours === true, source, body.sms === true]);
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json({ ok: false, error: errOf(e) }, { status: 400 });
