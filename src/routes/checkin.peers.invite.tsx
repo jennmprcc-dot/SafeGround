@@ -19,21 +19,26 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { Button, Card, ConsentReceipt, TextField, useToasts } from "~/components/ui";
 import { formatPhone, getAlertIdentity, normPhone, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
+import { useLanguage } from "~/lib/i18n";
 import { CheckCircleIcon, CopyIcon } from "~/lib/icons";
 
-type Step = "phone" | "code" | "code-done";
+type Step = "own" | "phone" | "code" | "code-done";
 
 function InvitePage() {
   const { push } = useToasts();
+  const { t } = useLanguage();
   const navigate = useNavigate();
-  const [identity] = useState(() => getAlertIdentity());
+  const [identity, setIdentity] = useState(() => getAlertIdentity());
+  // Owner QA 2026-09-09: when no number is stored on-device, ask for the
+  // inviter's OWN number first — never bind the friend's number as identity.
+  const [step, setStep] = useState<Step>(() => (getAlertIdentity()?.phone ? "phone" : "own"));
+  const [ownInput, setOwnInput] = useState("");
   const [phoneInput, setPhoneInput] = useState("");
   const [consented, setConsented] = useState(false);
   const [textMe, setTextMe] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
-  const [step, setStep] = useState<Step>("phone");
   const [code, setCode] = useState<string | null>(null);
   const [codeExpires, setCodeExpires] = useState<string | null>(null);
   const [codeBusy, setCodeBusy] = useState(false);
@@ -44,10 +49,15 @@ function InvitePage() {
   const canSend = phoneOk && consented && !sending;
 
   const doInvite = async () => {
+    const myPhone = identity?.phone ?? "";
+    if (myPhone.length < 10) {
+      setError("Add your number first — then the invite comes from you.");
+      setStep("own");
+      return;
+    }
     setSending(true);
     setError(null);
     setNoAccount(false);
-    const myPhone = identity?.phone ?? "";
     try {
       const res = await fetch("/api/peers/", {
         method: "POST",
@@ -67,11 +77,12 @@ function InvitePage() {
           setSending(false);
           return;
         }
-        if (!identity?.phone) setAlertIdentity(phoneInput, identity?.name ?? "Neighbor");
-        // SMS opt-in for the inviter's OWN phone (explicit checkbox only).
+        if (!identity?.phone) { setSending(false); return; }
+        // SMS opt-in for the inviter's OWN phone only (explicit checkbox).
+        // identity.phone is guaranteed here (stored or captured in step "own").
         if (textMe) {
           try {
-            const mine = normPhone(identity?.phone ?? phoneInput);
+            const mine = normPhone(identity?.phone ?? "");
             await fetch("/api/directory/consent", {
               method: "POST",
               headers: { "content-type": "application/json", "x-sg-phone": mine },
@@ -95,17 +106,19 @@ function InvitePage() {
 
   /* ---- PEER-3: mint + share an invite code (system share — never SMS) ---- */
   const makeCode = async () => {
+    const myPhone = identity?.phone ?? "";
+    if (myPhone.length < 10) {
+      setError("Add your number first — then the code comes from you.");
+      setStep("own");
+      return;
+    }
     setCodeBusy(true);
     setError(null);
-    const myPhone = identity?.phone ?? "";
     try {
-      // If the caller has no phone yet, bind the number they typed first
-      // (that's the "add your number" step; sg_peer_self in the RPC enforces).
-      if (!identity?.phone && phoneOk) setAlertIdentity(phoneInput, identity?.name ?? "Neighbor");
       const res = await fetch("/api/peers/codes", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-sg-phone": myPhone || normPhone(phoneInput) },
-        body: JSON.stringify({ phone: myPhone || normPhone(phoneInput) }),
+        headers: { "content-type": "application/json", "x-sg-phone": myPhone },
+        body: JSON.stringify({ phone: myPhone }),
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; code?: string; expiresAt?: string | null; error?: string } | null;
       if (res.ok && data?.ok && data.code) {
@@ -154,6 +167,53 @@ function InvitePage() {
       push({ kind: "error", message: "Couldn't copy — long-press to select the link." });
     }
   };
+
+  /* ---- Step "own": inviter's OWN number first (never the friend's) ---- */
+  const ownOk = phoneLooksOk(ownInput);
+  const doOwnContinue = () => {
+    if (!ownOk) return;
+    setAlertIdentity(ownInput, identity?.name ?? "Neighbor");
+    setIdentity(getAlertIdentity());
+    setStep("phone");
+  };
+  if (step === "own") {
+    return (
+      <AppShell>
+        <div className="flex flex-col gap-4 px-4 pt-5">
+          <header>
+            <h1 className="text-h1">{t("invite_own_title")}</h1>
+            <p className="mt-0.5 text-small text-sg-ink-soft">{t("invite_own_sub")}</p>
+          </header>
+          <Card>
+            <TextField
+              label={t("invite_own")}
+              helper={ownInput && ownOk ? undefined : t("invite_own_help")}
+              value={ownInput}
+              onChange={(e) => setOwnInput(e.target.value)}
+              placeholder="(415) 555-0142"
+              inputMode="tel"
+              autoComplete="off"
+              maxLength={16}
+              error={
+                ownInput.length > 3 && !ownOk ? t("invite_own_bad") : undefined
+              }
+            />
+          </Card>
+          <Button full disabled={!ownOk} onClick={doOwnContinue}>
+            {t("invite_own_continue")}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setCrisisOpen(true)}
+            className="inline-flex min-h-[48px] items-center self-start text-sg-sky underline underline-offset-2"
+          >
+            Talk to someone
+          </button>
+        </div>
+        <CrisisSheet open={crisisOpen} onClose={() => setCrisisOpen(false)} />
+      </AppShell>
+    );
+  }
 
   /* ---- PEER-3 code-done: the share sheet the inviter sees ---- */
   if (step === "code-done" && code) {

@@ -608,6 +608,10 @@ function HomeTeamPage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
+        {/* Owner QA 2026-09-09: per-mode hero greeting so HomeTeam feels
+            unmistakable on the first screen (kept calm, same h1 styling). */}
+        <p className="text-h1 text-sg-ink">{t("mode_hero_ht")}</p>
+        <p className="-mt-3 text-small text-sg-ink-soft">{t("mode_hero_ht_sub")}</p>
         <header className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-h1">HomeTeam</h1>
