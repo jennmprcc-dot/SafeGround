@@ -105,9 +105,9 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
             <span className="block text-sg-ink-soft">{t("nc_sms_sub")}</span>
           </span>
         </label>
-        <LegalLinks className="ml-8 mt-1" />
         </>
       ) : null}
+      <LegalLinks className="ml-8 mt-1" />
       {error ? (
         <p className="ml-8 mt-1 text-small text-sg-clay" role="alert">
           {error}
