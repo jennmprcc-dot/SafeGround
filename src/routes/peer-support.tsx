@@ -215,6 +215,10 @@ function RequestSupportPage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
+        {/* Owner QA 2026-09-09: per-mode hero greeting so Neighbor feels
+            unmistakable on the home screen (kept calm, same h1 styling). */}
+        <p className="text-h1 text-sg-ink">{t("mode_hero_nb")}</p>
+        <p className="-mt-3 text-small text-sg-ink-soft">{t("mode_hero_nb_sub")}</p>
         <header>
           <h1 className="text-h1">{t("ps_title")}</h1>
           <p className="mt-0.5 text-small text-sg-ink-soft">

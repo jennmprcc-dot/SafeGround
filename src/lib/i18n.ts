@@ -410,6 +410,21 @@ const EN = {
   pt_body_dry: "Wiring check — this is not delivered.",
   pt_body_real: "It's you. This is a SafeGround test notification from this phone.",
   pt_fail_generic: "The send didn't complete.",
+  // Peer-invite own-number first step (owner QA 2026-09-09: never bind the
+  // friend's number as the inviter's identity — ask for the inviter's own
+  // number first when none is stored on-device).
+  invite_own_title: "First, your number",
+  invite_own_sub: "So the invite comes from you.",
+  invite_own: "Your phone number",
+  invite_own_help: "Stays on this device — we never look at your contacts.",
+  invite_own_bad: "That number looks incomplete — check it and try again, no rush.",
+  invite_own_continue: "Continue",
+  // Per-mode hero greetings (owner QA 2026-09-09: make HomeTeam vs Neighbor
+  // unmistakable on first screen). Admin keeps its chrome as-is.
+  mode_hero_ht: "Help a neighbor today",
+  mode_hero_ht_sub: "See needs, claim one, make it happen.",
+  mode_hero_nb: "Get the support you need",
+  mode_hero_nb_sub: "One tap to talk with a peer from MPRCC.",
 } as const;
 
 export type I18nKey = keyof typeof EN;
@@ -785,6 +800,16 @@ const ES: Partial<Record<I18nKey, string>> = {
   pt_body_dry: "Revisión de conexión — esto no llega.",
   pt_body_real: "Eres tú. Este es un aviso de prueba de SafeGround desde este teléfono.",
   pt_fail_generic: "El envío no se completó.",
+  invite_own_title: "Primero, tu número",
+  invite_own_sub: "Para que la invitación venga de ti.",
+  invite_own: "Tu número de teléfono",
+  invite_own_help: "Queda en este teléfono — nunca miramos tus contactos.",
+  invite_own_bad: "Ese número parece incompleto — revísalo sin prisa.",
+  invite_own_continue: "Seguir",
+  mode_hero_ht: "Ayuda a un vecino hoy",
+  mode_hero_ht_sub: "Mira las necesidades, toma una, hazla realidad.",
+  mode_hero_nb: "Recibe el apoyo que necesitas",
+  mode_hero_nb_sub: "Un toque para hablar con un compañero de MPRCC.",
 };
 
 /* ── Lookup (EN fallback — never blank) ────────────────────────── */

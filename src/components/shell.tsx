@@ -195,6 +195,8 @@ function ModeNav() {
     onModeAnnounce(m);
     const def = MODES.find((d) => d.id === m);
     if (def) void navigate({ to: def.home.to, search: def.home.search });
+    // Owner QA 2026-09-09: switching modes lands at the top (fixes clunk).
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "auto" });
     if (opts?.moveFocus) {
       setFocusSignal((n) => n + 1);
       // Spec §6: announce the new mode + its sub-nav via role=status.
@@ -305,6 +307,16 @@ function ModeNav() {
         <div role="tablist" aria-labelledby="mode-label" className="mx-4 flex rounded-[12px] border border-sg-line bg-sg-card p-1 sm:mx-0 sm:flex-1">
           {MODES.map((m, i) => {
             const active = m.id === shown;
+            // Owner QA 2026-09-09: per-mode accent on the ACTIVE segment so
+            // HomeTeam vs Neighbor vs Admin feel unmistakable at the top.
+            // HomeTeam = warm green (sage), Neighbor = sky blue, Admin = dark
+            // ink (all existing tokens; white text stays AA on each).
+            const activeAccent =
+              m.id === "hometeam"
+                ? "bg-sg-sage text-white"
+                : m.id === "neighbor"
+                  ? "bg-sg-sky text-white"
+                  : "bg-sg-night text-white";
             return (
               <Link
                 key={m.id}
@@ -325,7 +337,7 @@ function ModeNav() {
                 onKeyDown={onModeKey}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-[10px] px-1 text-btn font-medium transition-colors",
-                  active ? "bg-sg-sage text-white" : "text-sg-ink-soft hover:text-sg-ink",
+                  active ? activeAccent : "text-sg-ink-soft hover:text-sg-ink",
                 )}
               >
                 <span aria-hidden>{m.icon}</span>
