@@ -46,11 +46,30 @@ export function inBusinessHours(now: Date = new Date()): boolean {
 }
 
 export const digitsOnly = (raw: unknown): string => String(raw ?? "").replace(/[^0-9]/g, "").slice(0, 15);
-/** E.164 for US 10-digit numbers; longer digit strings get a leading +. */
-export function toE164(digits: string): string {
-  const d = digitsOnly(digits);
+/**
+ * E.164 for US numbers, hardened against pre-URL-encoded input (defense in
+ * depth: a pasted `%2B1415…` value reached Twilio as a literal and was
+ * rejected with 21211 — that class of malformed `To` must never be sent).
+ *  - Trims, decodes a leading %2B (possibly repeated, e.g. %252B), trims again.
+ *  - 10 digits → +1… ; 11 digits starting with 1 → +… ; anything else → "".
+ * Callers treat "" as invalid and must NOT call Twilio.
+ */
+export function toE164(raw: string): string {
+  let s = String(raw ?? "").trim();
+  // Unwrap pre-URL-encoded input (e.g. "%2B1415…" or double-encoded
+  // "%252B1415…") so a pasted encoded value can never reach Twilio literally.
+  for (let i = 0; i < 3 && s.startsWith("%"); i++) {
+    try {
+      const next = decodeURIComponent(s).trim();
+      if (next === s) break;
+      s = next;
+    } catch {
+      break;
+    }
+  }
+  const d = s.replace(/[^0-9]/g, "").slice(0, 15);
   if (d.length === 10) return `+1${d}`;
-  if (d.length > 10) return `+${d}`;
+  if (d.length === 11 && d.startsWith("1")) return `+${d}`;
   return "";
 }
 
@@ -192,7 +211,7 @@ export async function sendSms(
   const cfg = smsConfig();
   if (!cfg) return { ok: false, sid: null, reason: "configuration" };
   const to = toE164(toDigits);
-  if (!to) return { ok: false, sid: null, reason: "no_consent" };
+  if (!to) return { ok: false, sid: null, reason: "invalid_phone" };
   try {
     const creds = Buffer.from(`${cfg.sid}:${cfg.token}`).toString("base64");
     const params = new URLSearchParams({ To: to, From: cfg.from, Body: text });
