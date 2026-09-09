@@ -22,8 +22,8 @@ const sections: Array<{ title: string; body: string }> = [
     body: "We only contact you by text or notification when you opt in. Consent is stored when you enter your number and tick the box — never assumed. You can change your mind anytime, and your data is only used to coordinate care you asked for. Everything shared ('find my friend', alerts, location) is shared by you, in the moment, and never tracked in the background.",
   },
   {
-    title: "Text (SMS) terms",
-    body: "By tapping Continue, you agree to receive SMS text messages from Safe Ground at the phone number you provide. These messages include sweep alerts, safety check-ins, supply updates, and account verification codes. Message frequency varies based on activity. Message and data rates may apply. Reply STOP to unsubscribe or HELP for assistance. Carriers are not liable for delayed or undelivered messages. Texting is not a substitute for calling 911 in an emergency.",
+    title: "SMS Messaging Terms",
+    body: "By providing your phone number and opting in, you consent to receive SMS text messages from MPRCC including safety alerts, sweep notifications, supply updates, and verification codes. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe or HELP for assistance. Carriers are not liable for delayed or undelivered messages. Texting is not a substitute for calling 911 in an emergency.",
   },
   {
     title: "No guarantee",
@@ -57,7 +57,10 @@ function TermsPage() {
           ))}
         </div>
         <p className="text-small text-sg-ink-soft">
-          SafeGround — a project of MPRCC. Last updated September 8, 2026.
+          SafeGround — a project of MPRCC. Last updated September 9, 2026.{" "}
+          <Link to="/privacy" className="text-sg-sky underline underline-offset-2">
+            Read the Privacy Policy.
+          </Link>
         </p>
       </div>
     </AppShell>

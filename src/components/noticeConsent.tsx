@@ -15,6 +15,7 @@
 import { useState } from "react";
 import { normPhone } from "~/lib/alertIdentity";
 import { useLanguage } from "~/lib/i18n";
+import { LegalLinks } from "~/components/legalLinks";
 
 export function NoticeConsentOptIn({ phone, source }: { phone: string; source: string }) {
   const { t } = useLanguage();
@@ -104,6 +105,7 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
             <span className="block text-sg-ink-soft">{t("nc_sms_sub")}</span>
           </span>
         </label>
+        <LegalLinks className="ml-8 mt-1" />
         </>
       ) : null}
       {error ? (

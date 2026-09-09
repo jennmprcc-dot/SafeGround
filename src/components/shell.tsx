@@ -642,6 +642,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       ) : null}
       <main id="main" className="flex-1 pb-[env(safe-area-inset-bottom)]">{children}</main>
+      <footer className="flex items-center justify-center gap-4 px-4 pb-6">
+        <Link to="/terms" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
+          Terms
+        </Link>
+        <Link to="/privacy" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
+          Privacy
+        </Link>
+      </footer>
       <ToastStack toasts={toasts} onDismiss={dismiss} />
       <MoreSheet open={menuOpen} onClose={() => setMenuOpen(false)} />
       <CrisisSheet open={crisisOpen} onClose={() => setCrisisOpen(false)} />

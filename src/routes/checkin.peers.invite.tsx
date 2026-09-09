@@ -21,6 +21,7 @@ import { Button, Card, ConsentReceipt, TextField, useToasts } from "~/components
 import { formatPhone, getAlertIdentity, normPhone, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import { useLanguage } from "~/lib/i18n";
 import { CheckCircleIcon, CopyIcon } from "~/lib/icons";
+import { LegalLinks } from "~/components/legalLinks";
 
 type Step = "own" | "phone" | "code" | "code-done";
 
@@ -324,6 +325,7 @@ function InvitePage() {
             <span className="block text-sg-ink-soft">{t("nc_sms_sub")}</span>
           </span>
         </label>
+        <LegalLinks className="mt-1" />
 
         {error ? (
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">

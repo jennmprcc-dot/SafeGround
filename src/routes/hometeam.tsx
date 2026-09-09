@@ -18,6 +18,7 @@ import { cn } from "~/lib/cn";
 import type { BadgeKind } from "~/components/ui";
 import { useLanguage, needStatusKey } from "~/lib/i18n";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
+import { LegalLinks } from "~/components/legalLinks";
 
 export const Route = createFileRoute("/hometeam")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -212,6 +213,7 @@ function JoinSheet({
             <span className="block text-sg-ink-soft">{t("ht_sms_sub")}</span>
           </span>
         </label>
+        <LegalLinks />
         <ConsentReceipt
           who="Outreach team + the people you help"
           what="Your name, your phone, and which needs you've offered to help with"
