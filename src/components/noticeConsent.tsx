@@ -14,8 +14,10 @@
  */
 import { useState } from "react";
 import { normPhone } from "~/lib/alertIdentity";
+import { useLanguage } from "~/lib/i18n";
 
 export function NoticeConsentOptIn({ phone, source }: { phone: string; source: string }) {
+  const { t } = useLanguage();
   const clean = normPhone(phone);
   const [checked, setChecked] = useState(false);
   const [afterHours, setAfterHours] = useState(false);
@@ -97,8 +99,9 @@ export function NoticeConsentOptIn({ phone, source }: { phone: string; source: s
             onChange={(e) => void save(true, afterHours, e.target.checked)}
             className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
           />
-          <span className="text-small text-sg-ink-soft">
-            Text me updates. We only text when you opt in — reply STOP anytime.
+          <span className="text-small">
+            <span className="block font-medium text-sg-ink">{t("nc_sms")}</span>
+            <span className="block text-sg-ink-soft">{t("nc_sms_sub")}</span>
           </span>
         </label>
         </>

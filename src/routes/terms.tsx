@@ -23,7 +23,7 @@ const sections: Array<{ title: string; body: string }> = [
   },
   {
     title: "Text (SMS) terms",
-    body: "By opting in to texts you agree to receive messages from MPRCC about support, supplies, and safety coordination. Message frequency varies: typically a few per week, and emergency alerts as needed. Message and data rates may apply per your carrier. Help is available: reply HELP for assistance, or STOP at any time to cancel — after STOP we won't text you again. Texting is not a substitute for calling 911 in an emergency.",
+    body: "By tapping Continue, you agree to receive SMS text messages from Safe Ground at the phone number you provide. These messages include sweep alerts, safety check-ins, supply updates, and account verification codes. Message frequency varies based on activity. Message and data rates may apply. Reply STOP to unsubscribe or HELP for assistance. Carriers are not liable for delayed or undelivered messages. Texting is not a substitute for calling 911 in an emergency.",
   },
   {
     title: "No guarantee",
