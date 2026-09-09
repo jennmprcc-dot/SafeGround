@@ -319,7 +319,10 @@ function InvitePage() {
             onChange={(e) => setTextMe(e.target.checked)}
             className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
           />
-          <span>Text me updates. We only text when you opt in — reply STOP anytime.</span>
+          <span>
+            <span className="block font-medium text-sg-ink">{t("nc_sms")}</span>
+            <span className="block text-sg-ink-soft">{t("nc_sms_sub")}</span>
+          </span>
         </label>
 
         {error ? (
