@@ -1,5 +1,6 @@
 /**
- * POST /api/sms/inbound — Twilio inbound-SMS webhook (Reply STOP handling).
+ * POST /api/sms/inbound — Twilio inbound-SMS webhook (Reply STOP handling +
+ * HELP auto-reply).
  *
  * Owner setup: in the Twilio console, set the phone number's Messaging webhook
  * to the LIVE base + this path, e.g.
@@ -7,12 +8,23 @@
  * (HTTP POST, default Twilio form encoding). Twilio posts form fields including
  * From + Body; when Body matches STOP / STOPALL / UNSUBSCRIBE / UNSUB / CANCEL
  * / QUIT (case-insensitive), that phone is marked unsubscribed in the consent
- * storage so the send route skips them. Always returns a 2xx (empty TwiML)
- * so Twilio never retries — STOP handling must never 500.
+ * storage so the send route skips them. When Body is exactly HELP
+ * (case-insensitive, trimmed), TwiML auto-replies with the MPRCC help message
+ * (word-for-word the Help Message Sample from the owner's Twilio toll-free
+ * verification form). Always returns a 2xx (TwiML) so Twilio never retries —
+ * STOP/HELP handling must never 500.
  */
 import { createFileRoute } from "@tanstack/react-router";
 
 const STOP_RE = /^\s*(stop|stopall|unsubscribe|unsub|cancel|quit)\b/i;
+
+const HELP_TWIML =
+  '<?xml version="1.0" encoding="UTF-8"?>' +
+  "<Response><Message>Reply HELP for assistance. An MPRCC peer support member " +
+  "will respond during outreach hours (8am\u20136pm Mon-Fri). Texting is not a " +
+  "substitute for calling 911 in an emergency.</Message></Response>";
+
+const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
 
 async function inbound(c: { request: Request }) {
   try {
@@ -33,10 +45,16 @@ async function inbound(c: { request: Request }) {
       const { markSmsUnsubscribed } = await import("~/lib/smsServer");
       await markSmsUnsubscribed(from);
     }
+    if (bodyText.trim().toLowerCase() === "help") {
+      return new Response(HELP_TWIML, {
+        status: 200,
+        headers: { "content-type": "text/xml" },
+      });
+    }
   } catch {
-    /* STOP handling must never 500 — Twilio retries on non-2xx. */
+    /* STOP/HELP handling must never 500 — Twilio retries on non-2xx. */
   }
-  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+  return new Response(EMPTY_TWIML, {
     status: 200,
     headers: { "content-type": "text/xml" },
   });
