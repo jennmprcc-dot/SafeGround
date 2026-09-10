@@ -86,7 +86,15 @@ export function WelcomeOverlay() {
     } catch {
       seen = false; // private mode: show the welcome, it just won't stick
     }
-    if (!seen) setOpen(true);
+    if (!seen) {
+      // Never overlay the reviewer-facing pages (Twilio toll-free form URLs,
+      // legal pages, the SMS opt-in flow): a first-time visitor there should
+      // see the actual content, not a welcome modal.
+      const p = window.location.pathname;
+      if (!/^\/(terms|privacy)(?:\/|$)/.test(p) && !/^\/checkin/.test(p) && !/^\/api/.test(p)) {
+        setOpen(true);
+      }
+    }
     setStandalone(isStandalone());
     setShowIOS(isIOS());
     const onOpen = () => {
