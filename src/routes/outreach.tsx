@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
+import { StaffSmsTeam } from "~/components/staffSmsTeam";
 import { getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
 import { useLanguage } from "~/lib/i18n";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
@@ -576,6 +577,10 @@ function OutreachPage() {
                       </Link>
                     </div>
                   </Card>
+                  {/* SMS dispatch team (owner-directed 2026-09-10) — admins only,
+                      same gate as the rest of this section; the API enforces it
+                      server-side too (staff_limited → 403). */}
+                  <StaffSmsTeam phone={phone} />
                 </section>
               ) : (
                 <section className="flex flex-col gap-3" aria-label="Chat">

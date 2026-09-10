@@ -131,6 +131,30 @@ async function smsConsentSimple(key10: string): Promise<SmsConsent> {
       /* pre-migration or unreachable DB → no SMS consent */
     }
   }
+  if (!sms) {
+    // Third consent store (owner-directed 2026-09-10): staff SMS dispatch
+    // recipients (staff_sms_recipients). ACTIVE rows only; sms_consent + not
+    // unsubscribed both required. Same graceful try/catch as the other stores —
+    // a DB without the table is simply "no consent", never a crash.
+    try {
+      const sr = (await sql()`
+        select
+          sms_consent as sms_ok,
+          not sms_unsubscribed as not_stopped,
+          consents_to_after_hours as ah
+        from public.staff_sms_recipients
+        where substring(phone from length(phone) - 9) = ${key10}
+          and active
+        limit 1`) as unknown as Array<{ sms_ok: boolean; not_stopped: boolean; ah: boolean }>;
+      const row = sr[0];
+      if (row?.sms_ok && row.not_stopped) {
+        sms = true;
+        afterHours = Boolean(row.ah);
+      }
+    } catch {
+      /* pre-migration or unreachable DB → no SMS consent */
+    }
+  }
   return { sms, afterHours };
 }
 
@@ -184,6 +208,16 @@ export async function markSmsUnsubscribed(phoneDigits: string): Promise<void> {
   } catch {
     /* best-effort — STOP must never 500 */
   }
+  try {
+    await sql()`
+      update public.staff_sms_recipients set sms_unsubscribed = true
+      where substring(phone from length(phone) - 9) = ${key}
+        and exists (select 1 from information_schema.columns
+                    where table_schema='public' and table_name='staff_sms_recipients'
+                    and column_name='sms_unsubscribed')`;
+  } catch {
+    /* best-effort — STOP must never 500 (pre-migration DB has no table) */
+  }
 }
 
 export interface SmsSendResult {
@@ -227,5 +261,91 @@ export async function sendSms(
     return { ok: true, sid: typeof data?.sid === "string" ? data.sid : null, reason: null };
   } catch {
     return { ok: false, sid: null, reason: "send_failed" };
+  }
+}
+
+/* ── Staff dispatch fan-out (owner-directed 2026-09-10) ────────────
+ * SMS twin of fanOutToAdmins (src/lib/peerSupportServer.ts): when a neighbor
+ * taps "Request peer support" or sends an urgent need, ACTIVE + consenting +
+ * not-stopped staff_sms_recipients get the SAME message the push fan-out
+ * already sends (body/title wording copied exactly). This is true emergency
+ * dispatch to staff, so business hours are bypassed (emergency: true) — but
+ * consent/STOP always win (sendSms → gateSms enforces them, never bypassed).
+ * Never throws, never logs phone numbers. A missing table (pre-migration) or
+ * missing Twilio env simply returns zero counts — the push fan-out still ran. */
+export interface StaffSmsFanOut {
+  /** Active, consenting, not-stopped recipients the fan-out attempted. */
+  notifiedPhones: number;
+  /** Recipients whose text was actually accepted by Twilio. */
+  sent: number;
+  /** Active recipients skipped because consent is off or they replied STOP. */
+  noConsent: number;
+}
+
+export async function sendSmsToStaff(
+  displayName: string,
+  opts?: { urgentCategory?: string | null },
+): Promise<StaffSmsFanOut> {
+  const result: StaffSmsFanOut = { notifiedPhones: 0, sent: 0, noConsent: 0 };
+  let rows: Array<{ phone: string; sms_ok: boolean; not_stopped: boolean }> = [];
+  try {
+    rows = (await sql()`
+      select
+        phone,
+        sms_consent as sms_ok,
+        not sms_unsubscribed as not_stopped
+      from public.staff_sms_recipients
+      where active
+      order by name`) as unknown as Array<{ phone: string; sms_ok: boolean; not_stopped: boolean }>;
+  } catch {
+    /* pre-migration or unreachable DB → no staff texts (push already ran) */
+    return result;
+  }
+  // Same wording as fanOutToAdmins (copied exactly — body semantics for SMS):
+  // title line + body line, then the app's standard SMS footer.
+  const urgent = opts?.urgentCategory ?? null;
+  const title = urgent
+    ? "SafeGround — urgent need, please reach out"
+    : "SafeGround — peer support requested";
+  const body = urgent
+    ? displayName
+      ? `${displayName} needs help now (${staffUrgentLabel(urgent)}). Open the queue to reach out.`
+      : `A neighbor needs help now (${staffUrgentLabel(urgent)}). Open the queue to reach out.`
+    : displayName
+      ? `${displayName} asked for peer support. Open the queue to reach out.`
+      : `A neighbor asked for peer support. Open the queue to reach out.`;
+  // For SMS, sendSms() slices to 1500 chars — comfortably below any carrier
+  // limit, and the text never contains a phone number.
+  const text = `${title}. ${body} (MPRCC SafeGround. Reply STOP to stop texts.)`;
+  for (const row of rows) {
+    if (!row.sms_ok || !row.not_stopped) {
+      result.noConsent += 1;
+      continue;
+    }
+    result.notifiedPhones += 1;
+    try {
+      const r = await sendSms(row.phone, text, { emergency: true });
+      if (r.ok) result.sent += 1;
+    } catch {
+      /* sendSms never throws, but best-effort never fails the request */
+    }
+  }
+  return result;
+}
+
+/** Owner-listed urgent labels — same mapping as peerSupportServer's urgentLabel. */
+function staffUrgentLabel(category: string): string {
+  switch (category) {
+    case "advocacy":
+      return "advocacy";
+    case "er_ride":
+      return "ER ride";
+    case "er_supplies":
+      return "ER supplies";
+    case "support":
+      return "support";
+    case "help":
+    default:
+      return "help";
   }
 }

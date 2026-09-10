@@ -60,6 +60,26 @@ async function createRequest(c: { request: Request }) {
       /* silent — the request already succeeded */
     }
     const { notifiedPhones, tokensSent } = await fanOutToAdmins(name);
+    // SMS twin fan-out (owner-directed 2026-09-10): staff SMS dispatch
+    // recipients get the same message as the push above. Best-effort — never
+    // fails the request. Lazy import: smsServer reads process.env secrets and
+    // must never land in a client bundle (2026-09-08 client-bundle-leak lesson).
+    let sms: typeof import("~/lib/smsServer") | null = null;
+    try {
+      sms = await import("~/lib/smsServer");
+    } catch {
+      sms = null;
+    }
+    let smsResult = { notifiedPhones: 0, sent: 0, noConsent: 0 };
+    let smsNote: string | null = null;
+    if (sms) {
+      try {
+        smsResult = await sms.sendSmsToStaff(name);
+      } catch {
+        /* never throws by contract, but best-effort all the same */
+      }
+      if (!sms.smsConfig()) smsNote = sms.SMS_NOT_CONFIGURED;
+    }
     return Response.json({
       ok: true,
       id: row.id,
@@ -68,6 +88,9 @@ async function createRequest(c: { request: Request }) {
       // Honest signal: the queue ALWAYS has it; the push reached the team only
       // when an admin device had registered for push.
       teamNotified: notifiedPhones > 0 && tokensSent > 0,
+      // SMS fan-out counts (absent smsNote = team texts attempted when wired).
+      sms: smsResult,
+      smsNote,
     });
   } catch {
     return Response.json(
