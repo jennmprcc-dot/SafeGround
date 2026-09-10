@@ -2138,3 +2138,100 @@ begin
   return true;
 end;
 $sg$;
+
+-- ---------------------------------------------------------------------------
+-- staff_sms_recipients — SMS dispatch recipients for peer-support + urgent
+-- needs (owner-directed 2026-09-10).
+--
+-- WHO: MPRCC peer workers who should RECEIVE dispatch texts when a neighbor
+-- taps "Request peer support" or sends an urgent need. Today that is Jenn +
+-- Bambi (seeded below); admins can add more peer supporters in-app.
+--
+-- WHY NOT JUST outreach_roster: roster members may legitimately not want SMS on
+-- their personal line (push is the primary channel); this table is the explicit
+-- opt-in list for texts, with its own consent flags so the SMS floor rules
+-- (opt-in only, Reply-STOP always wins, hours rule) apply to staff dispatch
+-- exactly as they do to HomeTeam/neighbor sends.
+--
+-- Consent model (non-negotiable SMS floor):
+--   * sms_consent defaults TRUE — staff are on call (owner intent: they always
+--     get dispatch texts), matching the plan's "true emergency dispatch to
+--     staff" rule. An admin adding a recipient is the consent action.
+--   * consents_to_after_hours defaults TRUE — dispatch texts are emergency
+--     dispatch to staff, so business-hours never blocks them; the column stays
+--     for future non-emergency staff sends and for admins to see/adjust.
+--   * sms_unsubscribed (Reply-STOP) ALWAYS wins — set by the inbound webhook
+--     (markSmsUnsubscribed + sg_sms_unsubscribe) and NEVER cleared by the
+--     admin add/upsert path.
+--   * active=false is a soft remove (admin UI); the row stays for STOP
+--     integrity (the send fan-out only looks at active rows).
+-- Phone is the identity, stored 11-digit with country code like outreach_roster
+-- (14158797940); matching uses the last-10-digits convention everywhere
+-- (substring(phone from length(phone) - 9), phoneKey in src/lib/pushServer.ts).
+-- ---------------------------------------------------------------------------
+create table if not exists public.staff_sms_recipients (
+  id                      uuid primary key default gen_random_uuid(),
+  phone                   text not null check (char_length(phone) between 7 and 20),
+  name                    text not null check (char_length(name) between 1 and 40),
+  sms_consent             boolean not null default true,
+  consents_to_after_hours boolean not null default true,
+  sms_unsubscribed        boolean not null default false,
+  active                  boolean not null default true,
+  created_at              timestamptz not null default now(),
+  updated_at              timestamptz not null default now()
+);
+alter table public.staff_sms_recipients enable row level security;
+-- RPC/server-only (same pattern as group_notices): the app's server role reads/
+-- writes this table through src/routes/api/staff-sms + src/lib/smsServer.ts;
+-- no direct client policies exist. Never output a full phone to any client —
+-- the list API masks to the last 4 digits.
+
+-- Idempotent seed (owner-directed 2026-09-10): exactly Jenn + Bambi on create.
+-- Guarded per last-10 digits so re-runs (and re-adds by admins) never duplicate.
+insert into public.staff_sms_recipients (phone, name, sms_consent, consents_to_after_hours, active)
+select v.phone, v.name, true, true, true
+from (values
+  ('14158797940', 'Jenn Mallow'),
+  ('14155249090', 'Carrie Bambi Klyse')
+) as v(phone, name)
+where not exists (
+  select 1 from public.staff_sms_recipients s
+  where substring(s.phone from length(s.phone) - 9) = substring(v.phone from length(v.phone) - 9)
+);
+
+-- Unique per last-10 digits: the admin upsert matches on this key, so a
+-- 10-digit vs 11-digit form of the same number can never create two rows.
+create unique index if not exists idx_staff_sms_recipients_phone10
+  on public.staff_sms_recipients (substring(phone from length(phone) - 9));
+create index if not exists idx_staff_sms_recipients_active
+  on public.staff_sms_recipients (active);
+
+-- Reply-STOP extends to staff dispatch recipients too: a real STOP from a peer
+-- supporter marks their staff_sms_recipients row unsubscribed (STOP always wins
+-- everywhere). `create or replace` redefines the earlier function.
+create or replace function public.sg_sms_unsubscribe(p_phone text)
+returns boolean
+language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone text := public.sg_norm_phone(p_phone);
+begin
+  update public.hometeam_members set sms_unsubscribed = true
+  where substring(phone from length(phone) - 9) = substring(v_phone from length(v_phone) - 9);
+  update public.notice_consents set sms_unsubscribed = true
+  where substring(phone from length(phone) - 9) = substring(v_phone from length(v_phone) - 9);
+  update public.staff_sms_recipients set sms_unsubscribed = true
+  where substring(phone from length(phone) - 9) = substring(v_phone from length(v_phone) - 9);
+  return true;
+end;
+$sg$;
+
+comment on table public.staff_sms_recipients is
+  'MPRCC SMS dispatch recipients (owner-directed 2026-09-10): peer workers who '
+  'receive dispatch texts for peer-support requests + urgent needs. Seeded with '
+  'Jenn Mallow + Carrie "Bambi" Klyse; admins add more in-app. sms_consent + '
+  'consents_to_after_hours default TRUE (staff are on call — emergency dispatch '
+  'to staff bypasses business hours, never consent/STOP); sms_unsubscribed '
+  '(Reply STOP) always wins and is never cleared by the admin upsert; '
+  'active=false soft-removes (row kept for STOP integrity). Phone matching is '
+  'the last-10-digits convention used across the app.';
