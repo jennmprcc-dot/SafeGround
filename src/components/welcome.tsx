@@ -7,18 +7,23 @@
  * (rendered without the file's enclosing quote marks).
  *
  * Front-door layout (spec §1.3): brand → heading → owner preface → "what it
- * is" → CTA → Skip → install disclosure (collapsed on ≤390px) → share/QR →
- * crisis line. On ≤390px Skip is sticky under the top safe-area so an exit is
- * never lost; on larger screens it sits quietly under the CTA.
+ * is" → mode-choice step (HomeTeam | Neighbor) → Skip → install disclosure
+ * (collapsed on ≤390px) → share/QR → crisis line. On ≤390px Skip is sticky
+ * under the top safe-area so an exit is never lost; on larger screens it sits
+ * quietly under the choice cards.
  * Privacy contract (§1.7): dismissing writes ONLY the on-device seen-flag —
- * zero server calls, zero analytics, zero PII. Skip and Get started are
- * identical mechanics (§1.5).
+ * zero server calls, zero analytics, zero PII. Skip and both choice doors share
+ * identical mechanics (§1.5); the only difference is the door also persists the
+ * chosen mode (sg.mode) and navigates to its home.
  */
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import qrcode from "qrcode-generator";
 import { Button, Card } from "~/components/ui";
 import { useLanguage } from "~/lib/i18n";
 import { CrisisSheet } from "~/components/shell";
+import { MODE_KEY, writeMode } from "~/lib/modeNav";
+import type { Mode } from "~/lib/modeNav";
 import { cn } from "~/lib/cn";
 
 export const WELCOME_KEY = "sg.welcomed-v3";
@@ -95,7 +100,8 @@ export function WelcomeOverlay() {
   const narrowApplied = useRef(false);
   // EN|ES (PR-B): the owner preface stays EN in v1 (human translator needed);
   // the toggle only adds the honest coming-soon note below it.
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
+  const navigate = useNavigate();
   const dialogRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
 
@@ -199,35 +205,74 @@ export function WelcomeOverlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, crisisOpen]);
 
-  /** Dismissal — CTA, Skip, and Escape share one calm exit (§1.5/§1.7):
-   * writes only the on-device seen-flag (first visit), never a server call.
-   * Focus: menu re-open returns to the trigger; first-visit lands on the home
-   * greeting (#main h1) so SR focus is somewhere meaningful, and the page
-   * rests at the top of /. */
+  /** Dismissal mechanics shared by Skip, Escape, and the mode-choice doors
+   * (§1.5/§1.7): writes only the on-device seen-flag (first visit), never a
+   * server call — zero analytics. */
+  function markSeen() {
+    if (reread) return; // menu re-read never re-writes or re-navigates
+    try {
+      localStorage.setItem(WELCOME_KEY, new Date().toISOString());
+    } catch {
+      /* private mode — welcome simply shows again next visit */
+    }
+  }
+
+  /** The two mode-choice doors: seen-flag + chosen-mode persist (sg.mode) +
+   * client-side navigation to the mode's home. The only difference from Skip
+   * is the mode write and the destination — same privacy contract otherwise. */
+  function choose(mode: Mode, to: string) {
+    markSeen();
+    prevFocusRef.current = null;
+    setOpen(false);
+    setReread(false);
+    writeMode(mode);
+    // ModeNav seeds its highlight from localStorage once; tell it the mode
+    // changed so the highlight stays honest after the door lands us elsewhere.
+    try {
+      window.dispatchEvent(new StorageEvent("storage", { key: MODE_KEY, newValue: mode }));
+    } catch {
+      /* non-fatal — route-driven highlighting covers the destination page */
+    }
+    void navigate({ to }).then(() => {
+      // Focus handoff: land on the destination page's h1 (#main), same pattern
+      // as the CTA's first-visit exit — double rAF so the new route has painted.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const main = document.querySelector<HTMLElement>("#main");
+          const title = main?.querySelector<HTMLElement>("h1") ?? main;
+          title?.focus?.({ preventScroll: true });
+          window.scrollTo(0, 0);
+        }),
+      );
+    });
+  }
+
+  /** Calm exit — Skip, Escape, and the old CTA share one handoff:
+   * first visit lands at the top of "/" (home greeting focus); menu re-open
+   * returns to the trigger. Never writes the mode. */
   function close() {
     const wasReread = reread;
-    if (!wasReread) {
-      try {
-        localStorage.setItem(WELCOME_KEY, new Date().toISOString());
-      } catch {
-        /* private mode — welcome simply shows again next visit */
-      }
-    }
+    markSeen();
     // Capture the return target BEFORE clearing the ref — the rAF below runs
     // one frame later, after the synchronous null-out would have lost it.
     const returnTo = prevFocusRef.current;
     prevFocusRef.current = null;
     setOpen(false);
     setReread(false);
-    requestAnimationFrame(() => {
-      if (wasReread) {
-        returnTo?.focus?.();
-      } else {
-        const main = document.querySelector<HTMLElement>("#main");
-        const title = main?.querySelector<HTMLElement>("h1") ?? main;
-        title?.focus?.({ preventScroll: true });
-        window.scrollTo(0, 0);
-      }
+    if (wasReread) {
+      requestAnimationFrame(() => returnTo?.focus?.());
+      return;
+    }
+    // First visit: Skip/Escape always land at the top of "/" — no mode write.
+    void navigate({ to: "/" }).then(() => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const main = document.querySelector<HTMLElement>("#main");
+          const title = main?.querySelector<HTMLElement>("h1") ?? main;
+          title?.focus?.({ preventScroll: true });
+          window.scrollTo(0, 0);
+        }),
+      );
     });
   }
 
@@ -307,10 +352,28 @@ export function WelcomeOverlay() {
           </p>
         </div>
 
-        {/* 5 · Primary CTA — full width, min-h 52px, sage */}
-        <Button full onClick={close} className="min-h-[52px]">
-          Get started
-        </Button>
+        {/* 5 · Mode choice — one calm step, two equal doors (owner copy):
+         * HomeTeam (sage hint) or Neighbor (sky hint). Each door is a button
+         * card: seen-flag + mode write + navigate; zero server calls. */}
+        <div className="flex flex-col gap-2">
+          <h2 className="text-h2">{t("welcome_choice_title")}</h2>
+          <button
+            type="button"
+            onClick={() => choose("hometeam", "/hometeam")}
+            className="flex min-h-[52px] w-full flex-col items-start justify-center gap-0.5 rounded-[12px] border border-sg-sage/50 bg-sg-card px-4 py-3 text-left transition-colors hover:border-sg-sage hover:bg-sg-sage-wash/40 active:bg-sg-sage-wash"
+          >
+            <span className="text-body font-semibold text-sg-sage-deep">{t("welcome_choice_help")}</span>
+            <span className="text-small text-sg-ink-soft">{t("welcome_choice_help_sub")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => choose("neighbor", "/peer-support")}
+            className="flex min-h-[52px] w-full flex-col items-start justify-center gap-0.5 rounded-[12px] border border-sg-sky/50 bg-sg-card px-4 py-3 text-left transition-colors hover:border-sg-sky hover:bg-sg-sky-wash/40 active:bg-sg-sky-wash"
+          >
+            <span className="text-body font-semibold text-sg-sky">{t("welcome_choice_neighbor")}</span>
+            <span className="text-small text-sg-ink-soft">{t("welcome_choice_neighbor_sub")}</span>
+          </button>
+        </div>
 
         {/* 6 · Calm always-available Skip — sticky on ≤390px (never lost while
          * scrolling, bg-sg-paper/95 so text never collides); static under the

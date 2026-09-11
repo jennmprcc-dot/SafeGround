@@ -19,7 +19,7 @@ import { BellMoonIcon, CheckIcon, InfoIcon, MenuIcon } from "~/lib/appIcons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
 import { OPEN_WELCOME_EVENT } from "~/components/welcome";
 import type { ToastState } from "~/components/ui";
-import { MODES, displayMode, readMode, routeHint, writeMode } from "~/lib/modeNav";
+import { MODES, MODE_KEY, displayMode, readMode, routeHint, writeMode } from "~/lib/modeNav";
 import type { Mode, ModeDef, SubTab } from "~/lib/modeNav";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 
@@ -258,6 +258,18 @@ function ModeNav() {
     subRefs.current[i]?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignal]);
+
+  // External sg.mode writes (the welcome choice step dispatches a synthetic
+  // StorageEvent; other tabs fire real ones) keep the in-memory highlight in
+  // sync — localStorage is the source of truth, ModeNav only reflects it.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== MODE_KEY) return;
+      if (e.newValue === "hometeam" || e.newValue === "neighbor" || e.newValue === "admin") setStored(e.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const activeSub = activeSubId(hint, modeDef);
 
@@ -656,13 +668,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       ) : null}
       <main id="main" className="flex-1 pb-[env(safe-area-inset-bottom)]">{children}</main>
-      <footer className="flex items-center justify-center gap-4 px-4 pb-6">
-        <Link to="/terms" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
-          Terms
-        </Link>
-        <Link to="/privacy" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
-          Privacy
-        </Link>
+      <footer className="flex flex-col items-center gap-1 px-4 pb-6">
+        <div className="flex items-center justify-center gap-4">
+          <Link to="/terms" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
+            Terms
+          </Link>
+          <Link to="/privacy" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
+            Privacy
+          </Link>
+        </div>
+        <p className="text-small text-sg-ink-soft">© 2026 MPRCC — Marin Peer Resource Community Collective.</p>
       </footer>
       <ToastStack toasts={toasts} onDismiss={dismiss} />
       <MoreSheet open={menuOpen} onClose={() => setMenuOpen(false)} />
