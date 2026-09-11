@@ -2249,3 +2249,52 @@ comment on table public.staff_sms_recipients is
   '(Reply STOP) always wins and is never cleared by the admin upsert; '
   'active=false soft-removes (row kept for STOP integrity). Phone matching is '
   'the last-10-digits convention used across the app.';
+
+-- ---------------------------------------------------------------------------
+-- resource_verifications — neighbor-reported listing changes (PR-C, owner-
+-- directed 2026-09-11: "I NEED TO BE ABLE TO VERIFY RESOURCES").
+--
+-- A neighbor flags a listing (closed / info wrong / hours changed / other)
+-- with a short note and an OPTIONAL phone (no account, no sign-in — R-P6/R-P7).
+-- The row is the queue: outreach staff view pending rows (PIN-gated) and an
+-- admin resolves the lifecycle:
+--   * verified  — the listing is actually correct → resources.verified_at is
+--                 stamped fresh (clean_slate: no users row exists for phone
+--                 staff, so verified_by stays null — same convention as the
+--                 sweep verify path) and the report resolves.
+--   * resolved  — the report was handled (listing updated) but no freshness
+--                 stamp is claimed.
+--   * dismissed — not an issue.
+-- resolved_by records the staff phone; resolved_note is the admin's record.
+-- Access: RLS on, NO direct client policies (same pattern as group_notices /
+-- peer_invite_codes) — every read/write flows through the server routes
+-- (service role), which enforce the PIN gate. No phone is ever contactable
+-- without the reporter choosing to share it; identical to every other table.
+-- ---------------------------------------------------------------------------
+create table if not exists public.resource_verifications (
+  id            uuid primary key default gen_random_uuid(),
+  resource_id   uuid not null references public.resources (id) on delete cascade,
+  reported_by   text check (reported_by is null or char_length(reported_by) between 7 and 20),
+  reason        text not null check (reason in ('closed', 'wrong_info', 'hours_changed', 'other')),
+  note          text check (note is null or char_length(note) <= 500),
+  status        text not null default 'pending'
+                check (status in ('pending', 'resolved', 'dismissed')),
+  created_at    timestamptz not null default now(),
+  resolved_at   timestamptz,
+  resolved_by   text check (resolved_by is null or char_length(resolved_by) between 7 and 20),
+  resolved_note text check (resolved_note is null or char_length(resolved_note) <= 500)
+);
+alter table public.resource_verifications enable row level security;
+-- Server-route access only (service role): no INSERT/SELECT/UPDATE policies,
+-- so the anon key can never read or write another reporter's row.
+create index if not exists idx_resource_verifications_status
+  on public.resource_verifications (status, created_at desc);
+create index if not exists idx_resource_verifications_resource
+  on public.resource_verifications (resource_id, created_at desc);
+comment on table public.resource_verifications is
+  'Neighbor-reported listing changes (PR-C): pending rows are the outreach '
+  'check-in queue. Anonymous report (optional phone) → staff view → admin '
+  'resolves (verified stamps resources.verified_at; resolved = handled; '
+  'dismissed = not an issue). RLS on, no client policies — server routes '
+  'only, PIN-gated. Never auto-contacts anyone; the report itself is the only '
+  'record.';
