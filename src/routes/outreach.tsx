@@ -444,7 +444,7 @@ function OutreachPage() {
               <span className="text-btn font-medium">{t("pin_label")}</span>
               <input
                 value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
                 placeholder={t("pin_placeholder")}
                 inputMode="numeric"
                 autoComplete="off"
@@ -516,7 +516,7 @@ function OutreachPage() {
                 <span className="text-btn font-medium">{t("pin_label")}</span>
                 <input
                   value={setupPinRaw}
-                  onChange={(e) => setSetupPinRaw(e.target.value)}
+                  onChange={(e) => setSetupPinRaw(e.target.value.replace(/\D/g, ""))}
                   placeholder={t("pin_placeholder")}
                   inputMode="numeric"
                   autoComplete="off"
@@ -528,7 +528,7 @@ function OutreachPage() {
                 <span className="text-btn font-medium">{t("pin_setup_confirm")}</span>
                 <input
                   value={setupPinConfirm}
-                  onChange={(e) => setSetupPinConfirm(e.target.value)}
+                  onChange={(e) => setSetupPinConfirm(e.target.value.replace(/\D/g, ""))}
                   placeholder={t("pin_placeholder")}
                   inputMode="numeric"
                   autoComplete="off"
