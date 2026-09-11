@@ -12,7 +12,7 @@ import { useLanguage } from "~/lib/i18n";
 import { CrisisSheet } from "~/components/shell";
 import { cn } from "~/lib/cn";
 
-export const WELCOME_KEY = "sg.welcomed";
+export const WELCOME_KEY = "sg.welcomed-v2";
 export const OPEN_WELCOME_EVENT = "sg:open-welcome";
 
 /** Byte-for-byte owner preface — do not reword, shorten, or smart-quote. */

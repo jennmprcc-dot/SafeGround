@@ -19,7 +19,7 @@ import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { StaffSmsTeam } from "~/components/staffSmsTeam";
-import { getAlertIdentity, phoneLooksOk } from "~/lib/alertIdentity";
+import { clearAlertIdentity, getAlertIdentity, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import { useLanguage } from "~/lib/i18n";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
@@ -131,6 +131,11 @@ function OutreachPage() {
       if (res.status === 403) {
         setState({ kind: "forbidden" });
       } else if (res.ok && data?.ok) {
+        // Persist the roster identity (one-time entry per device, owner report
+        // 2026-09-11): the server's real roster name when present, else the
+        // calm "Staff" fallback — next visit the gate auto-skips (the effect
+        // below preloads from localStorage) and the nav shows Admin unlocked.
+        setAlertIdentity(p, data.name ?? "Staff");
         setState({ kind: "ready", data: data as Summary });
       } else {
         setState({
@@ -245,7 +250,17 @@ function OutreachPage() {
               <Button
                 variant="secondary"
                 disabled={!phoneLooksOk(phoneInput)}
-                onClick={() => setPhone(phoneInput.replace(/[^0-9]/g, ""))}
+                onClick={() => {
+                  const digits = phoneInput.replace(/[^0-9]/g, "");
+                  // One-time entry per device (owner report 2026-09-11):
+                  // persist the identity BEFORE the server answers so a shared
+                  // Android that can't re-render still auto-opens next visit.
+                  // Name = the loaded roster name when this is the same number
+                  // we already opened, else "Staff" — load() upgrades it to
+                  // the roster's real name once the server answers.
+                  setAlertIdentity(digits, phone === digits && data?.name ? data.name : "Staff");
+                  setPhone(digits);
+                }}
               >
                 Open
               </Button>
@@ -253,6 +268,23 @@ function OutreachPage() {
             <span className="text-small text-sg-ink-soft">Only numbers on the outreach roster can open this space.</span>
           </label>
         </Card>
+
+        {/* Shared-device privacy: a quiet way to forget the persisted identity
+            (anonymous-first rules). Shown once a phone is in use on this
+            device — clears localStorage AND the gate. */}
+        {phone.length >= 10 ? (
+          <button
+            type="button"
+            onClick={() => {
+              clearAlertIdentity();
+              setPhone("");
+              setPhoneInput("");
+            }}
+            className="self-start text-small text-sg-ink-soft underline underline-offset-2 hover:text-sg-ink"
+          >
+            Forget this phone on this device
+          </button>
+        ) : null}
 
         {actionError ? (
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
