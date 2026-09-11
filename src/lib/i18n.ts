@@ -296,7 +296,7 @@ const EN = {
   // as the welcome overlay so the card and the front door tell one story.
   home_story_title: "What is SafeGround?",
   home_story_body:
-    "SafeGround is a free, private helper — find food and shelter, hear about sweeps nearby, and let your people know you're okay. No account needed. No background location, ever.",
+    "SafeGround is your free, private helper. Find food and shelter fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. Just real help when you need it.",
   home_story_more: "Tell me more",
   // Sweeps page + report flow
   sw_sub: "Heads-ups from neighbors, kept calm.",
@@ -722,8 +722,9 @@ const ES: Partial<Record<I18nKey, string>> = {
   home_signed_toast: "Ya entraste — regístrate con las personas de tu confianza.",
   home_noloc: "Nunca ubicación en segundo plano — tú eliges lo que se comparte.",
   home_story_title: "¿Qué es SafeGround?",
-  home_story_body:
-    "SafeGround es un ayudante gratis y privado — encuentra comida y refugio, entérate de desalojos cerca y hazle saber a tu gente que estás bien. Sin cuenta. Nunca ubicación en segundo plano.",
+  // Owner copy is never auto-translated — empty ES value falls back to EN
+  // (translate() treats falsy as missing; container labels stay ES as-is).
+  home_story_body: "",
   home_story_more: "Cuéntame más",
   sw_sub: "Avisos de vecinos, con calma.",
   sw_count_one: "aviso activo o planeado",
