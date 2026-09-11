@@ -616,7 +616,7 @@ function HomeTeamPage() {
         <p className="-mt-3 text-small text-sg-ink-soft">{t("mode_hero_ht_sub")}</p>
         <header className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-h1">HomeTeam</h1>
+            <h1 tabIndex={-1} className="text-h1 outline-none">HomeTeam</h1>
             <p className="mt-0.5 text-small text-sg-ink-soft">{t("ht_sub")}</p>
           </div>
           <button

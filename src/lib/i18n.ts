@@ -298,6 +298,12 @@ const EN = {
   home_story_body:
     "SafeGround is your free, private helper. Find food and shelter fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. Just real help when you need it.",
   home_story_more: "Tell me more",
+  // Welcome mode-choice step (owner-directed 2026-09-11): two equal doors.
+  welcome_choice_title: "How will you use SafeGround?",
+  welcome_choice_help: "I want to help",
+  welcome_choice_help_sub: "Join the HomeTeam — see what neighbors need and deliver it.",
+  welcome_choice_neighbor: "I need help",
+  welcome_choice_neighbor_sub: "Find food and shelter, check in, and stay close to your people.",
   // Sweeps page + report flow
   sw_sub: "Heads-ups from neighbors, kept calm.",
   sw_count_one: "active or planned heads-up",
@@ -726,6 +732,12 @@ const ES: Partial<Record<I18nKey, string>> = {
   // (translate() treats falsy as missing; container labels stay ES as-is).
   home_story_body: "",
   home_story_more: "Cuéntame más",
+  welcome_choice_title: "¿Cómo usarás SafeGround?",
+  welcome_choice_help: "Quiero ayudar",
+  // Owner copy is never auto-translated — empty ES value falls back to EN.
+  welcome_choice_help_sub: "",
+  welcome_choice_neighbor: "Necesito ayuda",
+  welcome_choice_neighbor_sub: "",
   sw_sub: "Avisos de vecinos, con calma.",
   sw_count_one: "aviso activo o planeado",
   sw_count_many: "avisos activos o planeados",

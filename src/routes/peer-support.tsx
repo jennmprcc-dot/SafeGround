@@ -140,7 +140,7 @@ function RequestSupportPage() {
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-sg-sage-wash text-sg-sage" aria-hidden>
             <CheckCircleIcon size={32} />
           </span>
-          <h1 className="text-h1">{t("ps_done")}</h1>
+          <h1 tabIndex={-1} className="text-h1 outline-none">{t("ps_done")}</h1>
           <p className="max-w-xs text-body text-sg-ink-soft">
             {teamNotified
               ? t("ps_done_a")
@@ -172,7 +172,7 @@ function RequestSupportPage() {
       <AppShell>
         <div className="flex flex-col gap-4 px-4 pt-5">
           <header>
-            <h1 className="text-h1">{t("ps_ready")}</h1>
+            <h1 tabIndex={-1} className="text-h1 outline-none">{t("ps_ready")}</h1>
             <p className="mt-0.5 text-small text-sg-ink-soft">{t("ps_ready_sub")}</p>
           </header>
           <Card>
@@ -220,7 +220,7 @@ function RequestSupportPage() {
         <p className="text-h1 text-sg-ink">{t("mode_hero_nb")}</p>
         <p className="-mt-3 text-small text-sg-ink-soft">{t("mode_hero_nb_sub")}</p>
         <header>
-          <h1 className="text-h1">{t("ps_title")}</h1>
+          <h1 tabIndex={-1} className="text-h1 outline-none">{t("ps_title")}</h1>
           <p className="mt-0.5 text-small text-sg-ink-soft">
             {t("ps_sub")}
           </p>
