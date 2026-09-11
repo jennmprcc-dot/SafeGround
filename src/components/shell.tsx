@@ -179,12 +179,15 @@ function ModeNav() {
   const [stored, setStored] = useState<Mode>(() => readMode());
   const [focusSignal, setFocusSignal] = useState(0);
   const [announce, setAnnounce] = useState("");
-  // Client-only (wrapped, it reads localStorage): once this device has opened
-  // the staff gate, the Admin segment drops its forever-🔒. Decorative only —
-  // the server gate (/api/outreach/summary + act) never trusts this.
+  // Client-only (wrapped, it reads localStorage): the Admin segment drops its
+  // forever-🔒 ONLY once this device has BOTH opened the staff gate (identity
+  // persisted) AND unlocked with a verified PIN (sg.staff.unlocked="1", set
+  // on successful summary + pin). An alert identity alone no longer proves
+  // staff access (owner-directed 2026-09-11: "a lock that isn't our phone
+  // number"). Decorative only — the server gate never trusts this.
   const adminUnlocked = (() => {
     try {
-      return getAlertIdentity() !== null;
+      return getAlertIdentity() !== null && localStorage.getItem("sg.staff.unlocked") === "1";
     } catch {
       return false;
     }

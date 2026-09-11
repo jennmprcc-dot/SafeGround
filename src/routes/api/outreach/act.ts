@@ -20,11 +20,8 @@
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "~/db";
-import {
-  OUTREACH_CALM_LINE,
-  normOutreachPhone,
-  outreachIdentity,
-} from "~/lib/outreachServer";
+import { OUTREACH_CALM_LINE, normOutreachPhone } from "~/lib/outreachServer";
+import { pinFromRequest, pinGate } from "~/lib/staffPin";
 
 async function outreachAct(c: { request: Request }) {
   let body: {
@@ -33,6 +30,7 @@ async function outreachAct(c: { request: Request }) {
     id?: unknown;
     action?: unknown;
     note?: unknown;
+    pin?: unknown;
   } = {};
   try {
     body = (await c.request.json()) as typeof body;
@@ -40,9 +38,11 @@ async function outreachAct(c: { request: Request }) {
     return Response.json({ ok: false, error: "Send a JSON body with phone + kind + id + action." }, { status: 400 });
   }
   const caller = normOutreachPhone(body.phone ?? c.request.headers.get("x-sg-phone"));
-  const me = await outreachIdentity(caller);
-  if (me.role === null) {
-    return Response.json({ ok: false, error: OUTREACH_CALM_LINE }, { status: 403 });
+  // PIN LOCK (owner-directed 2026-09-11): every dashboard WRITE needs a valid
+  // PIN too — phone alone no longer suffices for any outreach action.
+  const me = await pinGate(caller, pinFromRequest(c, body));
+  if (!me.ok) {
+    return Response.json({ ok: false, error: me.error, code: me.code }, { status: 403 });
   }
   const admin = me.role === "admin";
   const kind = String(body.kind ?? "").trim().toLowerCase();

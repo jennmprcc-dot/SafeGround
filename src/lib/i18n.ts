@@ -466,6 +466,32 @@ const EN = {
   sms_chip_active: "Active",
   sms_stopped_note: "This person replied STOP — texts stay off until they change it themselves.",
   sms_remove: "Remove from dispatch",
+  // Staff PIN lock (owner-directed 2026-09-11) — outreach gate + first-login
+  // choose-your-PIN screen + admin Team-tab reset. EN is the source of truth.
+  pin_label: "Your outreach PIN",
+  pin_placeholder: "4–6 digits",
+  pin_required: "Your outreach PIN is required to open this space.",
+  pin_wrong: "That PIN didn't match — take your time.",
+  pin_cooldown: "Too many tries — give it a minute, then try again.",
+  pin_forgot: "Forgot your PIN? Ask the outreach lead to reset it.",
+  pin_setup_title: "Choose your PIN",
+  pin_setup_body:
+    "This is your first time opening the dashboard. Pick a 4–6 digit PIN only your team knows — the setup code comes from the outreach lead.",
+  pin_setup_code: "Setup code",
+  pin_setup_code_ph: "From the outreach lead",
+  pin_setup_code_help: "Ask Jenn or Bambi for today's setup code — it's how MPRCC knows it's really you.",
+  pin_setup_confirm: "Confirm PIN",
+  pin_setup_submit: "Save my PIN",
+  pin_bad_token: "That setup code didn't match — ask the outreach lead for the current one.",
+  pin_bad_pin: "Your PIN is 4–6 numbers — no letters or spaces.",
+  pin_mismatch: "The two PINs didn't match — try again, no rush.",
+  reset_pin: "Reset PIN",
+  reset_pin_token: "Setup code (from the outreach lead)",
+  reset_pin_token_ph: "Today's setup code",
+  reset_pin_confirm: "Reset their PIN? They'll choose a new one next time they open the dashboard.",
+  reset_pin_done: "PIN reset — they'll choose a new one next time.",
+  reset_pin_denied: "Only an outreach admin can reset a PIN — check your PIN and try again.",
+  roster_must_set: "hasn't set a PIN yet",
 } as const;
 
 export type I18nKey = keyof typeof EN;
@@ -890,6 +916,30 @@ const ES: Partial<Record<I18nKey, string>> = {
   sms_chip_active: "Activo",
   sms_stopped_note: "Esta persona respondió STOP — los mensajes siguen apagados hasta que ella lo cambie.",
   sms_remove: "Quitar del despacho",
+  pin_label: "Tu PIN del equipo",
+  pin_placeholder: "4–6 dígitos",
+  pin_required: "Tu PIN del equipo es necesario para abrir este espacio.",
+  pin_wrong: "Ese PIN no coincidió — tómate tu tiempo.",
+  pin_cooldown: "Demasiados intentos — espera un minuto y vuelve a intentar.",
+  pin_forgot: "¿Olvidaste tu PIN? Pide al líder del equipo que lo restablezca.",
+  pin_setup_title: "Elige tu PIN",
+  pin_setup_body:
+    "Es la primera vez que abres el panel. Elige un PIN de 4–6 dígitos que solo tu equipo conozca — el código de configuración lo da el líder del equipo.",
+  pin_setup_code: "Código de configuración",
+  pin_setup_code_ph: "Del líder del equipo",
+  pin_setup_code_help: "Pide a Jenn o Bambi el código de hoy — así MPRCC sabe que eres tú.",
+  pin_setup_confirm: "Confirmar PIN",
+  pin_setup_submit: "Guardar mi PIN",
+  pin_bad_token: "Ese código no coincidió — pide al líder del equipo el código actual.",
+  pin_bad_pin: "Tu PIN es de 4–6 números — sin letras ni espacios.",
+  pin_mismatch: "Los dos PINs no coincidieron — inténtalo de nuevo, sin prisa.",
+  reset_pin: "Restablecer PIN",
+  reset_pin_token: "Código de configuración (del líder del equipo)",
+  reset_pin_token_ph: "El código de hoy",
+  reset_pin_confirm: "¿Restablecer su PIN? Elegirán uno nuevo la próxima vez que abran el panel.",
+  reset_pin_done: "PIN restablecido — elegirán uno nuevo la próxima vez.",
+  reset_pin_denied: "Solo un admin del equipo puede restablecer un PIN — revisa tu PIN e inténtalo de nuevo.",
+  roster_must_set: "aún no tiene PIN",
 };
 
 /* ── Lookup (EN fallback — never blank) ────────────────────────── */
