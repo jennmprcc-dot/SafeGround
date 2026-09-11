@@ -1,7 +1,7 @@
 /**
  * SafeGround first-launch welcome overlay (WELCOME_PREFACE_SPEC Rev 1 +
  * WELCOME_FRONT_DOOR_SPEC 2026-09-11).
- * Full-screen front door mounted in __root.tsx — shows once (sg.welcomed-v2),
+ * Full-screen front door mounted in __root.tsx — shows once (sg.welcomed-v3),
  * re-readable from the menu / landing story card via the "sg:open-welcome"
  * event. Owner preface copy is VERBATIM from /home/team/shared/PREFACE_COPY.md
  * (rendered without the file's enclosing quote marks).
@@ -21,12 +21,12 @@ import { useLanguage } from "~/lib/i18n";
 import { CrisisSheet } from "~/components/shell";
 import { cn } from "~/lib/cn";
 
-export const WELCOME_KEY = "sg.welcomed-v2";
+export const WELCOME_KEY = "sg.welcomed-v3";
 export const OPEN_WELCOME_EVENT = "sg:open-welcome";
 
 /** Byte-for-byte owner preface — do not reword, shorten, or smart-quote. */
 const PREFACE =
-  "At MPRCC, our team understands the challenges of homelessness, poverty, and recovery because we've been there. We're here to offer a supportive ear, a guiding hand, or just someone to listen. Feel free to reach out anytime.";
+  "At MPRCC, we've lived the realities of homelessness, poverty, and substance use recovery in Marin. We know the cold nights, the long waits, the setbacks, and the small wins that keep you moving. When you reach out, you're connecting with people who've been through it and still show up for our neighbors every day.";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -300,8 +300,10 @@ export function WelcomeOverlay() {
             <p className="text-small text-sg-ink-soft">Espanol proximamente · Spanish coming soon.</p>
           ) : null}
           <p className="text-body text-sg-ink-soft">
-            SafeGround is a free, private helper — find food and shelter, hear about sweeps nearby, and let your
-            people know you&apos;re okay. No account needed. No background location, ever.
+            SafeGround is your free, private helper.
+            <br />
+            Find food and shelter fast. Get heads-up alerts about sweeps. Let your people know you're okay with one
+            tap. No account. No background tracking. Just real help when you need it.
           </p>
         </div>
 
