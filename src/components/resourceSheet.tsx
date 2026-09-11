@@ -1,13 +1,18 @@
 /**
  * Resource detail bottom sheet (WIREFRAMES §2d) — the standard detail pane
  * for the Navigator. Missing fields render as "Not confirmed yet — call ahead
- * if you can" (never blank). Sign-in gated [Suggest a correction] explains why.
+ * if you can" (never blank). PR-C (owner-directed 2026-09-11): the
+ * sign-in-gated [Suggest a correction] stub is replaced by an ANONYMOUS
+ * "Something wrong? Report a change" flow — no account, no phone required —
+ * which posts a pending row for the outreach check-in queue.
  */
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { BottomSheet, Button, ConsentReceipt, StatusBadge, useToasts } from "~/components/ui";
-import { useAuth } from "~/lib/auth";
 import { CATEGORY_MAP, verifiedLabel } from "~/lib/data";
 import type { DemoResource } from "~/lib/data";
+import { ResourceReportForm } from "~/components/resourceReport";
+import { useLanguage } from "~/lib/i18n";
 import { ClockIcon, MapPinIcon, NavigateIcon, PenIcon, PhoneIcon, BookmarkIcon } from "~/lib/icons";
 
 const NOT_CONFIRMED = "Not confirmed yet — call ahead if you can";
@@ -26,8 +31,10 @@ export function ResourceSheet({
   onClose: () => void;
   onDirections: (r: DemoResource) => void;
 }) {
-  const { signedIn, displayName } = useAuth();
+  const { t } = useLanguage();
   const { push } = useToasts();
+  // PR-C: inline anonymous report form ("Something wrong? Report a change").
+  const [reportOpen, setReportOpen] = useState(false);
 
   if (!resource) return null;
   const cat = CATEGORY_MAP[resource.category];
@@ -110,25 +117,15 @@ export function ResourceSheet({
             <BookmarkIcon size={20} aria-hidden />
             Save
           </Button>
-          {signedIn ? (
-            <Button
-              variant="text"
-              full
-              onClick={() =>
-                push({ kind: "success", message: "Thanks — your correction goes to outreach for a look." })
-              }
-            >
-              <PenIcon size={18} aria-hidden />
-              Suggest a correction
-            </Button>
+          {reportOpen ? (
+            <div className="flex flex-col gap-2 rounded-[14px] border border-sg-line bg-sg-paper p-3">
+              {/* PR-C: anonymous, calm, no urgency — outreach reviews reports. */}
+              <ResourceReportForm resourceId={resource.id} onCancel={() => setReportOpen(false)} />
+            </div>
           ) : (
-            <Button
-              variant="text"
-              full
-              onClick={() => push({ kind: "info", message: "Sign in to suggest a correction — so outreach can follow up." })}
-            >
+            <Button variant="text" full onClick={() => setReportOpen(true)}>
               <PenIcon size={18} aria-hidden />
-              Suggest a correction (sign in so outreach can follow up)
+              {t("rv_report_cta")}
             </Button>
           )}
           <Button variant="quiet" full onClick={onClose}>
@@ -140,12 +137,9 @@ export function ResourceSheet({
           who="Everyone who opens the app"
           what="This listing"
           howLong="Until outreach updates it"
-          stopLabel="Report a listing problem"
-          onStop={() => push({ kind: "info", message: "Thanks — outreach will take a look." })}
+          stopLabel={t("rv_report_cta")}
+          onStop={() => setReportOpen(true)}
         />
-        {signedIn ? (
-          <p className="text-small text-sg-ink-soft">Signed in as {displayName} — corrections are attributed to you.</p>
-        ) : null}
         <Link to="/" className="mt-2 text-small text-sg-sky underline underline-offset-2">
           Back to Home
         </Link>

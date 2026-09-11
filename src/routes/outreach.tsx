@@ -19,6 +19,7 @@ import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { StaffSmsTeam } from "~/components/staffSmsTeam";
+import { ResourceCheckins } from "~/components/resourceCheckins";
 import { clearAlertIdentity, getAlertIdentity, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import { useLanguage, type I18nKey } from "~/lib/i18n";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
@@ -867,6 +868,23 @@ function OutreachPage() {
                       same gate as the rest of this section; the API enforces it
                       server-side too (staff_limited → 403). */}
                   <StaffSmsTeam phone={phone} />
+                  {/* Resource check-ins (PR-C, owner-directed 2026-09-11):
+                      neighbor-flagged listing changes → verify or dismiss.
+                      Admin-only (server-gated; Tracey staff_limited never
+                      sees this payload). A stale PIN here drops the dashboard
+                      back to the lock screen via the same gate codes. */}
+                  <ResourceCheckins
+                    phone={phone}
+                    pin={pin}
+                    onGateRejected={(code) => {
+                      if (code === "must_set") {
+                        setState({ kind: "must_set" });
+                      } else if (code === "wrong" || code === "cooldown" || code === "staff_pin_required") {
+                        setState({ kind: "idle" });
+                        setGateErrorKey(code === "cooldown" ? "pin_cooldown" : code === "wrong" ? "pin_wrong" : "pin_required");
+                      }
+                    }}
+                  />
                   {/* Staff roster + PIN resets (owner-directed 2026-09-11).
                       Admin-only (server-gated; Tracey staff_limited never sees
                       this payload). Reset needs the admin's own PIN + the
