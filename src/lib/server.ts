@@ -1030,23 +1030,30 @@ export const listNeeds = createServerFn({ method: "GET" }).handler(
   },
 );
 /** Join the HomeTeam: phone + name + explicit consent (R-P1). After-hours
- * emergency-alert consent is DEFAULT OFF; the toggle sets it when present. */
+ * emergency-alert consent is DEFAULT OFF; the toggle sets it when present.
+ * disclaimerAcknowledged (owner-approved verbatim 2026-09-11): the join button
+ * is client-gated on the checkbox; the server records the acknowledgment
+ * timestamp on the consent row (hometeam_join 4th arg) — same pattern as
+ * sms_consent, never a new auth model. */
 export const joinHomeTeam = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
-    const v = (input ?? {}) as { phone?: unknown; name?: unknown; consentsToAfterHours?: unknown; smsConsent?: unknown };
+    const v = (input ?? {}) as { phone?: unknown; name?: unknown; consentsToAfterHours?: unknown; smsConsent?: unknown; disclaimerAcknowledged?: unknown };
     return {
       phone: String(v.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
       name: typeof v.name === "string" ? v.name.replace(/\s+/g, " ").trim().slice(0, 40) : "",
       consentsToAfterHours: v.consentsToAfterHours === true,
       // SMS opt-in (owner-approved 2026-09-08): explicit checkbox only.
       smsConsent: v.smsConsent === true,
+      // HomeTeam Safety & Liability Disclaimer (owner-approved 2026-09-11):
+      // explicit checkbox only — the join button stays disabled until checked.
+      disclaimerAcknowledged: v.disclaimerAcknowledged === true,
     };
   })
   .handler(async ({ data }): Promise<{ ok: boolean; memberId: string | null; error: string | null; source: NeedSource }> => {
-    const { phone, name, consentsToAfterHours, smsConsent } = data;
+    const { phone, name, consentsToAfterHours, smsConsent, disclaimerAcknowledged } = data;
     try {
       const rows = (await sql()`
-        select public.hometeam_join(${phone}, ${name}, ${smsConsent}) as id`) as unknown as Array<{ id: string }>;
+        select public.hometeam_join(${phone}, ${name}, ${smsConsent}, ${disclaimerAcknowledged}) as id`) as unknown as Array<{ id: string }>;
       if (consentsToAfterHours) {
         // After-hours toggle is DEFAULT OFF; setting it is a graceful, non-blocking
         // update — the saver must never fail the join (older DBs lack the column).
@@ -1113,7 +1120,7 @@ export const logNeed = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const v = (input ?? {}) as {
       items?: unknown; note?: unknown; neighborPhone?: unknown; neighborName?: unknown;
-      outreachPhone?: unknown; pickup?: unknown; visibility?: unknown;
+      outreachPhone?: unknown; pickup?: unknown; visibility?: unknown; disclaimerAcknowledged?: unknown;
     };
     const items = Array.isArray(v.items)
       ? (v.items as unknown[]).map((x) => String(x).replace(/\s+/g, " ").trim().slice(0, 60)).filter((x) => x.length > 0).slice(0, 10)
@@ -1126,10 +1133,15 @@ export const logNeed = createServerFn({ method: "POST" })
       neighborName: typeof v.neighborName === "string" ? v.neighborName.replace(/\s+/g, " ").trim().slice(0, 40) : "",
       outreachPhone: String(v.outreachPhone ?? "").replace(/[^0-9+]/g, "").slice(0, 20),
       visibility: v.visibility === "assign_only" || v.visibility === "private" ? (v.visibility as "assign_only" | "private") : "open",
+      // HomeTeam Help Requests Safety & Liability Disclaimer (owner-approved
+      // 2026-09-11): the requester checked "I agree…" on their first help
+      // request. Client gates the submit; the server records the
+      // acknowledgment on the requester's consent row (same pattern as Part A).
+      disclaimerAcknowledged: v.disclaimerAcknowledged === true,
     };
   })
   .handler(async ({ data }): Promise<{ ok: boolean; requestId: string | null; error: string | null; source: NeedSource }> => {
-    const { items, note, pickupPreference, neighborPhone, neighborName, outreachPhone, visibility } = data;
+    const { items, note, pickupPreference, neighborPhone, neighborName, outreachPhone, visibility, disclaimerAcknowledged } = data;
     // A need with no phone is unattributable — say so plainly and stop BEFORE
     // demoUserId/auth.users, instead of failing deep in the DB (2026-09-07).
     if (neighborPhone.replace(/[^0-9]/g, "").length < 10) {
@@ -1168,6 +1180,16 @@ export const logNeed = createServerFn({ method: "POST" })
         returning id, created_at`) as unknown as Array<{ id: string; created_at: string | Date }>;
       const row = rows[0];
       if (!row) return { ok: false, requestId: null, error: "That didn't go through — try again when you're ready.", source: "db" };
+      // Requester-side disclaimer acknowledgment (owner-approved 2026-09-11):
+      // recorded on the requester's consent row the moment their first help
+      // request goes through with the box checked. Idempotent refresh on later
+      // submits; outreach-on-behalf never records (the neighbor isn't typing).
+      if (disclaimerAcknowledged) {
+        await sql()`
+          insert into public.disclaimer_acknowledgments (phone, help_requests_acknowledged_at)
+          values (${neighborPhone}, now())
+          on conflict (phone) do update set help_requests_acknowledged_at = now()`;
+      }
       return { ok: true, requestId: row.id, error: null, source: "db" };
     } catch (e) {
       if (isDbDown(e)) {
@@ -1228,6 +1250,26 @@ export const getHomeTeamStatus = createServerFn({ method: "GET" })
       };
     } catch {
       return { phone, displayName: null, status: "active", consentsToAfterHours: null, source: "demo" };
+    }
+  });
+/** True when this phone has already acknowledged the HomeTeam Help Requests
+ * Safety & Liability Disclaimer (owner-approved 2026-09-11). Drives the
+ * first-help-request gate: no row = the full disclaimer + checkbox gate shows
+ * until the requester agrees on their first submit. Fail-closed ("not
+ * acknowledged") whenever the DB can't be reached — the gate showing again is
+ * the calm, safe default. */
+export const getHelpRequestsDisclaimerAck = createServerFn({ method: "GET" })
+  .validator((input: unknown) => ({ phone: String((input as { phone?: unknown })?.phone ?? "").replace(/[^0-9+]/g, "").slice(0, 20) }))
+  .handler(async ({ data }): Promise<{ acknowledged: boolean; source: NeedSource }> => {
+    const { phone } = data;
+    if (!phone) return { acknowledged: false, source: "demo" };
+    try {
+      const rows = (await sql()`
+        select 1 from public.disclaimer_acknowledgments where phone = ${phone} limit 1
+      `) as unknown as Array<Record<string, unknown>>;
+      return { acknowledged: rows.length > 0, source: "db" };
+    } catch {
+      return { acknowledged: false, source: "demo" };
     }
   });
 /** True when a phone is on the active outreach roster (staff can log on

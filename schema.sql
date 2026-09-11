@@ -121,6 +121,12 @@ create table public.hometeam_members (
 -- Forward migration for databases created BEFORE this wave (idempotent).
 alter table public.hometeam_members
   add column if not exists consents_to_after_hours boolean not null default false;
+-- Safety & Liability Disclaimer acknowledgment (owner-approved verbatim
+-- 2026-09-11): timestamp set at join time when the supporter checked
+-- "I agree to the HomeTeam Safety & Liability Disclaimer". Same consent-row
+-- pattern as sms_consent — never a new auth model. NULL = not acknowledged.
+alter table public.hometeam_members
+  add column if not exists disclaimer_acknowledged_at timestamptz;
 
 -- ---------------------------------------------------------------------------
 -- supply_requests (owner + outreach only — queue, Wave 2)
@@ -683,7 +689,7 @@ end;
 $sg$;
 -- hometeam_join keeps its 2-arg signature (all existing callers unchanged);
 -- the SMS opt-in travels via an optional 3rd arg with a default.
-create or replace function public.hometeam_join(p_phone text, p_display_name text, p_sms boolean default null)
+create or replace function public.hometeam_join(p_phone text, p_display_name text, p_sms boolean default null, p_disclaimer boolean default null)
 returns uuid language plpgsql security definer set search_path = public
 as $sg$
 declare
@@ -717,6 +723,17 @@ begin
           consented_to_contact_at = now(),
           status = 'active'
     returning id into v_id;
+  end if;
+  -- Disclaimer acknowledgment (owner-approved 2026-09-11): recorded on the
+  -- consent row the moment the supporter joins with the box checked. The
+  -- client gates the join button; the server records the timestamp — same
+  -- pattern as sms_consent, never a new auth model.
+  if coalesce(p_disclaimer, false)
+     and public.sg_column_exists('hometeam_members', 'disclaimer_acknowledged_at') then
+    update public.hometeam_members
+    set disclaimer_acknowledged_at = now()
+    where id = v_id
+      and disclaimer_acknowledged_at is null;
   end if;
   return v_id;
 end;
@@ -2298,3 +2315,37 @@ comment on table public.resource_verifications is
   'dismissed = not an issue). RLS on, no client policies — server routes '
   'only, PIN-gated. Never auto-contacts anyone; the report itself is the only '
   'record.';
+-- ---------------------------------------------------------------------------
+-- Disclaimer acknowledgments (owner-approved verbatim 2026-09-11) — Part B.
+--
+-- The requester-side consent store for the "HomeTeam Help Requests — Safety &
+-- Liability Disclaimer" (the neighbor who asks for support). One row per phone;
+-- help_requests_acknowledged_at is set the first time the neighbor submits a
+-- help request with the "I agree…" checkbox checked, and refreshed on later
+-- submits. Mirrors the phone-keyed consent-store pattern (notice_consents /
+-- push_tokens): no auth model, no accounts — a phone owns its own row. The
+-- HomeTeam-helper acknowledgment lives on hometeam_members.disclaimer_acknowledged_at
+-- (Part A) — this table is ONLY the request side, so a neighbor who is not a
+-- supporter gets the same consent storage without a HomeTeam membership.
+-- ---------------------------------------------------------------------------
+create table if not exists public.disclaimer_acknowledgments (
+  phone                           text primary key check (char_length(phone) between 7 and 20),
+  help_requests_acknowledged_at   timestamptz not null default now(),
+  created_at                      timestamptz not null default now()
+);
+alter table public.disclaimer_acknowledgments enable row level security;
+-- Phone-bound RLS, same pattern as notice_consents: a phone owns its own row;
+-- nothing anonymous reads another phone's acknowledgment.
+drop policy if exists "disclaimer acks own insert" on public.disclaimer_acknowledgments;
+create policy "disclaimer acks own insert" on public.disclaimer_acknowledgments for insert
+  with check (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+drop policy if exists "disclaimer acks own select" on public.disclaimer_acknowledgments;
+create policy "disclaimer acks own select" on public.disclaimer_acknowledgments for select
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+drop policy if exists "disclaimer acks own update" on public.disclaimer_acknowledgments;
+create policy "disclaimer acks own update" on public.disclaimer_acknowledgments for update
+  using (phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+comment on table public.disclaimer_acknowledgments is
+  'Neighbor acknowledgment of the HomeTeam Help Requests Safety & Liability '
+  'Disclaimer (phone identity). No row = first-request gate still applies. '
+  'Phone-bound RLS like notice_consents; server fns write service-side.';

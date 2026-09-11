@@ -6,10 +6,10 @@
  * No background location, no auth-account requirement, calm copy throughout.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import { BottomSheet, Button, Card, ConsentReceipt, Dialog, EmptyState, SkeletonRows, StatusBadge, TextArea, TextField, useToasts } from "~/components/ui";
-import { isOutreachPhone, logNeed, joinHomeTeam, claimNeed, markNeedDelivered, listNeeds, getHomeTeamStatus } from "~/lib/server";
+import { isOutreachPhone, logNeed, joinHomeTeam, claimNeed, markNeedDelivered, listNeeds, getHomeTeamStatus, getHelpRequestsDisclaimerAck } from "~/lib/server";
 import { formatPhone, getAlertIdentity, normPhone, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import type { NeedRow } from "~/lib/hometeam";
 import { needBadgeKind, needHelpingLine } from "~/lib/hometeam";
@@ -19,6 +19,15 @@ import type { BadgeKind } from "~/components/ui";
 import { useLanguage, needStatusKey } from "~/lib/i18n";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { LegalLinks } from "~/components/legalLinks";
+import {
+  DisclaimerText,
+  HOMETEAM_DISCLAIMER_BLOCKS,
+  HOMETEAM_DISCLAIMER_TITLE,
+  HOMETEAM_DISCLAIMER_ROUTE,
+  HELP_REQUESTS_DISCLAIMER_BLOCKS,
+  HELP_REQUESTS_DISCLAIMER_TITLE,
+  HELP_REQUESTS_DISCLAIMER_ROUTE,
+} from "~/components/disclaimer";
 
 export const Route = createFileRoute("/hometeam")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -95,7 +104,18 @@ export function NeedCard({
         </p>
       ) : null}
       {(canClaim || canDeliver) && !claimedByMe ? (
-        <div className="mt-3">
+        <div className="mt-3 flex flex-col gap-2">
+          {/* Safety & Liability reminder (owner-approved 2026-09-11): one calm
+              line at the moment of action — claim AND deliver. Acknowledged at
+              join; no checkbox here; the full text stays one tap away. */}
+          <p className="text-small leading-snug text-sg-ink-soft">
+            {t("ht_disc_remind")}{" "}
+            {t("disc_full_lead")}{" "}
+            <Link to={HOMETEAM_DISCLAIMER_ROUTE} className="inline-flex min-h-[44px] items-center text-sg-sky underline underline-offset-2">
+              {t("ht_disc_link")}
+            </Link>
+            .
+          </p>
           {canClaim ? (
             <Button full variant="secondary" disabled={busy} onClick={onClaim}>
               <HandsIcon size={18} aria-hidden /> {t("ht_claim")}
@@ -134,6 +154,7 @@ function JoinSheet({
   const [name, setName] = useState("");
   const [afterHours, setAfterHours] = useState(false);
   const [textMe, setTextMe] = useState(false);
+  const [disclaimerAck, setDisclaimerAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState(phone);
@@ -142,6 +163,7 @@ function JoinSheet({
       setName("");
       setAfterHours(false);
       setTextMe(false);
+      setDisclaimerAck(false);
       setPhoneError(null);
       setPhoneDraft(phone);
     }
@@ -154,7 +176,7 @@ function JoinSheet({
       return;
     }
     setBusy(true);
-    const res = await joinHomeTeam({ data: { phone: p, name, consentsToAfterHours: afterHours, smsConsent: textMe } });
+    const res = await joinHomeTeam({ data: { phone: p, name, consentsToAfterHours: afterHours, smsConsent: textMe, disclaimerAcknowledged: disclaimerAck } });
     setBusy(false);
     if (res.ok) {
       push({ kind: "success", message: afterHours ? "You're on the HomeTeam — thank you. After-hours alerts are on." : "You're on the HomeTeam — thank you for being there." });
@@ -220,7 +242,32 @@ function JoinSheet({
           howLong="Until you pause or leave — pausing is one tap from this page"
           stopLabel="Pause anytime"
         />
-        <Button full onClick={save} disabled={busy || !name.trim()}>
+        {/* Safety & Liability Disclaimer (owner-approved verbatim 2026-09-11):
+            full text in a scrollable panel + explicit checkbox. The join
+            button stays disabled until checked; the server records the
+            acknowledgment timestamp on this consent row at join. */}
+        <div className="flex flex-col gap-2">
+          <p className="text-small font-semibold text-sg-ink">{t("ht_disc_link")}</p>
+          <div
+            className="max-h-52 overflow-y-auto rounded-[12px] border border-sg-line bg-sg-paper p-3"
+            tabIndex={0}
+            aria-label={t("ht_disc_link")}
+          >
+            <DisclaimerText blocks={HOMETEAM_DISCLAIMER_BLOCKS} />
+          </div>
+          <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-[12px] border-2 border-sg-line bg-sg-card px-4 py-3 text-left">
+            <input
+              type="checkbox"
+              checked={disclaimerAck}
+              onChange={(e) => setDisclaimerAck(e.target.checked)}
+              className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
+            />
+            <span className="text-small">
+              <span className="block font-medium text-sg-ink">{t("ht_disc_agree")}</span>
+            </span>
+          </label>
+        </div>
+        <Button full onClick={save} disabled={busy || !name.trim() || !disclaimerAck} disabledReason={!disclaimerAck ? t("ht_disc_need") : undefined}>
           {t("ht_join")}
         </Button>
         <p className="text-small text-sg-ink-soft">{t("ht_join_no_loc")}</p>
@@ -264,6 +311,13 @@ function LogSheet({
   const [posted, setPosted] = useState<SubmitConfirmState | null>(null);
   /** Inline calm error when the phone is missing/incomplete — blocks submit. */
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  /** First-help-request gate (owner-approved verbatim 2026-09-11): the full
+   * "HomeTeam Help Requests" disclaimer + checkbox shows until the requester's
+   * phone has a server-recorded acknowledgment. Fail-closed: the gate is ON
+   * while the server answer is pending. Self-serve only — outreach logging on
+   * a neighbor's behalf never gates (the neighbor isn't at the keyboard). */
+  const [discGate, setDiscGate] = useState(false);
+  const [discChecked, setDiscChecked] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -273,8 +327,30 @@ function LogSheet({
       setVisibility("open");
       setPosted(null);
       setPhoneError(null);
+      setDiscChecked(false);
+      setDiscGate(false);
     }
   }, [open]);
+
+  // Ack check: once a valid self-serve phone is present, ask the server whether
+  // this phone already acknowledged. Gate ON until confirmed (fail-closed).
+  useEffect(() => {
+    if (!open || isOutreach) return;
+    if (!phoneLooksOk(phone)) {
+      setDiscGate(false);
+      return;
+    }
+    let alive = true;
+    setDiscGate(true);
+    getHelpRequestsDisclaimerAck({ data: { phone } })
+      .then((r) => {
+        if (alive && r.acknowledged) setDiscGate(false);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [open, isOutreach, phone]);
 
   const save = async () => {
     const itemList = items.split(",").map((s) => s.trim()).filter(Boolean);
@@ -301,10 +377,16 @@ function LogSheet({
         neighborName: isOutreach ? neighborName : "",
         outreachPhone: isOutreach ? phone : "",
         visibility,
+        // First help request: the checkbox must be checked; the server records
+        // the acknowledgment on the requester's consent row with this submit.
+        disclaimerAcknowledged: discChecked,
       },
     });
     setBusy(false);
     if (res.ok) {
+      // The acknowledgment row now exists server-side — the gate can rest.
+      setDiscGate(false);
+      setDiscChecked(false);
       // Persistent on-screen confirmation (NOT a short-lived toast): the HomeTeam
       // feed is the notice channel — no separate team push goes out here, so
       // "shared" (not "team notified") is the honest copy.
@@ -375,7 +457,44 @@ function LogSheet({
             <p className="text-small text-sg-ink-soft">{t("ht_priv_note")}</p>
           </fieldset>
         ) : null}
-        <Button full onClick={save} disabled={busy} disabledReason={busy ? "Saving…" : undefined}>
+        {/* First-help-request gate (owner-approved verbatim 2026-09-11): full
+            "Help Requests" disclaimer + checkbox until this phone has
+            acknowledged. Submit stays disabled until checked. Self-serve only. */}
+        {!isOutreach && discGate ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-small font-semibold text-sg-ink">{t("hr_disc_link")}</p>
+            <div
+              className="max-h-52 overflow-y-auto rounded-[12px] border border-sg-line bg-sg-paper p-3"
+              tabIndex={0}
+              aria-label={t("hr_disc_link")}
+            >
+              <DisclaimerText blocks={HELP_REQUESTS_DISCLAIMER_BLOCKS} />
+            </div>
+            <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-[12px] border-2 border-sg-line bg-sg-card px-4 py-3 text-left">
+              <input
+                type="checkbox"
+                checked={discChecked}
+                onChange={(e) => setDiscChecked(e.target.checked)}
+                className="mt-1 h-5 w-5 shrink-0 accent-[#2F6B4F]"
+              />
+              <span className="text-small">
+                <span className="block font-medium text-sg-ink">{t("hr_disc_agree")}</span>
+              </span>
+            </label>
+          </div>
+        ) : null}
+        {/* Calm reminder at every help-request submit (owner-approved copy):
+            volunteers at their own risk — never MPRCC staff. Full text one tap
+            away, read anytime. */}
+        <p className="text-small leading-snug text-sg-ink-soft">
+          {t("hr_disc_remind")}{" "}
+          {t("disc_full_lead")}{" "}
+          <Link to={HELP_REQUESTS_DISCLAIMER_ROUTE} className="inline-flex min-h-[44px] items-center text-sg-sky underline underline-offset-2">
+            {t("hr_disc_link")}
+          </Link>
+          .
+        </p>
+        <Button full onClick={save} disabled={busy || (discGate && !discChecked)} disabledReason={discGate && !discChecked ? t("hr_disc_need") : busy ? "Saving…" : undefined}>
           {t("ht_share")}
         </Button>
         {posted ? (
