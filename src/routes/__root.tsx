@@ -19,6 +19,12 @@ export const Route = createRootRoute({
           "SafeGround is a calm mobile-first companion from MPRCC for finding resources, seeing sweep heads-ups, and checking in with trusted people. No account needed to look. No background location, ever.",
       },
       { name: "theme-color", content: "#F7F4EC" },
+      // Stale-bundle class fix (owner report 2026-09-11): a shared Android can
+      // pin an old shell where taps register but the screen doesn't move. The
+      // server's Cache-Control can't be set here, so revalidate the DOCUMENT on
+      // every load — asset URLs are hashed, so revalidation pulls the new build.
+      { httpEquiv: "Cache-Control", content: "no-cache, no-store, must-revalidate" },
+      { httpEquiv: "Pragma", content: "no-cache" },
       // Social sharing card (branding pass): absolute URL to the live logo.
       { property: "og:title", content: "SafeGround — by MPRCC" },
       { property: "og:description", content: "A calm mobile-first companion from MPRCC for finding help, rest, and people who care." },

@@ -21,6 +21,7 @@ import { OPEN_WELCOME_EVENT } from "~/components/welcome";
 import type { ToastState } from "~/components/ui";
 import { MODES, displayMode, readMode, routeHint, writeMode } from "~/lib/modeNav";
 import type { Mode, ModeDef, SubTab } from "~/lib/modeNav";
+import { getAlertIdentity } from "~/lib/alertIdentity";
 
 /* ── EN|ES segmented toggle (PR-B) — calm two-state control in the
  * header, persisted to localStorage (`sg.lang`). EN is always the
@@ -178,6 +179,16 @@ function ModeNav() {
   const [stored, setStored] = useState<Mode>(() => readMode());
   const [focusSignal, setFocusSignal] = useState(0);
   const [announce, setAnnounce] = useState("");
+  // Client-only (wrapped, it reads localStorage): once this device has opened
+  // the staff gate, the Admin segment drops its forever-🔒. Decorative only —
+  // the server gate (/api/outreach/summary + act) never trusts this.
+  const adminUnlocked = (() => {
+    try {
+      return getAlertIdentity() !== null;
+    } catch {
+      return false;
+    }
+  })();
 
   const query: Record<string, string | undefined> = {
     view: typeof search.view === "string" ? search.view : undefined,
@@ -340,7 +351,10 @@ function ModeNav() {
                   active ? activeAccent : "text-sg-ink-soft hover:text-sg-ink",
                 )}
               >
-                <span aria-hidden>{m.icon}</span>
+                {/* Admin: unlocked padlock once this device holds an identity
+                    (the staff gate was opened before); 🔒 otherwise. The label
+                    + aria stay unchanged — i18n keys untouched (EN|ES). */}
+                <span aria-hidden>{m.id === "admin" && adminUnlocked ? "🔓" : m.icon}</span>
                 <span>{t(m.labelKey)}</span>
               </Link>
             );
