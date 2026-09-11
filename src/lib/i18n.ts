@@ -29,7 +29,7 @@ const EN = {
   menu_title: "Menu",
   menu_hometeam: "HomeTeam — step in for a neighbor",
   menu_about: "About & privacy",
-  menu_welcome: "Welcome — what SafeGround is",
+  menu_welcome: "Welcome & how it works",
   menu_queue: "Peer-support queue (outreach)",
   menu_notify: "Notifications test (team)",
   menu_crisis: "Crisis resources",
@@ -292,6 +292,12 @@ const EN = {
   home_notnow: "Not now",
   home_signed_toast: "You're signed in — check in with the people you trust.",
   home_noloc: "No background location, ever — you choose what's shared.",
+  // Landing story card (WELCOME_FRONT_DOOR_SPEC §2) — same "what it is" line
+  // as the welcome overlay so the card and the front door tell one story.
+  home_story_title: "What is SafeGround?",
+  home_story_body:
+    "SafeGround is a free, private helper — find food and shelter, hear about sweeps nearby, and let your people know you're okay. No account needed. No background location, ever.",
+  home_story_more: "Tell me more",
   // Sweeps page + report flow
   sw_sub: "Heads-ups from neighbors, kept calm.",
   sw_count_one: "active or planned heads-up",
@@ -468,7 +474,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   menu_title: "Menú",
   menu_hometeam: "HomeTeam — ayuda a un vecino",
   menu_about: "Acerca de y privacidad",
-  menu_welcome: "Bienvenida — qué es SafeGround",
+  menu_welcome: "Bienvenida y cómo funciona",
   menu_queue: "Solicitudes de apoyo (equipo)",
   menu_notify: "Prueba de avisos (equipo)",
   menu_crisis: "Recursos de crisis",
@@ -715,6 +721,10 @@ const ES: Partial<Record<I18nKey, string>> = {
   home_notnow: "Ahora no",
   home_signed_toast: "Ya entraste — regístrate con las personas de tu confianza.",
   home_noloc: "Nunca ubicación en segundo plano — tú eliges lo que se comparte.",
+  home_story_title: "¿Qué es SafeGround?",
+  home_story_body:
+    "SafeGround es un ayudante gratis y privado — encuentra comida y refugio, entérate de desalojos cerca y hazle saber a tu gente que estás bien. Sin cuenta. Nunca ubicación en segundo plano.",
+  home_story_more: "Cuéntame más",
   sw_sub: "Avisos de vecinos, con calma.",
   sw_count_one: "aviso activo o planeado",
   sw_count_many: "avisos activos o planeados",

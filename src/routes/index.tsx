@@ -11,7 +11,7 @@ import { BottomSheet, Button, Card, LocationOnceButton, useToasts } from "~/comp
 import { getHomeStatsResilient, readLocationOnce } from "~/lib/homeStatsResilience";
 import type { DataSource } from "~/lib/server";
 import { useLanguage } from "~/lib/i18n";
-import { MoonBlanketIcon, PersonIcon } from "~/lib/icons";
+import { MoonBlanketIcon, PersonIcon, InfoIcon } from "~/lib/icons";
 
 /* Time-aware greeting — computed client-side so SSR never mismatches (calm default first). */
 function Greeting() {
@@ -22,8 +22,10 @@ function Greeting() {
     setPart(h < 12 ? "m" : h < 17 ? "a" : "e");
   }, []);
   const greeting = part === "m" ? t("home_morning") : part === "e" ? t("home_evening") : t("home_afternoon");
+  // tabIndex -1: programmatic focus target when the first-visit welcome
+  // closes (WELCOME_FRONT_DOOR_SPEC §1.6) — not in the tab order.
   return (
-    <h1 className="text-display text-sg-ink">
+    <h1 tabIndex={-1} className="text-display text-sg-ink outline-none">
       {greeting}
       <span className="mt-1 block text-body font-normal text-sg-ink-soft">
         {t("home_greet_sub")}
@@ -282,6 +284,30 @@ function HomePage() {
         </div>
 
         <NearYouCard />
+
+        {/* What is SafeGround? — permanent story card (WELCOME_FRONT_DOOR_SPEC
+         * §2): last content block, between NearYou and the footer, so the
+         * safety stack above the fold is never displaced. "Tell me more"
+         * re-opens the full first-visit story via the existing window event —
+         * zero new plumbing. */}
+        <Card>
+          <div className="flex items-start gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-sg-sage-wash text-sg-sage" aria-hidden>
+              <InfoIcon size={24} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-h2">{t("home_story_title")}</h2>
+              <p className="mt-1 text-body text-sg-ink-soft">{t("home_story_body")}</p>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event("sg:open-welcome"))}
+                className="mt-1 inline-flex min-h-[48px] items-center px-1 font-semibold text-sg-sky underline underline-offset-2"
+              >
+                {t("home_story_more")}
+              </button>
+            </div>
+          </div>
+        </Card>
 
         <footer className="flex flex-col items-start gap-2 pb-4">
           <button

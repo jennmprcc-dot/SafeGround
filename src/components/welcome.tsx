@@ -1,9 +1,18 @@
 /**
- * SafeGround first-launch welcome overlay (WELCOME_PREFACE_SPEC Rev 1).
- * Full-screen front door mounted in __root.tsx — shows once (sg.welcomed),
- * re-readable from the menu via the "sg:open-welcome" event.
- * Owner preface copy is VERBATIM from /home/team/shared/PREFACE_COPY.md
+ * SafeGround first-launch welcome overlay (WELCOME_PREFACE_SPEC Rev 1 +
+ * WELCOME_FRONT_DOOR_SPEC 2026-09-11).
+ * Full-screen front door mounted in __root.tsx — shows once (sg.welcomed-v2),
+ * re-readable from the menu / landing story card via the "sg:open-welcome"
+ * event. Owner preface copy is VERBATIM from /home/team/shared/PREFACE_COPY.md
  * (rendered without the file's enclosing quote marks).
+ *
+ * Front-door layout (spec §1.3): brand → heading → owner preface → "what it
+ * is" → CTA → Skip → install disclosure (collapsed on ≤390px) → share/QR →
+ * crisis line. On ≤390px Skip is sticky under the top safe-area so an exit is
+ * never lost; on larger screens it sits quietly under the CTA.
+ * Privacy contract (§1.7): dismissing writes ONLY the on-device seen-flag —
+ * zero server calls, zero analytics, zero PII. Skip and Get started are
+ * identical mechanics (§1.5).
  */
 import { useEffect, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
@@ -18,6 +27,9 @@ export const OPEN_WELCOME_EVENT = "sg:open-welcome";
 /** Byte-for-byte owner preface — do not reword, shorten, or smart-quote. */
 const PREFACE =
   "At MPRCC, our team understands the challenges of homelessness, poverty, and recovery because we've been there. We're here to offer a supportive ear, a guiding hand, or just someone to listen. Feel free to reach out anytime.";
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 function isStandalone(): boolean {
   try {
@@ -74,10 +86,18 @@ export function WelcomeOverlay() {
   const [qrOpen, setQrOpen] = useState(false);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [linkText, setLinkText] = useState<string | null>(null);
+  // Install disclosure (§1.3 item 7): collapsed by default on ≤390px, open by
+  // default on larger screens where vertical space is not scarce.
+  const [narrow, setNarrow] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 390px)").matches : false,
+  );
+  const [installOpen, setInstallOpen] = useState(true);
+  const narrowApplied = useRef(false);
   // EN|ES (PR-B): the owner preface stays EN in v1 (human translator needed);
   // the toggle only adds the honest coming-soon note below it.
   const { lang } = useLanguage();
-  const ref = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let seen = false;
@@ -105,31 +125,110 @@ export function WelcomeOverlay() {
     return () => window.removeEventListener(OPEN_WELCOME_EVENT, onOpen);
   }, []);
 
+  // Viewport-class tracking for the ≤390px default (sticky skip is pure CSS;
+  // this only decides the install disclosure's default state).
   useEffect(() => {
-    if (!open) return;
-    const prev = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      prev?.focus();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const mq = window.matchMedia("(max-width: 390px)");
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener?.("change", sync);
+    return () => mq.removeEventListener?.("change", sync);
+  }, []);
+
+  useEffect(() => {
+    // One-shot default: collapse the install disclosure on first measurement
+    // when ≤390px; never fight the reader after they've toggled it.
+    if (!narrowApplied.current) {
+      narrowApplied.current = true;
+      if (narrow) setInstallOpen(false);
+    }
+  }, [narrow]);
+
+  // Open focus: save the trigger (menu re-open path) and focus the dialog.
+  useEffect(() => {
+    if (!open) {
+      prevFocusRef.current = null;
+      return;
+    }
+    prevFocusRef.current = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
   }, [open]);
 
+  // Focus trap (§1.6): Tab / Shift+Tab cycle within the overlay; the page
+  // behind never receives focus while open. If the nested crisis sheet holds
+  // focus, the trap scopes to the sheet so focus never falls behind its scrim.
+  // Escape always closes (§1.6, existing behavior).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const active = document.activeElement as HTMLElement | null;
+      let scope: HTMLElement = root;
+      if (crisisOpen && active) {
+        const nested = active.closest<HTMLElement>('[role="dialog"][aria-modal="true"]');
+        if (nested && nested !== root) scope = nested;
+      }
+      const items = Array.from(scope.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+        (el) => el.getClientRects().length > 0,
+      );
+      if (items.length === 0) {
+        e.preventDefault();
+        scope.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey) {
+        if (active === first || !scope.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !scope.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, crisisOpen]);
+
+  /** Dismissal — CTA, Skip, and Escape share one calm exit (§1.5/§1.7):
+   * writes only the on-device seen-flag (first visit), never a server call.
+   * Focus: menu re-open returns to the trigger; first-visit lands on the home
+   * greeting (#main h1) so SR focus is somewhere meaningful, and the page
+   * rests at the top of /. */
   function close() {
-    if (!reread) {
+    const wasReread = reread;
+    if (!wasReread) {
       try {
         localStorage.setItem(WELCOME_KEY, new Date().toISOString());
       } catch {
         /* private mode — welcome simply shows again next visit */
       }
     }
+    // Capture the return target BEFORE clearing the ref — the rAF below runs
+    // one frame later, after the synchronous null-out would have lost it.
+    const returnTo = prevFocusRef.current;
+    prevFocusRef.current = null;
     setOpen(false);
     setReread(false);
+    requestAnimationFrame(() => {
+      if (wasReread) {
+        returnTo?.focus?.();
+      } else {
+        const main = document.querySelector<HTMLElement>("#main");
+        const title = main?.querySelector<HTMLElement>("h1") ?? main;
+        title?.focus?.({ preventScroll: true });
+        window.scrollTo(0, 0);
+      }
+    });
   }
 
   async function share() {
@@ -164,18 +263,37 @@ export function WelcomeOverlay() {
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-sg-paper" role="dialog" aria-modal="true" aria-label="Welcome to SafeGround">
-      <div ref={ref} tabIndex={-1} className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 pb-[max(env(safe-area-inset-bottom),24px)] pt-[max(env(safe-area-inset-top),24px)] outline-none">
-        {/* Brand */}
+    <div
+      ref={dialogRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-[60] overflow-y-auto bg-sg-paper outline-none"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Welcome to SafeGround"
+      aria-labelledby="welcome-title"
+    >
+      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 pb-[max(env(safe-area-inset-bottom),24px)] pt-[max(env(safe-area-inset-top),24px)]">
+        {/* 1 · Brand — 72px logo on ≤390px, 96px larger (§1.3). Driven by the
+         * same `narrow` state as the install disclosure: Tailwind's
+         * max-[390px] variant compiles to a strict <390px media query, which
+         * would skip exactly-390px devices. */}
         <div className="flex flex-col items-center gap-1 text-center">
-          <img src="/logo-hero.png" alt="SafeGround" width={96} height={96} className="h-24 w-24 object-contain" />
+          <img
+            src="/logo-hero.png"
+            alt="SafeGround"
+            width={96}
+            height={96}
+            className={cn("object-contain", narrow ? "h-[72px] w-[72px]" : "h-24 w-24")}
+          />
           <p className="text-btn text-sg-ink">SafeGround</p>
           <p className="text-small text-sg-sage-deep">MPRCC — Marin Peer Resource Community Collective</p>
         </div>
 
-        {/* Owner preface — verbatim, on paper, no card */}
+        {/* 2–4 · Heading, owner preface (verbatim), what-it-is — on paper, no card */}
         <div className="flex flex-col gap-4">
-          <h1 className="text-h2">You&apos;re welcome here.</h1>
+          <h1 id="welcome-title" className="text-h2">
+            You&apos;re welcome here.
+          </h1>
           <p className="text-body text-sg-ink">{PREFACE}</p>
           {/* v1: preface is EN-only until a human translates it — say so plainly. */}
           {lang === "es" ? (
@@ -187,45 +305,78 @@ export function WelcomeOverlay() {
           </p>
         </div>
 
-        {/* Install card — hidden when already installed */}
-        {standalone ? null : (
-          <Card>
-            <h2 className="text-h2">Keep SafeGround on your phone</h2>
-            {showIOS ? (
-              <div className="mt-2">
-                <p className="text-small text-sg-ink-soft">iPhone · Safari</p>
-                <ol className="mt-1.5 flex list-decimal flex-col gap-1.5 pl-5 text-small text-sg-ink">
-                  <li>Tap the Share button — the square with an arrow pointing up — at the bottom of Safari.</li>
-                  <li>Scroll down and tap &ldquo;Add to Home Screen.&rdquo;</li>
-                  <li>Tap &ldquo;Add&rdquo; — the SafeGround icon will appear with your apps.</li>
-                </ol>
-              </div>
-            ) : (
-              <div className="mt-2">
-                <p className="text-small text-sg-ink-soft">Android · Chrome</p>
-                <ol className="mt-1.5 flex list-decimal flex-col gap-1.5 pl-5 text-small text-sg-ink">
-                  <li>Tap the three-dot menu at the top of Chrome.</li>
-                  <li>Tap &ldquo;Add to Home screen&rdquo; or &ldquo;Install app.&rdquo;</li>
-                  <li>Tap &ldquo;Install&rdquo; — the SafeGround icon will appear with your apps.</li>
-                </ol>
-              </div>
-            )}
-            <Button variant="quiet" onClick={() => setShowIOS((v) => !v)} className="mt-1 self-start">
-              {showIOS ? "Show Android steps" : "Show iPhone steps"}
-            </Button>
-            <p className="mt-1 text-small text-sg-ink-soft">Installing is optional — the app works in your browser either way.</p>
-          </Card>
-        )}
-
-        {/* Primary CTA */}
+        {/* 5 · Primary CTA — full width, min-h 52px, sage */}
         <Button full onClick={close} className="min-h-[52px]">
           Get started
         </Button>
+
+        {/* 6 · Calm always-available Skip — sticky on ≤390px (never lost while
+         * scrolling, bg-sg-paper/95 so text never collides); static under the
+         * CTA on larger screens. Same mechanics as Get started (§1.5). */}
+        <div
+          className={cn(
+            narrow &&
+              "sticky top-[env(safe-area-inset-top)] z-20 -mx-4 flex justify-end bg-sg-paper/95 px-4 py-1",
+          )}
+        >
+          <button
+            type="button"
+            onClick={close}
+            className="inline-flex min-h-[48px] items-center px-1 text-small font-semibold text-sg-sky underline underline-offset-2"
+          >
+            Skip for now
+          </button>
+        </div>
         <p className="-mt-3 text-center text-small text-sg-ink-soft">
           You can read this welcome again anytime — it&apos;s in the menu.
         </p>
 
-        {/* Share / QR */}
+        {/* 7 · Install disclosure — hidden when already installed; collapsed
+         * by default on ≤390px, open on larger (§1.3 item 7). */}
+        {standalone ? null : (
+          <Card>
+            <Button
+              variant="quiet"
+              onClick={() => setInstallOpen((v) => !v)}
+              aria-expanded={installOpen}
+              aria-controls="sg-install-panel"
+              className="self-start px-0"
+            >
+              How to add SafeGround to your phone
+            </Button>
+            {installOpen ? (
+              <div id="sg-install-panel" className="mt-2">
+                {showIOS ? (
+                  <div>
+                    <p className="text-small text-sg-ink-soft">iPhone · Safari</p>
+                    <ol className="mt-1.5 flex list-decimal flex-col gap-1.5 pl-5 text-small text-sg-ink">
+                      <li>Tap the Share button — the square with an arrow pointing up — at the bottom of Safari.</li>
+                      <li>Scroll down and tap &ldquo;Add to Home Screen.&rdquo;</li>
+                      <li>Tap &ldquo;Add&rdquo; — the SafeGround icon will appear with your apps.</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-small text-sg-ink-soft">Android · Chrome</p>
+                    <ol className="mt-1.5 flex list-decimal flex-col gap-1.5 pl-5 text-small text-sg-ink">
+                      <li>Tap the three-dot menu at the top of Chrome.</li>
+                      <li>Tap &ldquo;Add to Home screen&rdquo; or &ldquo;Install app.&rdquo;</li>
+                      <li>Tap &ldquo;Install&rdquo; — the SafeGround icon will appear with your apps.</li>
+                    </ol>
+                  </div>
+                )}
+                <Button variant="quiet" onClick={() => setShowIOS((v) => !v)} className="mt-1 self-start">
+                  {showIOS ? "Show Android steps" : "Show iPhone steps"}
+                </Button>
+                <p className="mt-1 text-small text-sg-ink-soft">
+                  Installing is optional — the app works in your browser either way.
+                </p>
+              </div>
+            ) : null}
+          </Card>
+        )}
+
+        {/* 8 · Share / QR — unchanged */}
         <Card>
           <h2 className="text-h2">Pass it along</h2>
           <p className="mt-1 text-body text-sg-ink-soft">Know someone who could use this? Share SafeGround.</p>
@@ -255,6 +406,7 @@ export function WelcomeOverlay() {
           ) : null}
         </Card>
 
+        {/* 9 · Crisis — last, quiet, always present */}
         <div className="pb-2 text-center">
           <Button variant="text" onClick={() => setCrisisOpen(true)}>
             In crisis? Talk to someone
