@@ -456,11 +456,25 @@ create table public.outreach_roster (
   role         text not null default 'staff_limited'
                check (role in ('admin', 'staff_limited')),
   active       boolean not null default true,
+  -- Staff PIN lock (owner-directed 2026-09-11): phone alone no longer opens
+  -- staff APIs. pin_hash is a pgcrypto bcrypt hash of the staff member's own
+  -- 4–6 digit PIN — NEVER the plaintext (PINs are never stored on devices,
+  -- never logged, and never readable back). pin_must_set=true forces the
+  -- choose-your-PIN screen on their first login; the PIN is set/reset ONLY
+  -- with the bootstrap secret SG_SETUP_TOKEN (env var, owner-held).
+  pin_hash     text,
+  pin_must_set boolean not null default true,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
 
 alter table public.outreach_roster enable row level security;
+-- Idempotent column adds (bun scripts/apply-schema.ts is the apply path) —
+-- safe to re-run on every deploy; existing rows get pin_must_set=true so the
+-- whole team goes through first-login pin setup once this ships.
+alter table public.outreach_roster
+  add column if not exists pin_hash text,
+  add column if not exists pin_must_set boolean not null default true;
 -- Everyone may read the roster (it's the public "who's on the team" list);
 -- writes happen ONLY through the sg_outreach_roster_set RPC (admin-only).
 create policy "roster public read"          on public.outreach_roster for select using (true);

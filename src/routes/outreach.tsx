@@ -20,10 +20,17 @@ import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { StaffSmsTeam } from "~/components/staffSmsTeam";
 import { clearAlertIdentity, getAlertIdentity, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
-import { useLanguage } from "~/lib/i18n";
+import { useLanguage, type I18nKey } from "~/lib/i18n";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
+
+/* Staff PIN lock (owner-directed 2026-09-11): the phone only identifies WHO;
+   the PIN proves it's them. On a verified unlock we persist sg.alert.phone
+   (identity) + localStorage sg.staff.unlocked="1" + the PIN in sessionStorage
+   (same-tab reload keeps the session; a new tab re-enters). */
+const STAFF_UNLOCKED_KEY = "sg.staff.unlocked";
+const STAFF_PIN_SESSION = "sg.staff.pin";
 
 type Tab = "sweeps" | "needs" | "alerts" | "more";
 
@@ -80,13 +87,30 @@ interface Summary {
   needs: NeedItem[];
   alerts: AlertItem[];
   resolved?: AlertItem[];
+  roster?: RosterMember[];
   analytics?: { resolved7d: number; medianResolveMinutes: number | null; withHelperShare: number | null };
   error?: string;
+}
+
+interface RosterMember {
+  phone: string;
+  name: string;
+  role: "admin" | "staff_limited";
+  pinMustSet: boolean;
+}
+
+type GateCode = "not_staff" | "staff_pin_required" | "must_set" | "wrong" | "cooldown" | "bad_token" | "bad_pin" | "not_admin";
+
+interface ApiErrorBody {
+  ok?: boolean;
+  error?: string;
+  code?: GateCode;
 }
 
 type LoadState =
   | { kind: "idle" }
   | { kind: "loading" }
+  | { kind: "must_set" }
   | { kind: "forbidden" }
   | { kind: "unavailable"; message: string }
   | { kind: "ready"; data: Summary };
@@ -107,6 +131,19 @@ function OutreachPage() {
   const [identity] = useState(() => getAlertIdentity());
   const [phoneInput, setPhoneInput] = useState(identity?.phone ?? "");
   const [phone, setPhone] = useState(identity?.phone ?? "");
+  const [pinInput, setPinInput] = useState("");
+  const [pin, setPin] = useState(""); // the VERIFIED pin (state + sessionStorage)
+  const [gateErrorKey, setGateErrorKey] = useState<I18nKey | null>(null);
+  const [gateErrorText, setGateErrorText] = useState<string | null>(null);
+  // First-login choose-your-PIN screen state
+  const [setupPinRaw, setSetupPinRaw] = useState("");
+  const [setupPinConfirm, setSetupPinConfirm] = useState("");
+  const [setupTokenRaw, setSetupTokenRaw] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  // Admin Team-tab PIN reset state (setup code = owner's SG_SETUP_TOKEN)
+  const [resetPinFor, setResetPinFor] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
   const [state, setState] = useState<LoadState>({ kind: "idle" });
   // 3-mode nav: /outreach?tab=alerts (Urgent Dispatch sub-tab) reuses the
   // existing tab state — default tab follows the query param when valid.
@@ -123,19 +160,52 @@ function OutreachPage() {
   /** Persistent on-screen confirmation of dashboard actions (owner-directed 2026-09-07). */
   const [actionConfirmed, setActionConfirmed] = useState<SubmitConfirmState | null>(null);
 
-  const load = useCallback(async (p: string) => {
+  const load = useCallback(async (p: string, pinValue?: string) => {
     setState({ kind: "loading" });
+    setGateErrorKey(null);
     try {
-      const res = await fetch(`/api/outreach/summary?phone=${encodeURIComponent(p)}`);
-      const data = (await res.json().catch(() => null)) as (Summary & { error?: string }) | null;
+      // The PIN travels in the x-sg-pin HEADER — never in the URL (history,
+      // share sheets, screenshots). Server-side pinFromRequest reads it.
+      const res = await fetch(`/api/outreach/summary?phone=${encodeURIComponent(p)}`, {
+        headers: pinValue ? { "x-sg-pin": pinValue } : {},
+      });
+      const data = (await res.json().catch(() => null)) as (Summary & ApiErrorBody) | null;
       if (res.status === 403) {
-        setState({ kind: "forbidden" });
+        const code = data?.code;
+        if (code === "must_set") {
+          // Roster phone, no PIN yet → first-login choose-your-PIN screen.
+          setPinInput("");
+          setState({ kind: "must_set" });
+        } else if (code === "not_staff") {
+          setState({ kind: "forbidden" });
+        } else if (code === "cooldown") {
+          setGateErrorKey("pin_cooldown");
+          setState({ kind: "idle" });
+        } else if (code === "wrong") {
+          setGateErrorKey("pin_wrong");
+          setState({ kind: "idle" });
+        } else {
+          // staff_pin_required (blank/malformed PIN) — stay on the gate form.
+          setGateErrorKey("pin_required");
+          setState({ kind: "idle" });
+        }
       } else if (res.ok && data?.ok) {
-        // Persist the roster identity (one-time entry per device, owner report
-        // 2026-09-11): the server's real roster name when present, else the
-        // calm "Staff" fallback — next visit the gate auto-skips (the effect
-        // below preloads from localStorage) and the nav shows Admin unlocked.
+        // Verified: persist identity + unlocked marker + session PIN. From
+        // here the nav shows Admin unlocked (🔓) and the PIN survives a
+        // same-tab reload; a NEW tab re-enters (sessionStorage is per-tab).
         setAlertIdentity(p, data.name ?? "Staff");
+        try {
+          localStorage.setItem(STAFF_UNLOCKED_KEY, "1");
+        } catch {
+          /* private mode — the session still works this visit */
+        }
+        try {
+          sessionStorage.setItem(STAFF_PIN_SESSION, pinValue ?? "");
+        } catch {
+          /* private mode */
+        }
+        setPin(pinValue ?? "");
+        setPinInput(pinValue ?? "");
         setState({ kind: "ready", data: data as Summary });
       } else {
         setState({
@@ -148,10 +218,116 @@ function OutreachPage() {
     }
   }, []);
 
+  // Mount: restore a same-tab session (identity + unlocked marker + session
+  // PIN all present) — otherwise show the gate form. No auto-load on typing:
+  // the Open button is the only door (PIN is part of proving who you are).
   useEffect(() => {
-    if (phone.length >= 10) void load(phone);
-    else setState({ kind: "idle" });
-  }, [phone, load]);
+    let sessionPin = "";
+    let unlocked = "";
+    try {
+      sessionPin = sessionStorage.getItem(STAFF_PIN_SESSION) ?? "";
+      unlocked = localStorage.getItem(STAFF_UNLOCKED_KEY) ?? "";
+    } catch {
+      /* private mode */
+    }
+    if (identity && unlocked === "1" && sessionPin) {
+      setPin(sessionPin);
+      setPinInput(sessionPin);
+      void load(identity.phone, sessionPin);
+    } else {
+      setState({ kind: "idle" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** The gate's Open button: normalize phone + PIN, then let the server judge. */
+  const openGate = () => {
+    const digits = phoneInput.replace(/[^0-9]/g, "");
+    if (digits.length < 10) return;
+    setPhone(digits);
+    setGateErrorKey(null);
+    setState({ kind: "loading" });
+    void load(digits, pinInput.trim() || undefined);
+  };
+
+  /** First-login choose-your-PIN submit (server + token gated). */
+  const submitSetupPin = async () => {
+    setGateErrorKey(null);
+    setGateErrorText(null);
+    const p = setupPinRaw.trim();
+    if (!/^\d{4,6}$/.test(p)) {
+      setGateErrorKey("pin_bad_pin");
+      return;
+    }
+    if (p !== setupPinConfirm.trim()) {
+      setGateErrorKey("pin_mismatch");
+      return;
+    }
+    setSetupBusy(true);
+    try {
+      const res = await fetch("/api/outreach/set-pin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone, pin: p, token: setupTokenRaw.trim() }),
+      });
+      const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
+      if (res.ok && data?.ok) {
+        setSetupPinRaw("");
+        setSetupPinConfirm("");
+        setSetupTokenRaw("");
+        setState({ kind: "loading" });
+        void load(phone, p);
+      } else if (data?.code === "bad_token") {
+        setGateErrorKey("pin_bad_token");
+        setState({ kind: "must_set" });
+      } else if (data?.code === "bad_pin") {
+        setGateErrorKey("pin_bad_pin");
+        setState({ kind: "must_set" });
+      } else {
+        setGateErrorText(data?.error ?? "That didn't go through — try again in a moment.");
+        setState({ kind: "must_set" });
+      }
+    } catch {
+      setGateErrorText("No connection right now — nothing changed.");
+    } finally {
+      setSetupBusy(false);
+    }
+  };
+
+  /** Admin Team-tab PIN reset (admin phone+PIN + setup token, server-gated). */
+  const doResetPin = async (target: RosterMember) => {
+    setResetBusy(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/outreach/reset-pin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          adminPhone: phone,
+          adminPin: pin,
+          targetPhone: target.phone,
+          token: resetToken.trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
+      if (res.ok && data?.ok) {
+        setActionConfirmed({ saved: true, kind: "saved", line: t("reset_pin_done") });
+        setResetPinFor(null);
+        setResetToken("");
+        await load(phone, pin);
+      } else if (data?.code === "bad_token") {
+        setActionConfirmed({ saved: false, kind: "draft", line: t("pin_bad_token") });
+        setActionError(t("pin_bad_token"));
+      } else {
+        setActionConfirmed({ saved: false, kind: "draft", line: data?.error ?? t("reset_pin_denied") });
+        setActionError(data?.error ?? t("reset_pin_denied"));
+      }
+    } catch {
+      setActionError("No connection — nothing changed.");
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   const act = async (kind: "sweep" | "need" | "alert", id: string, action: string, note?: string) => {
     setActing(true);
@@ -160,9 +336,9 @@ function OutreachPage() {
       const res = await fetch("/api/outreach/act", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone, kind, id, action, note: note ?? "" }),
+        body: JSON.stringify({ phone, kind, id, action, note: note ?? "", pin }),
       });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      const data = (await res.json().catch(() => null)) as (ApiErrorBody & { ok?: boolean }) | null;
       if (res.ok && data?.ok) {
         // Persistent on-screen confirmation (owner-directed): the action LANDED.
         // Dashboard writes are record-keeping; there's no live push to a second
@@ -182,10 +358,20 @@ function OutreachPage() {
         });
         setClearFor(null);
         setOutcome("");
-        await load(phone);
+        await load(phone, pin);
       } else {
         setActionConfirmed({ saved: false, kind: "draft", line: data?.error ?? "That didn't go through — nothing changed." });
         setActionError(data?.error ?? "That didn't go through — nothing changed.");
+        // PIN session no longer valid (reset elsewhere, cooldown, or wipe):
+        // drop back to the gate with the calm inline line so the staff member
+        // re-proves themselves — never a silent partial session.
+        const code = data?.code;
+        if (code === "must_set") {
+          setState({ kind: "must_set" });
+        } else if (code === "wrong" || code === "cooldown" || code === "staff_pin_required") {
+          setState({ kind: "idle" });
+          setGateErrorKey(code === "cooldown" ? "pin_cooldown" : code === "wrong" ? "pin_wrong" : "pin_required");
+        }
       }
     } catch {
       setActionError("No connection — nothing changed.");
@@ -237,48 +423,66 @@ function OutreachPage() {
         )}
 
         <Card>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-btn font-medium">Your outreach phone</span>
-            <div className="flex gap-2">
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-btn font-medium">Your outreach phone</span>
+              <div className="flex gap-2">
+                <input
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  placeholder="e.g. 415 555-0142"
+                  inputMode="tel"
+                  className="min-h-[52px] w-full min-w-0 flex-1 rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
+                />
+                <Button variant="secondary" disabled={!phoneLooksOk(phoneInput)} onClick={openGate}>
+                  Open
+                </Button>
+              </div>
+              <span className="text-small text-sg-ink-soft">Only numbers on the outreach roster can open this space.</span>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-btn font-medium">{t("pin_label")}</span>
               <input
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                placeholder="e.g. 415 555-0142"
-                inputMode="tel"
-                className="min-h-[52px] w-full min-w-0 flex-1 rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder={t("pin_placeholder")}
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={6}
+                className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
               />
-              <Button
-                variant="secondary"
-                disabled={!phoneLooksOk(phoneInput)}
-                onClick={() => {
-                  const digits = phoneInput.replace(/[^0-9]/g, "");
-                  // One-time entry per device (owner report 2026-09-11):
-                  // persist the identity BEFORE the server answers so a shared
-                  // Android that can't re-render still auto-opens next visit.
-                  // Name = the loaded roster name when this is the same number
-                  // we already opened, else "Staff" — load() upgrades it to
-                  // the roster's real name once the server answers.
-                  setAlertIdentity(digits, phone === digits && data?.name ? data.name : "Staff");
-                  setPhone(digits);
-                }}
-              >
-                Open
-              </Button>
-            </div>
-            <span className="text-small text-sg-ink-soft">Only numbers on the outreach roster can open this space.</span>
-          </label>
+              <span className="text-small text-sg-ink-soft">{t("pin_forgot")}</span>
+            </label>
+            {gateErrorKey || gateErrorText ? (
+              <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
+                {gateErrorKey ? t(gateErrorKey) : gateErrorText}
+              </p>
+            ) : null}
+          </div>
         </Card>
 
         {/* Shared-device privacy: a quiet way to forget the persisted identity
-            (anonymous-first rules). Shown once a phone is in use on this
-            device — clears localStorage AND the gate. */}
+            + PIN session (anonymous-first rules). Clears localStorage AND
+            sessionStorage AND the in-memory gate, so the next person starts
+            locked. */}
         {phone.length >= 10 ? (
           <button
             type="button"
             onClick={() => {
               clearAlertIdentity();
+              try {
+                localStorage.removeItem(STAFF_UNLOCKED_KEY);
+                sessionStorage.removeItem(STAFF_PIN_SESSION);
+              } catch {
+                /* private mode */
+              }
               setPhone("");
               setPhoneInput("");
+              setPinInput("");
+              setPin("");
+              setGateErrorKey(null);
+              setGateErrorText(null);
+              setState({ kind: "idle" });
             }}
             className="self-start text-small text-sg-ink-soft underline underline-offset-2 hover:text-sg-ink"
           >
@@ -303,13 +507,63 @@ function OutreachPage() {
           </div>
         ) : null}
 
-        {phone.length < 10 ? (
+        {state.kind === "must_set" ? (
+          <Card>
+            <h2 className="text-h2">{t("pin_setup_title")}</h2>
+            <p className="mt-1 text-small text-sg-ink-soft">{t("pin_setup_body")}</p>
+            <div className="mt-4 flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-btn font-medium">{t("pin_label")}</span>
+                <input
+                  value={setupPinRaw}
+                  onChange={(e) => setSetupPinRaw(e.target.value)}
+                  placeholder={t("pin_placeholder")}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={6}
+                  className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-btn font-medium">{t("pin_setup_confirm")}</span>
+                <input
+                  value={setupPinConfirm}
+                  onChange={(e) => setSetupPinConfirm(e.target.value)}
+                  placeholder={t("pin_placeholder")}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={6}
+                  className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-btn font-medium">{t("pin_setup_code")}</span>
+                <input
+                  value={setupTokenRaw}
+                  onChange={(e) => setSetupTokenRaw(e.target.value)}
+                  placeholder={t("pin_setup_code_ph")}
+                  autoComplete="off"
+                  className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
+                />
+                <span className="text-small text-sg-ink-soft">{t("pin_setup_code_help")}</span>
+              </label>
+              <Button full disabled={setupBusy} onClick={() => void submitSetupPin()}>
+                {t("pin_setup_submit")}
+              </Button>
+              {gateErrorKey || gateErrorText ? (
+                <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
+                  {gateErrorKey ? t(gateErrorKey) : gateErrorText}
+                </p>
+              ) : null}
+            </div>
+          </Card>
+        ) : phone.length < 10 ? (
           <EmptyState
             icon={<HandsIcon size={28} />}
             title="Whose dashboard is this?"
             body="Enter the outreach phone you use with the team, so we can check you're on the roster."
           />
-        ) : state.kind === "loading" || state.kind === "idle" ? (
+        ) : state.kind === "loading" ? (
           <SkeletonRows rows={3} />
         ) : state.kind === "forbidden" ? (
           <EmptyState
@@ -322,7 +576,7 @@ function OutreachPage() {
             icon={<HandsIcon size={28} />}
             title="The dashboard isn't up yet"
             body={state.message}
-            steps={<Button variant="secondary" full onClick={() => void load(phone)}>Try again</Button>}
+            steps={<Button variant="secondary" full onClick={() => void load(phone, pin)}>Try again</Button>}
           />
         ) : data ? (
           <>
@@ -613,6 +867,59 @@ function OutreachPage() {
                       same gate as the rest of this section; the API enforces it
                       server-side too (staff_limited → 403). */}
                   <StaffSmsTeam phone={phone} />
+                  {/* Staff roster + PIN resets (owner-directed 2026-09-11).
+                      Admin-only (server-gated; Tracey staff_limited never sees
+                      this payload). Reset needs the admin's own PIN + the
+                      owner's setup code — entered once per reset. */}
+                  {data.roster && data.roster.length > 0 ? (
+                    <section className="flex flex-col gap-3" aria-label="Team PINs">
+                      <SectionTitle>Staff PINs</SectionTitle>
+                      {data.roster.map((m) => (
+                        <Card key={m.phone}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-body font-medium">{m.name}</p>
+                              <p className="mt-0.5 text-small text-sg-ink-soft">
+                                {m.role === "admin" ? "Admin" : "Staff"}
+                                {m.pinMustSet ? ` · ${t("roster_must_set")}` : ""}
+                              </p>
+                            </div>
+                            {resetPinFor === m.phone ? (
+                              <div className="flex w-full max-w-[220px] flex-col gap-2">
+                                <label className="flex flex-col gap-1">
+                                  <span className="text-small font-medium">{t("reset_pin_token")}</span>
+                                  <input
+                                    value={resetToken}
+                                    onChange={(e) => setResetToken(e.target.value)}
+                                    placeholder={t("reset_pin_token_ph")}
+                                    autoComplete="off"
+                                    className="min-h-[48px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-3 text-body text-sg-ink outline-none focus:border-sg-ink"
+                                  />
+                                </label>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="secondary"
+                                    full
+                                    disabled={resetBusy || !resetToken.trim()}
+                                    onClick={() => void doResetPin(m)}
+                                  >
+                                    Reset
+                                  </Button>
+                                  <Button variant="quiet" full disabled={resetBusy} onClick={() => { setResetPinFor(null); setResetToken(""); }}>
+                                    Never mind
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <Button variant="quiet" onClick={() => { setResetPinFor(m.phone); setResetToken(""); }}>
+                                {t("reset_pin")}
+                              </Button>
+                            )}
+                          </div>
+                        </Card>
+                      ))}
+                    </section>
+                  ) : null}
                 </section>
               ) : (
                 <section className="flex flex-col gap-3" aria-label="Chat">
