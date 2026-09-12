@@ -25,7 +25,7 @@ export interface SubTab {
   to: string;
   search?: Record<string, string>;
   /** Badge slot: which live count decorates this chip (fetched in shell). */
-  badge?: "needs" | "checkin" | "sweeps" | "alerts";
+  badge?: "checkin" | "sweeps" | "alerts";
 }
 
 export interface ModeDef {

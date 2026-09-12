@@ -65,7 +65,6 @@ function demoResourceRows(): ResourceRow[] {
     openNow: r.openNow ?? false,
   }));
 }
- * inside the fn keeps this offline-safe; `source` drives the honest label). */
 function useResources(): {
   resources: ResourceRow[];
   loading: boolean;

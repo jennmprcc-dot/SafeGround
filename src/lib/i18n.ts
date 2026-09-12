@@ -294,6 +294,12 @@ const EN = {
   disc_back_help: "Back to Find help",
   ht_disc_link: "HomeTeam Safety & Liability Disclaimer",
   hr_disc_link: "HomeTeam Help Requests — Safety & Liability Disclaimer",
+  // Single app-wide safety gate (PASS 1 2026-09-12) — chrome only; the legal
+  // body ships from src/components/disclaimer.tsx (EN-only, immutable).
+  sg_gate_intro: "Please read the full disclaimer below before you continue.",
+  sg_gate_agree: "I've read and agree to the Safety & Liability terms",
+  sg_gate_need: "Please read and agree to the disclaimer above to continue — no rush.",
+  sg_gate_continue: "Continue",
   ht_their_phone: "Their phone",
   ht_their_phone_ph: "10 digits, e.g. 4155550142",
   ht_their_phone_help: "Outreach logs on the neighbor's behalf — the need is attributed to them.",
@@ -820,6 +826,12 @@ const ES: Partial<Record<I18nKey, string>> = {
   disc_back_help: "Volver a Buscar ayuda",
   ht_disc_link: "HomeTeam Safety & Liability Disclaimer",
   hr_disc_link: "HomeTeam Help Requests — Safety & Liability Disclaimer",
+  // Single app-wide safety gate (PASS 1 2026-09-12) — chrome only (draft ES,
+  // needs human/owner check like the Pass 1 button captions).
+  sg_gate_intro: "Por favor, lee el aviso completo abajo antes de continuar.",
+  sg_gate_agree: "He leído y acepto los términos de Seguridad y Responsabilidad",
+  sg_gate_need: "Lee y acepta el aviso de arriba para continuar — sin prisa.",
+  sg_gate_continue: "Continuar",
   ht_their_phone: "Su teléfono",
   ht_their_phone_ph: "10 dígitos, p. ej. 4155550142",
   ht_their_phone_help: "El equipo anota por el vecino — la necesidad queda a su nombre.",

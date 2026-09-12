@@ -119,7 +119,6 @@ function TabAnchor({
 
 function useModeNavBadges(activeMode: Mode) {
   const { signedIn, displayName } = useAuth();
-  const [openNeeds, setOpenNeeds] = useState<number | null>(null);
   const [sweepCount, setSweepCount] = useState<number | null>(null);
   const [selfOverdue, setSelfOverdue] = useState(false);
   const [incomingInvite, setIncomingInvite] = useState(false);
@@ -127,15 +126,14 @@ function useModeNavBadges(activeMode: Mode) {
 
   useEffect(() => {
     let alive = true;
-    // Outreach summary counts feed the Admin alerts badge (+hometeam Give);
-    // sweeps badge is the public listSweeps read. Everything degrades
-    // silently when the DB is unreachable (spec §8).
+    // Outreach summary counts feed the Admin alerts badge; sweeps badge is
+    // the public listSweeps read. Everything degrades silently when the DB is
+    // unreachable (spec §8).
     if (activeMode === "hometeam" || activeMode === "admin") {
       fetch("/api/outreach/summary?phone=")
         .then((r) => (r.ok ? r.json().catch(() => null) : null))
-        .then((d: { ok?: boolean; counts?: { openNeeds?: number; activeAlerts?: number } } | null) => {
+        .then((d: { ok?: boolean; counts?: { activeAlerts?: number } } | null) => {
           if (!alive || !d?.ok) return;
-          if (typeof d.counts?.openNeeds === "number") setOpenNeeds(d.counts.openNeeds);
           if (typeof d.counts?.activeAlerts === "number") setActiveAlerts(d.counts.activeAlerts);
         })
         .catch(() => undefined);
@@ -168,7 +166,7 @@ function useModeNavBadges(activeMode: Mode) {
     };
   }, [activeMode, signedIn, displayName]);
 
-  return { openNeeds, sweepCount, selfOverdue, incomingInvite, activeAlerts };
+  return { sweepCount, selfOverdue, incomingInvite, activeAlerts };
 }
 
 function ModeNav() {
@@ -277,17 +275,6 @@ function ModeNav() {
   const activeSub = activeSubId(hint, modeDef);
 
   const badgeFor = (s: SubTab): ReactNode => {
-    if (s.badge === "needs" && (badges.openNeeds ?? 0) > 0) {
-      const n = badges.openNeeds ?? 0;
-      return (
-        <>
-          <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
-            {n > 9 ? "9+" : String(n)}
-          </span>
-          <span className="sr-only" role="status">{n} open needs</span>
-        </>
-      );
-    }
     if (s.badge === "sweeps" && (badges.sweepCount ?? 0) > 0) {
       const n = badges.sweepCount ?? 0;
       return (

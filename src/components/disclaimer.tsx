@@ -191,13 +191,6 @@ export function DisclaimerText({
   );
 }
 
-/** Full-disclaimer reminder-line link target labels (document titles — the
- * immutable legal names; same text in both languages). Kept for the archived
- * per-feature gates (routes removed PASS 1 2026-09-12; the single app-wide
- * gate below replaces them). */
-export const HOMETEAM_DISCLAIMER_ROUTE = "/hometeam-disclaimer";
-export const HELP_REQUESTS_DISCLAIMER_ROUTE = "/help-requests-disclaimer";
-
 /* ── SINGLE APP-WIDE GATE (owner-directed 2026-09-12) ─────────────
  * The two per-feature gates (HomeTeam helper join + HomeTeam help requests)
  * are replaced by ONE first-open Safety & Liability gate shown before any
