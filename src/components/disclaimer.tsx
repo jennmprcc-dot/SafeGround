@@ -191,7 +191,76 @@ export function DisclaimerText({
   );
 }
 
-/** Full-disclaimer reminder-line link target labels (document titles — the
- * immutable legal names; same text in both languages). */
-export const HOMETEAM_DISCLAIMER_ROUTE = "/hometeam-disclaimer";
-export const HELP_REQUESTS_DISCLAIMER_ROUTE = "/help-requests-disclaimer";
+/* ── SINGLE APP-WIDE GATE (owner-directed 2026-09-12) ─────────────
+ * The two per-feature gates (HomeTeam helper join + HomeTeam help requests)
+ * are replaced by ONE first-open Safety & Liability gate shown before any
+ * feature is usable. The legal body below is the owner's verbatim Part A
+ * text GENERALIZED ONLY for app-wide scope: "HomeTeam" → "SafeGround" in the
+ * sentences that refer to the app. Every other word is untouched — same
+ * paragraphs, same order, same risk/liability contract. EN-only (legal). */
+export const SG_SAFETY_DISCLAIMER_TITLE = "SafeGround Safety & Liability Disclaimer";
+
+export const SG_SAFETY_DISCLAIMER_BLOCKS: DisclaimerBlock[] = [
+  {
+    kind: "p",
+    text:
+      "SafeGround helps people connect, but all meetups are voluntary and at your own risk.",
+  },
+  {
+    kind: "p",
+    text:
+      "MPRCC provides communication tools only. We do not screen, verify, or guarantee the identity, safety, or behavior of any person you choose to meet through the app.",
+  },
+  { kind: "p", text: "By using SafeGround, you agree to the following:" },
+  { kind: "h", text: "Safety Expectations" },
+  {
+    kind: "list",
+    items: [
+      "Meet in pairs or teams. Never meet a new person alone.",
+      "Choose public places. Parks, libraries, community centers, coffee shops, or other visible, populated locations.",
+      "Tell someone you trust. Share your plans, location, and expected return time.",
+      "Leave if you feel unsafe. You can end a meetup or communication at any time.",
+      "You are responsible for your own safety.",
+    ],
+  },
+  { kind: "h", text: "No Liability" },
+  {
+    kind: "p",
+    text:
+      "MPRCC, its staff, volunteers, and partners are not liable for any harm, injury, loss, or dispute that occurs before, during, or after a meetup arranged through SafeGround.",
+  },
+  { kind: "p", text: "This includes, without limitation:" },
+  {
+    kind: "list",
+    items: [
+      "physical harm",
+      "property damage",
+      "theft",
+      "emotional distress",
+      "misconduct or criminal behavior by any user or third party",
+    ],
+  },
+  {
+    kind: "p",
+    text:
+      "You understand and agree that MPRCC does not supervise, control, or participate in any in-person meetings, and cannot guarantee the conduct of any user.",
+  },
+  { kind: "h", text: "Assumption of Risk" },
+  {
+    kind: "p",
+    text:
+      "By choosing to meet someone through SafeGround, you voluntarily assume all risks associated with in-person interactions, including risks related to meeting strangers, traveling to a location, or sharing personal information.",
+  },
+  { kind: "h", text: "No Duty to Protect" },
+  {
+    kind: "p",
+    text:
+      "MPRCC does not have a legal duty to protect you from the actions of other users. You are solely responsible for deciding whether, when, and how to meet someone.",
+  },
+  { kind: "h", text: "Use of the App" },
+  {
+    kind: "p",
+    text:
+      "Continued use of SafeGround constitutes your acceptance of these terms. If you do not agree, do not arrange or participate in any meetups.",
+  },
+];

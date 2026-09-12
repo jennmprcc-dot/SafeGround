@@ -3,12 +3,13 @@
  *
  * Phone-first: enter the outreach phone used with the team; the server checks
  * the live roster and returns a per-role payload. Jenn + Bambi (admin) see
- * everything — sweeps verify/flag/resolve, open needs with claim/deliver,
- * active + resolved alerts with outcomes + analytics, the peer-support queue
- * link, and the push-notice stub. Tracey-style staff_limited sees ONLY
- * sweeps verify/flag + open needs + active alerts (kind + note, no contact
- * digits, no outcomes) — admin sections never render because the payload
- * never contains them. Non-roster → the calm 404-equivalent, no counts.
+ * everything — sweeps verify/flag/resolve, active + resolved alerts with
+ * outcomes + analytics, the peer-support queue link, and the push-notice
+ * stub. Tracey-style staff_limited sees ONLY sweeps verify/flag + active
+ * alerts (kind + note, no contact digits, no outcomes) — admin sections
+ * never render because the payload never contains them. Non-roster → the
+ * calm 404-equivalent, no counts. (PASS 1 2026-09-12: the open-needs
+ * claim/deliver tab is removed — HomeTeam needs are decommissioned.)
  *
  * Server-side role enforcement lives in /api/outreach/summary + /act (and
  * the resolve_emergency_alert RPC itself); this page only renders what the
@@ -33,7 +34,7 @@ import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfi
 const STAFF_UNLOCKED_KEY = "sg.staff.unlocked";
 const STAFF_PIN_SESSION = "sg.staff.pin";
 
-type Tab = "sweeps" | "needs" | "alerts" | "more";
+type Tab = "sweeps" | "alerts" | "more";
 
 interface SweepItem {
   id: string;
@@ -43,17 +44,6 @@ interface SweepItem {
   note: string | null;
   lat: number;
   lng: number;
-  createdAt: string | null;
-}
-interface NeedItem {
-  id: string;
-  items: string[];
-  note: string | null;
-  status: string;
-  visibility: string;
-  requesterLabel: string;
-  claimedByName: string | null;
-  assignedToName: string | null;
   createdAt: string | null;
 }
 interface AlertItem {
@@ -85,7 +75,6 @@ interface Summary {
   push: { configured: boolean; note: string };
   counts: { sweepsToVerify: number; openNeeds: number; activeAlerts: number; peerOpen?: number };
   sweeps: SweepItem[];
-  needs: NeedItem[];
   alerts: AlertItem[];
   resolved?: AlertItem[];
   roster?: RosterMember[];
@@ -150,7 +139,7 @@ function OutreachPage() {
   // existing tab state — default tab follows the query param when valid.
   const outreachSearch = useSearch({ from: "/outreach" }) as { tab?: string };
   const initialTab: Tab =
-    outreachSearch.tab === "alerts" || outreachSearch.tab === "needs" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more"
+    outreachSearch.tab === "alerts" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more"
       ? outreachSearch.tab
       : "sweeps";
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -587,14 +576,10 @@ function OutreachPage() {
           />
         ) : data ? (
           <>
-            <div className="grid grid-cols-3 gap-2" role="status" aria-label="Queue counts">
+            <div className="grid grid-cols-2 gap-2" role="status" aria-label="Queue counts">
               <Card className="p-3 text-center">
                 <p className="text-h1">{data.counts.sweepsToVerify}</p>
                 <p className="text-small text-sg-ink-soft">Sweeps to verify</p>
-              </Card>
-              <Card className="p-3 text-center">
-                <p className="text-h1">{data.counts.openNeeds}</p>
-                <p className="text-small text-sg-ink-soft">Open needs</p>
               </Card>
               <Card className="p-3 text-center">
                 <p className="text-h1">{data.counts.activeAlerts}</p>
@@ -603,7 +588,7 @@ function OutreachPage() {
             </div>
 
             <nav className="flex gap-2 overflow-x-auto" aria-label="Dashboard sections">
-              {(["sweeps", "needs", "alerts", "more"] as Tab[]).map((t) => (
+              {(["sweeps", "alerts", "more"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -615,7 +600,7 @@ function OutreachPage() {
                       : "min-h-[48px] flex-1 rounded-[12px] border-2 border-sg-line bg-sg-card px-3 text-btn text-sg-ink"
                   }
                 >
-                  {t === "sweeps" ? "Sweeps" : t === "needs" ? "Needs" : t === "alerts" ? "Alerts" : admin ? "Team" : "Chat"}
+                  {t === "sweeps" ? "Sweeps" : t === "alerts" ? "Alerts" : admin ? "Team" : "Chat"}
                 </button>
               ))}
             </nav>
@@ -662,54 +647,6 @@ function OutreachPage() {
                         <div className="mt-3">
                           <Button variant="quiet" full disabled={acting} onClick={() => void act("sweep", s.id, "resolve")}>
                             Resolve
-                          </Button>
-                        </div>
-                      ) : null}
-                    </Card>
-                  ))
-                )}
-              </section>
-            ) : null}
-
-            {tab === "needs" ? (
-              <section className="flex flex-col gap-3" aria-label="Open needs">
-                <SectionTitle>Open needs</SectionTitle>
-                {data.needs.length === 0 ? (
-                  <EmptyState
-                    icon={<CheckCircleIcon size={28} />}
-                    title="Nothing waiting"
-                    body="Open supply needs land here — claim one to get it moving."
-                  />
-                ) : (
-                  data.needs.map((n) => (
-                    <Card key={n.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-body font-medium">
-                            {(n.items ?? []).join(", ") || "A need"}
-                          </p>
-                          <p className="mt-0.5 text-small text-sg-ink-soft">
-                            {n.requesterLabel}{n.visibility === "assign_only" ? " · Coordinator assigned" : ""}
-                            {" · "}{timeLabel(n.createdAt)}
-                          </p>
-                          {n.note ? <p className="mt-1 break-words text-small text-sg-ink-soft">{n.note}</p> : null}
-                          {n.claimedByName ? <p className="mt-1 text-small text-sg-ink-soft">Claimed by {n.claimedByName}.</p> : null}
-                          {n.assignedToName ? <p className="mt-1 text-small text-sg-ink-soft">Assigned to {n.assignedToName}.</p> : null}
-                        </div>
-                        <StatusBadge kind={n.status === "open" ? "Active" : n.status === "delivered" ? "Resolved" : "Planned"}>
-                          {n.status === "in_progress" ? "On the way" : n.status}
-                        </StatusBadge>
-                      </div>
-                      {n.status === "open" ? (
-                        <div className="mt-3">
-                          <Button variant="secondary" full disabled={acting} onClick={() => void act("need", n.id, "claim")}>
-                            Claim — I&apos;ll coordinate this
-                          </Button>
-                        </div>
-                      ) : n.status === "claimed" || n.status === "in_progress" ? (
-                        <div className="mt-3">
-                          <Button full disabled={acting} onClick={() => void act("need", n.id, "deliver")}>
-                            Mark delivered
                           </Button>
                         </div>
                       ) : null}

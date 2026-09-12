@@ -231,6 +231,8 @@ function HomePage() {
               <Link to="/urgent-need" className="mt-3 block">
                 <Button full>{t("un_home_cta")}</Button>
               </Link>
+              {/* Button caption (owner copy 2026-09-12) — one calm line under. */}
+              <p className="mt-1.5 px-1 text-small text-sg-ink-soft">{t("un_caption")}</p>
             </div>
           </div>
         </Card>
@@ -248,6 +250,8 @@ function HomePage() {
               <Link to="/peer-support" className="mt-3 block">
                 <Button full>{t("home_peer_cta")}</Button>
               </Link>
+              {/* Button caption (owner copy 2026-09-12) — one calm line under. */}
+              <p className="mt-1.5 px-1 text-small text-sg-ink-soft">{t("ps_caption")}</p>
             </div>
           </div>
         </Card>
@@ -297,7 +301,14 @@ function HomePage() {
             </span>
             <div className="min-w-0 flex-1">
               <h2 className="text-h2">{t("home_story_title")}</h2>
-              <p className="mt-1 text-body text-sg-ink-soft">{t("home_story_body")}</p>
+              <p className="mt-1 text-body text-sg-ink-soft">
+                {t("home_story_body_a")}
+                {/* Resource mention links to Find Help (owner-directed 2026-09-12). */}
+                <Link to="/help" className="text-sg-sky underline underline-offset-2">
+                  {t("home_story_body_link")}
+                </Link>
+                {t("home_story_body_b")}
+              </p>
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new Event("sg:open-welcome"))}

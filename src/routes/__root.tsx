@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { AuthProvider } from "~/lib/auth";
 import { getLang } from "~/lib/i18n";
 import { WelcomeOverlay } from "~/components/welcome";
+import { SafetyGate } from "~/components/safetyGate";
 import appCss from "~/styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -82,6 +83,10 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
+        {/* Single first-open Safety &amp; Liability gate — z-[70], above
+            WelcomeOverlay's z-[60], so it truly comes first and nothing is
+            usable beneath it until accepted (fail-closed). */}
+        <SafetyGate />
         <WelcomeOverlay />
         <Scripts />
       </body>

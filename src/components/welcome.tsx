@@ -17,7 +17,7 @@
  * chosen mode (sg.mode) and navigates to its home.
  */
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import qrcode from "qrcode-generator";
 import { Button, Card } from "~/components/ui";
 import { useLanguage } from "~/lib/i18n";
@@ -362,14 +362,24 @@ export function WelcomeOverlay() {
           <p className="text-body text-sg-ink-soft">
             SafeGround is your free, private helper.
             <br />
-            Find food and shelter fast. Get heads-up alerts about sweeps. Let your people know you're okay with one
+            Find{" "}
+            {/* Resource mention links to Find Help (owner-directed 2026-09-12):
+                same choose() mechanics as the doors — closes + navigates. */}
+            <Link
+              to="/help"
+              onClick={() => choose("hometeam", "/help")}
+              className="text-sg-sky underline underline-offset-2"
+            >
+              food and shelter
+            </Link>{" "}
+            fast. Get heads-up alerts about sweeps. Let your people know you're okay with one
             tap. No account. No background tracking. Just real help when you need it.
           </p>
         </div>
 
         {/* 5 · Mode choice — one calm step, two equal doors (owner copy):
-         * HomeTeam (sage hint) or Neighbor (sky hint). Each door is a button
-         * card: seen-flag + mode write + navigate; zero server calls. */}
+         * I Want to Help (sage hint) or I Need Help (sky hint). Each door is a
+         * button card: seen-flag + mode write + navigate; zero server calls. */}
         <div className="flex flex-col gap-2">
           <h2 className="text-h2">{t("welcome_choice_title")}</h2>
           <button

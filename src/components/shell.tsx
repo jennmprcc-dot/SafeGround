@@ -119,7 +119,6 @@ function TabAnchor({
 
 function useModeNavBadges(activeMode: Mode) {
   const { signedIn, displayName } = useAuth();
-  const [openNeeds, setOpenNeeds] = useState<number | null>(null);
   const [sweepCount, setSweepCount] = useState<number | null>(null);
   const [selfOverdue, setSelfOverdue] = useState(false);
   const [incomingInvite, setIncomingInvite] = useState(false);
@@ -127,15 +126,14 @@ function useModeNavBadges(activeMode: Mode) {
 
   useEffect(() => {
     let alive = true;
-    // Needs Queue badge (HomeTeam ❤️) + alerts badge (Admin 🚨) share the
-    // outreach summary counts; sweeps badge is the public listSweeps read.
-    // Everything degrades silently when the DB is unreachable (spec §8).
+    // Outreach summary counts feed the Admin alerts badge; sweeps badge is
+    // the public listSweeps read. Everything degrades silently when the DB is
+    // unreachable (spec §8).
     if (activeMode === "hometeam" || activeMode === "admin") {
       fetch("/api/outreach/summary?phone=")
         .then((r) => (r.ok ? r.json().catch(() => null) : null))
-        .then((d: { ok?: boolean; counts?: { openNeeds?: number; activeAlerts?: number } } | null) => {
+        .then((d: { ok?: boolean; counts?: { activeAlerts?: number } } | null) => {
           if (!alive || !d?.ok) return;
-          if (typeof d.counts?.openNeeds === "number") setOpenNeeds(d.counts.openNeeds);
           if (typeof d.counts?.activeAlerts === "number") setActiveAlerts(d.counts.activeAlerts);
         })
         .catch(() => undefined);
@@ -168,7 +166,7 @@ function useModeNavBadges(activeMode: Mode) {
     };
   }, [activeMode, signedIn, displayName]);
 
-  return { openNeeds, sweepCount, selfOverdue, incomingInvite, activeAlerts };
+  return { sweepCount, selfOverdue, incomingInvite, activeAlerts };
 }
 
 function ModeNav() {
@@ -277,17 +275,6 @@ function ModeNav() {
   const activeSub = activeSubId(hint, modeDef);
 
   const badgeFor = (s: SubTab): ReactNode => {
-    if (s.badge === "needs" && (badges.openNeeds ?? 0) > 0) {
-      const n = badges.openNeeds ?? 0;
-      return (
-        <>
-          <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sg-clay px-1 text-[10px] font-bold text-white">
-            {n > 9 ? "9+" : String(n)}
-          </span>
-          <span className="sr-only" role="status">{n} open needs</span>
-        </>
-      );
-    }
     if (s.badge === "sweeps" && (badges.sweepCount ?? 0) > 0) {
       const n = badges.sweepCount ?? 0;
       return (
@@ -490,7 +477,7 @@ export function CrisisSheet({ open, onClose }: { open: boolean; onClose: () => v
         <p className="text-body text-sg-ink-soft">
           {t("crisis_intro")}
         </p>
-        {/* MPRCC Safe Team: one-tap in-app peer-support request — never 911. */}
+        {/* MPRCC Peer Support Staff: one-tap in-app peer-support request — never 911. */}
         <div className="rounded-[12px] border border-sg-sage/60 bg-sg-sage-wash/60 p-4">
           <h3 className="text-h2">{t("crisis_safe_title")}</h3>
           <p className="mt-1 text-small text-sg-ink-soft">{t("crisis_safe_body")}</p>
@@ -557,6 +544,18 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             <CheckIcon size={22} aria-hidden />
             My alerts
           </Link>
+          {/* Give Money (owner-directed 2026-09-12): BetterWorld gift link —
+              secondary entry; the primary spot is the "I Want to Help" mode. */}
+          <a
+            href="https://mprcc.betterworld.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-sage-deep hover:bg-sg-paper"
+          >
+            <CheckIcon size={22} aria-hidden />
+            Give Money
+          </a>
           <Link
             to="/privacy"
             onClick={onClose}
@@ -678,18 +677,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link to="/privacy" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
             Privacy
-          </Link>
-        </div>
-        {/* Safety & Liability disclaimers (owner-approved verbatim 2026-09-11):
-            persistent links so the full text is readable anytime — HomeTeam
-            helper + Help-Requests sides. Labels are the immutable legal
-            document titles (EN in both languages). */}
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-0">
-          <Link to="/hometeam-disclaimer" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
-            HomeTeam Safety &amp; Liability Disclaimer
-          </Link>
-          <Link to="/help-requests-disclaimer" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
-            HomeTeam Help Requests — Safety &amp; Liability Disclaimer
           </Link>
         </div>
         <p className="text-small text-sg-ink-soft">© 2026 MPRCC — Marin Peer Resource Community Collective.</p>

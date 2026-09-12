@@ -25,7 +25,7 @@ export interface SubTab {
   to: string;
   search?: Record<string, string>;
   /** Badge slot: which live count decorates this chip (fetched in shell). */
-  badge?: "needs" | "checkin" | "sweeps" | "alerts";
+  badge?: "checkin" | "sweeps" | "alerts";
 }
 
 export interface ModeDef {
@@ -42,8 +42,10 @@ export const MODES: ModeDef[] = [
     labelKey: "mode_hometeam",
     icon: "🤝",
     home: { to: "/hometeam" },
+    // PASS 1 (2026-09-12): HomeTeam needs-queue UI decommissioned — the
+    // "I Want to Help" mode keeps Give (money + soon items) and the Find
+    // Help shortcut. PASS 2 adds the real offer forms + separate queues.
     tabs: [
-      { id: "needs", labelKey: "nav_ht_needs", icon: "❤️", to: "/hometeam", badge: "needs" },
       { id: "give", labelKey: "nav_ht_give", icon: "📦", to: "/hometeam", search: { view: "give" } },
       { id: "food", labelKey: "nav_ht_food", icon: "🍲", to: "/help", search: { cat: "food,daycenters" } },
     ],
@@ -117,7 +119,8 @@ export function routeHint(pathname: string, query: Record<string, string | undef
   if (view === "manage") return { mode: "admin", tab: "manage" };
   switch (pathname) {
     case "/hometeam":
-      return { mode: "hometeam", tab: view === "give" ? "give" : "needs" };
+      // Needs tab is decommissioned (PASS 1); Give is the default sub-tab.
+      return { mode: "hometeam", tab: "give" };
     case "/help":
       return { mode: "hometeam", tab: "food" };
     case "/peer-support":
