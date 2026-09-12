@@ -220,8 +220,12 @@ function OutreachPage() {
   }, []);
 
   // Mount: restore a same-tab session (identity + unlocked marker + session
-  // PIN all present) — otherwise show the gate form. No auto-load on typing:
-  // the Open button is the only door (PIN is part of proving who you are).
+  // PIN all present) — otherwise probe the roster with the stored identity
+  // (NO pin header) so a first-timer whose PIN was never set lands straight
+  // on the choose-your-PIN card instead of an idle gate that never explains
+  // the setup flow (owner-reported 2026-09-11). Returning staff (PIN set)
+  // get the usual gate with the calm "enter your outreach PIN" hint, and
+  // non-roster numbers get the team-only screen — no regression either way.
   useEffect(() => {
     let sessionPin = "";
     let unlocked = "";
@@ -235,6 +239,8 @@ function OutreachPage() {
       setPin(sessionPin);
       setPinInput(sessionPin);
       void load(identity.phone, sessionPin);
+    } else if (identity) {
+      void load(identity.phone);
     } else {
       setState({ kind: "idle" });
     }
