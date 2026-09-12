@@ -269,6 +269,25 @@ const EN = {
   legal_and: "and",
   legal_privacy: "Privacy Policy.", 
   ht_join_no_loc: "No location is ever shared, and there's no account or app to install.",
+  // Safety & Liability disclaimers (owner-approved verbatim 2026-09-11). The
+  // LEGAL TEXT itself is immutable + EN-only (src/components/disclaimer.tsx,
+  // mirroring /terms); these keys are the UI CHROME only. Document titles stay
+  // EN in both languages (they are the legal document names — never translate).
+  ht_disc_agree: "I agree to the HomeTeam Safety & Liability Disclaimer",
+  ht_disc_need: "Please read and agree to the disclaimer above to join — no rush.",
+  ht_disc_remind:
+    "Meet in pairs or teams, in a public place. You're a volunteer meeting at your own risk — not as an MPRCC employee or agent.",
+  hr_disc_agree: "I agree to the HomeTeam Help Requests Safety & Liability Disclaimer",
+  hr_disc_need:
+    "Please read and agree to the disclaimer above to share your request — no rush.",
+  hr_disc_remind:
+    "These are volunteers meeting at their own risk — not MPRCC staff. Meet in public and trust your instincts.",
+  disc_full_lead: "Full disclaimer at",
+  disc_read_anytime: "Read anytime — this is the full Safety & Liability Disclaimer.",
+  disc_back_ht: "Back to HomeTeam",
+  disc_back_help: "Back to Find help",
+  ht_disc_link: "HomeTeam Safety & Liability Disclaimer",
+  hr_disc_link: "HomeTeam Help Requests — Safety & Liability Disclaimer",
   ht_their_phone: "Their phone",
   ht_their_phone_ph: "10 digits, e.g. 4155550142",
   ht_their_phone_help: "Outreach logs on the neighbor's behalf — the need is attributed to them.",
@@ -769,6 +788,22 @@ const ES: Partial<Record<I18nKey, string>> = {
   legal_and: "y la",
   legal_privacy: "Política de Privacidad.", 
   ht_join_no_loc: "Nunca se comparte ubicación, y no hay cuenta ni app que instalar.",
+  // Safety & Liability disclaimers — chrome only (legal text is EN-only and
+  // immutable; document titles stay EN in both languages).
+  ht_disc_agree: "Acepto el HomeTeam Safety & Liability Disclaimer",
+  ht_disc_need: "Lee y acepta el aviso de arriba para unirte — sin prisa.",
+  ht_disc_remind:
+    "Reúnete en pareja o en equipo y elige un lugar público. Eres voluntario y participas bajo tu propio riesgo — no como empleado o agente de MPRCC.",
+  hr_disc_agree: "Acepto el HomeTeam Help Requests Safety & Liability Disclaimer",
+  hr_disc_need: "Lee y acepta el aviso de arriba para compartir tu solicitud — sin prisa.",
+  hr_disc_remind:
+    "Son voluntarios que participan bajo su propio riesgo — no personal de MPRCC. Reúnete en lugares públicos y confía en tu instinto.",
+  disc_full_lead: "Aviso completo en",
+  disc_read_anytime: "Disponible en cualquier momento: este es el aviso completo de seguridad y responsabilidad.",
+  disc_back_ht: "Volver a HomeTeam",
+  disc_back_help: "Volver a Buscar ayuda",
+  ht_disc_link: "HomeTeam Safety & Liability Disclaimer",
+  hr_disc_link: "HomeTeam Help Requests — Safety & Liability Disclaimer",
   ht_their_phone: "Su teléfono",
   ht_their_phone_ph: "10 dígitos, p. ej. 4155550142",
   ht_their_phone_help: "El equipo anota por el vecino — la necesidad queda a su nombre.",
