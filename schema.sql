@@ -446,9 +446,13 @@ $sgfn$;
 -- alerts + claim/deliver supplies, but CANNOT clear alerts (sg_resolve is
 -- restricted to admin + sender), CANNOT set the roster, and CANNOT view
 -- outcome analytics (outcome_note is visible to admin + sender only).
--- Readable by all (public select so the app can render "who's on the team"),
--- writable ONLY through sg_outreach_roster_set (admin-only RPC) — no direct
--- INSERT/UPDATE/DELETE policies exist.
+-- NOT readable by anonymous/authenticated roles — the roster holds staff
+-- names + phone numbers (personal data; privacy floor: no data visible
+-- without consent). Staff/admin paths (outreachIdentity / isRosterAdmin /
+-- sg_outreach_roster_set + the security-definer RPCs below) run on the
+-- service role and bypass RLS, so they keep working. Writable ONLY through
+-- sg_outreach_roster_set (admin-only RPC) — no direct INSERT/UPDATE/DELETE
+-- policies exist.
 -- ---------------------------------------------------------------------------
 create table public.outreach_roster (
   phone        text primary key check (char_length(phone) between 7 and 20),
@@ -475,9 +479,11 @@ alter table public.outreach_roster enable row level security;
 alter table public.outreach_roster
   add column if not exists pin_hash text,
   add column if not exists pin_must_set boolean not null default true;
--- Everyone may read the roster (it's the public "who's on the team" list);
--- writes happen ONLY through the sg_outreach_roster_set RPC (admin-only).
-create policy "roster public read"          on public.outreach_roster for select using (true);
+-- QA #2 (2026-09-11): drop the public read — anonymous-key holders could read
+-- staff names + phone numbers (verified live: 3 rows). Reads now require the
+-- service role (server routes/RPCs); `drop policy if exists` is idempotent so
+-- apply-schema re-runs are safe.
+drop policy if exists "roster public read" on public.outreach_roster;
 
 -- ---------------------------------------------------------------------------
 -- is_roster_admin() / is_roster_staff() — authorization gates for the
@@ -504,9 +510,10 @@ $sgfn$;
 
 -- ---------------------------------------------------------------------------
 -- "Who's on the outreach team?" — one helper returning the active roster as
--- (phone, display_name, role). Readable by everyone; grounded in the roster
--- table (always the app's single source of truth — never an RLS trigger on
--- public.users, which phone-identified peer workers can't touch).
+-- (phone, display_name, role). security_invoker + roster RLS (no anon policy)
+-- confine this view to the service role; grounded in the roster table (always
+-- the app's single source of truth — never an RLS trigger on public.users,
+-- which phone-identified peer workers can't touch).
 -- ---------------------------------------------------------------------------
 create or replace view public.outreach_team
 with (security_invoker = true) as
@@ -1111,7 +1118,7 @@ comment on table public.outreach_roster is
   'incl. outcome notes + can resolve alerts (safety override) + manage roster; '
   'staff_limited = open needs + active alerts + claim/deliver — never clears '
   'alerts, never sets roster, never sees outcome analytics. Writes only via '
-  'sg_outreach_roster_set (admin-only); reads are public.';
+  'sg_outreach_roster_set (admin-only); reads are service-role only (no anon policy).';
 comment on function public.is_outreach() is
   'Role gate used by outreach policies. Roles are provisioned manually by the lead; never self-serve.';
 -- ---------------------------------------------------------------------------
@@ -2107,6 +2114,11 @@ create table if not exists public.analytics_events (
 comment on column public.analytics_events.install_id is
   'ANALYTICS: no PII — never join to users/check_ins/push_tokens/outreach_roster';
 create index if not exists idx_analytics_events_month on public.analytics_events (created_at, event_type);
+-- QA #1 (2026-09-11): enable RLS with NO policies — anonymous/authenticated
+-- roles are denied read+write by default. Server-side analytics logging and
+-- admin reads run on the service role via the pg pool (table owner, bypasses
+-- RLS) and continue to work. `enable row level security` is idempotent.
+alter table public.analytics_events enable row level security;
 -- ---------------------------------------------------------------------------
 -- SMS opt-in layer (owner-approved 2026-09-08) — consent-first outbound
 -- texting as a reliability layer over push.
