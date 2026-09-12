@@ -26,6 +26,7 @@ import { useLanguage, type I18nKey } from "~/lib/i18n";
 import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
+import { DonationQueueSection } from "~/components/donationQueues";
 
 /* Staff PIN lock (owner-directed 2026-09-11): the phone only identifies WHO;
    the PIN proves it's them. On a verified unlock we persist sg.alert.phone
@@ -34,7 +35,7 @@ import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfi
 const STAFF_UNLOCKED_KEY = "sg.staff.unlocked";
 const STAFF_PIN_SESSION = "sg.staff.pin";
 
-type Tab = "sweeps" | "alerts" | "more";
+type Tab = "sweeps" | "alerts" | "offers" | "needs" | "more";
 
 interface SweepItem {
   id: string;
@@ -137,11 +138,19 @@ function OutreachPage() {
   const [state, setState] = useState<LoadState>({ kind: "idle" });
   // 3-mode nav: /outreach?tab=alerts (Urgent Dispatch sub-tab) reuses the
   // existing tab state — default tab follows the query param when valid.
-  const outreachSearch = useSearch({ from: "/outreach" }) as { tab?: string };
+  const outreachSearch = useSearch({ from: "/outreach" }) as { tab?: string; queue?: string };
+  // 3-mode nav + Pass 2 push links: /outreach?tab=donations&queue=offers|requests
+  // resolves to the Offers/Needs queue tabs; tab=alerts|sweeps|more unchanged.
   const initialTab: Tab =
     outreachSearch.tab === "alerts" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more"
       ? outreachSearch.tab
-      : "sweeps";
+      : outreachSearch.tab === "offers" || outreachSearch.tab === "needs"
+        ? outreachSearch.tab
+        : outreachSearch.tab === "donations"
+          ? outreachSearch.queue === "requests"
+            ? "needs"
+            : "offers"
+          : "sweeps";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -588,7 +597,7 @@ function OutreachPage() {
             </div>
 
             <nav className="flex gap-2 overflow-x-auto" aria-label="Dashboard sections">
-              {(["sweeps", "alerts", "more"] as Tab[]).map((t) => (
+              {(["sweeps", "alerts", "offers", "needs", "more"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -600,7 +609,7 @@ function OutreachPage() {
                       : "min-h-[48px] flex-1 rounded-[12px] border-2 border-sg-line bg-sg-card px-3 text-btn text-sg-ink"
                   }
                 >
-                  {t === "sweeps" ? "Sweeps" : t === "alerts" ? "Alerts" : admin ? "Team" : "Chat"}
+                  {t === "sweeps" ? "Sweeps" : t === "alerts" ? "Alerts" : t === "offers" ? "Offers" : t === "needs" ? "Needs" : admin ? "Team" : "Chat"}
                 </button>
               ))}
             </nav>
@@ -767,6 +776,17 @@ function OutreachPage() {
               </section>
             ) : null}
 
+            {/* Pass 2 donation dispatch — TWO SEPARATE queues, never combined
+                (owner: "keep offers and needs separate"). Same phone+PIN staff
+                gate as the rest of the page; the queue API re-checks the
+                roster server-side. */}
+            {tab === "offers" ? (
+              <DonationQueueSection queue="offers" phone={phone} />
+            ) : null}
+            {tab === "needs" ? (
+              <DonationQueueSection queue="requests" phone={phone} />
+            ) : null}
+
             {tab === "more" ? (
               admin ? (
                 <section className="flex flex-col gap-3" aria-label="Team">
@@ -902,6 +922,7 @@ function OutreachPage() {
 export const Route = createFileRoute("/outreach")({
   validateSearch: (search: Record<string, unknown>) => ({
     tab: typeof search?.tab === "string" ? search.tab : undefined,
+    queue: typeof search?.queue === "string" ? search.queue : undefined,
   }),
   component: OutreachPage,
 });

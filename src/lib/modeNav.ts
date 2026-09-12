@@ -57,6 +57,8 @@ export const MODES: ModeDef[] = [
     home: { to: "/peer-support" },
     tabs: [
       { id: "peer", labelKey: "nav_nb_peer", icon: "💬", to: "/peer-support" },
+      // PASS 2: "Request an item" → /help?view=request (form lifts to the top).
+      { id: "itemreq", labelKey: "nav_nb_itemreq", icon: "🧦", to: "/help", search: { view: "request" } },
       { id: "requests", labelKey: "nav_nb_requests", icon: "📋", to: "/requests" },
       { id: "checkin", labelKey: "nav_nb_checkin", icon: "📍", to: "/checkin", badge: "checkin" },
     ],
@@ -68,6 +70,9 @@ export const MODES: ModeDef[] = [
     home: { to: "/outreach", search: { tab: "alerts" } },
     tabs: [
       { id: "dispatch", labelKey: "nav_ad_dispatch", icon: "🚨", to: "/outreach", search: { tab: "alerts" }, badge: "alerts" },
+      // PASS 2: the donation queues live in /outreach (Offers/Needs tabs);
+      // this sub-tab deep-links staff straight to the offers queue.
+      { id: "donations", labelKey: "nav_ad_donations", icon: "🧺", to: "/outreach", search: { tab: "donations", queue: "offers" } },
       { id: "sweeps", labelKey: "nav_ad_sweeps", icon: "⚠️", to: "/sweeps", badge: "sweeps" },
       { id: "manage", labelKey: "nav_ad_resources", icon: "⚙️", to: "/help", search: { view: "manage" } },
     ],
@@ -122,6 +127,9 @@ export function routeHint(pathname: string, query: Record<string, string | undef
       // Needs tab is decommissioned (PASS 1); Give is the default sub-tab.
       return { mode: "hometeam", tab: "give" };
     case "/help":
+      // PASS 2: ?view=request is the Neighbor mode's "Request an item" sub-tab;
+      // the default /help stays the HomeTeam Food & Day Use shortcut.
+      if (view === "request") return { mode: "neighbor", tab: "itemreq" };
       return { mode: "hometeam", tab: "food" };
     case "/peer-support":
       return { mode: "neighbor", tab: "peer" };

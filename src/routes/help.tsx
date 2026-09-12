@@ -13,6 +13,7 @@ import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import {
   Button,
+  Card,
   ChipGrid,
   EmptyState,
   IconTile,
@@ -28,6 +29,7 @@ import {
 import { ResourceSheet } from "~/components/resourceSheet";
 import { ResourceMapPane } from "~/components/resourceMap";
 import { ResourceAddSheet } from "~/components/resourceAddSheet";
+import { RequestItemForm } from "~/components/donationForms";
 import {
   CATEGORIES,
   CATEGORY_MAP,
@@ -204,6 +206,11 @@ function NavigatorPage() {
   // no new route; hidden entirely for non-admin incl. staff_limited).
   const helpSearch = useSearch({ from: "/help" }) as { view?: string; cat?: string };
   const manageMode = helpSearch.view === "manage";
+  // Pass 2 — "Request an item" (owner-directed 2026-09-12): the Neighbor mode's
+  // Request sub-tab deep-links to ?view=request, which lifts the form card to
+  // the top. The default page shows a compact entry card at the bottom instead,
+  // so the navigator isn't crowded.
+  const requestMode = helpSearch.view === "request";
   const [selected, setSelected] = useState<CategoryId[]>(() => {
     const cats = (helpSearch.cat ?? "").split(",").map((c) => c.trim()).filter(Boolean) as CategoryId[];
     return cats.filter((c) => c in CATEGORY_MAP);
@@ -363,6 +370,16 @@ function NavigatorPage() {
          * lifted above the fold so the fixed bottom nav can never occlude it) */}
         <ViewTabs view={view} onChange={setView} onKeyboardChange={focusTabAndShow} tabRefs={tabRefs} listLabel={t("help_list")} mapLabel={t("help_map")} />
 
+        {/* Pass 2 — "Request an item" (owner-directed 2026-09-12). Lifted to
+            the top when the Neighbor mode's Request sub-tab lands here
+            (?view=request); the default page keeps the compact entry card at
+            the bottom so the navigator stays un-crowded. */}
+        {requestMode ? (
+          <section aria-label={t("dn_req_title")} className="flex flex-col gap-2">
+            <RequestItemForm compact />
+          </section>
+        ) : null}
+
         <div>
           <ChipGrid
             label={t("help_chips")}
@@ -478,6 +495,28 @@ function NavigatorPage() {
             )}
           </section>
         )}
+
+        {/* Pass 2 — compact "Request an item" entry (default view; the full
+            form lifts to the top via ?view=request so nothing crowds the
+            navigator or the urgent-need/peer-support home buttons). */}
+        {!requestMode ? (
+          <Card className="border-sg-sage/60 bg-sg-sage-wash/40">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-sg-sage text-white" aria-hidden>
+                  <PlusIcon size={20} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-h2">{t("dn_req_title")}</h2>
+                  <p className="mt-0.5 text-small text-sg-ink-soft">{t("dn_req_prompt")}</p>
+                </div>
+              </div>
+              <Link to="/help" search={{ view: "request", cat: undefined }} className="block w-full">
+                <Button variant="secondary" full>{t("dn_req_open")}</Button>
+              </Link>
+            </div>
+          </Card>
+        ) : null}
       </div>
 
       <ResourceSheet
