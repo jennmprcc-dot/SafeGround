@@ -28,6 +28,12 @@ import { cn } from "~/lib/cn";
 
 export const WELCOME_KEY = "sg.welcomed-v3";
 export const OPEN_WELCOME_EVENT = "sg:open-welcome";
+/** Keys from earlier welcome versions. A returning user who completed ANY of
+ * them has already been welcomed — the full-screen door must never trap them
+ * again just because the key was bumped (owner report: "have to hit the logo
+ * to move between modes" — the v3 door was covering the whole app on devices
+ * that still held a v1/v2 flag). Silently migrate to the current key. */
+const PRIOR_WELCOME_KEYS = ["sg.welcomed", "sg.welcomed-v2"];
 
 /** Byte-for-byte owner preface — do not reword, shorten, or smart-quote. */
 const PREFACE =
@@ -109,6 +115,15 @@ export function WelcomeOverlay() {
     let seen = false;
     try {
       seen = localStorage.getItem(WELCOME_KEY) !== null;
+      if (!seen) {
+        // Returning user from an earlier welcome version: migrate the flag and
+        // never show the full-screen door again (see PRIOR_WELCOME_KEYS above).
+        const prior = PRIOR_WELCOME_KEYS.some((k) => localStorage.getItem(k) !== null);
+        if (prior) {
+          localStorage.setItem(WELCOME_KEY, new Date().toISOString());
+          seen = true;
+        }
+      }
     } catch {
       seen = false; // private mode: show the welcome, it just won't stick
     }
