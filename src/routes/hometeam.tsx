@@ -264,6 +264,12 @@ function LogSheet({
   const [posted, setPosted] = useState<SubmitConfirmState | null>(null);
   /** Inline calm error when the phone is missing/incomplete — blocks submit. */
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  /** Local draft of the self-serve phone — typed in the sheet, lifted back up
+   * to the page identity only when the need is saved. Keystrokes no longer
+   * re-render the whole page / re-fire the membership+outreach checks on every
+   * digit (owner-reported: "the log a need only takes one number entered at a
+   * time" 2026-09-11) — same draft pattern JoinSheet already uses. */
+  const [phoneDraft, setPhoneDraft] = useState(phone);
 
   useEffect(() => {
     if (open) {
@@ -276,6 +282,12 @@ function LogSheet({
     }
   }, [open]);
 
+  // Keep the draft in sync with the page identity when the sheet opens or the
+  // identity changes underneath it (join/claim keep the same number).
+  useEffect(() => {
+    if (open) setPhoneDraft(phone);
+  }, [open, phone]);
+
   const save = async () => {
     const itemList = items.split(",").map((s) => s.trim()).filter(Boolean);
     if (itemList.length === 0) {
@@ -285,19 +297,22 @@ function LogSheet({
     // Non-outreach needs are attributed to the typer's own phone; outreach
     // logs on the neighbor's behalf. Either way a real 10-digit number is
     // required — no phone means no server call (2026-09-07 dead-end fix).
-    const whoPhone = isOutreach ? neighborPhone : phone;
+    const whoPhone = isOutreach ? neighborPhone : normPhone(phoneDraft);
     if (!phoneLooksOk(whoPhone)) {
       setPhoneError(t("ht_phone_err"));
       return;
     }
     setPhoneError(null);
+    // Lift the typed number into the page identity (on-device storage +
+    // claim/deliver flows) only now — not keystroke-by-keystroke.
+    if (!isOutreach) onPhoneChange(normPhone(phoneDraft));
     setBusy(true);
     const res = await logNeed({
       data: {
         items: itemList,
         note,
         pickup: pickup,
-        neighborPhone: isOutreach ? neighborPhone : phone,
+        neighborPhone: isOutreach ? neighborPhone : normPhone(phoneDraft),
         neighborName: isOutreach ? neighborName : "",
         outreachPhone: isOutreach ? phone : "",
         visibility,
@@ -331,14 +346,16 @@ function LogSheet({
             <TextField label={t("ht_their_name")} value={neighborName} onChange={(e) => onNeighborNameChange(e.target.value)} maxLength={40} helper={t("ht_their_name_help")} />
           </div>
         ) : null}
-        {/* Non-outreach: calm phone input (JoinSheet pattern) — stored
-            on-device under sg.alert.phone via setAlertIdentity, prefilled from
-            alert identity, sent only when the need is explicitly shared. */}
+        {/* Non-outreach: calm phone input (JoinSheet draft pattern) — stored
+            on-device under sg.alert.phone via setAlertIdentity on save,
+            prefilled from alert identity, sent only when the need is
+            explicitly shared. Typing stays local to the sheet so the page
+            never re-renders mid-number (owner 2026-09-11). */}
         {!isOutreach ? (
           <TextField
             label={t("ht_phone")}
-            value={phone}
-            onChange={(e) => { setPhoneError(null); onPhoneChange(e.target.value); }}
+            value={phoneDraft}
+            onChange={(e) => { setPhoneError(null); setPhoneDraft(e.target.value); }}
             inputMode="tel"
             placeholder="(415) 555-0142"
             helper={t("ht_phone_help")}
@@ -616,7 +633,7 @@ function HomeTeamPage() {
         <p className="-mt-3 text-small text-sg-ink-soft">{t("mode_hero_ht_sub")}</p>
         <header className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-h1">HomeTeam</h1>
+            <h1 tabIndex={-1} className="text-h1 outline-none">HomeTeam</h1>
             <p className="mt-0.5 text-small text-sg-ink-soft">{t("ht_sub")}</p>
           </div>
           <button
@@ -629,8 +646,12 @@ function HomeTeamPage() {
           </button>
         </header>
 
-        {/* identity strip: supporter phone + pause/resume, or join CTA */}
-        {phone ? (
+        {/* identity strip: supporter phone + pause/resume, or join CTA. The strip
+        only replaces the editable phone input once the server confirms
+        membership — otherwise the input unmounts after the FIRST digit the
+        moment `phone` turns non-empty, and typing can never get past one
+        number at a time (owner-reported 2026-09-11). */}
+        {phone && joined ? (
           <Card className="!p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-small text-sg-ink-soft">

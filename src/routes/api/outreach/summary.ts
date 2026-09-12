@@ -17,12 +17,8 @@
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "~/db";
-import {
-  OUTREACH_CALM_LINE,
-  normOutreachPhone,
-  outreachIdentity,
-  outreachPushStubStatus,
-} from "~/lib/outreachServer";
+import { normOutreachPhone, outreachPushStubStatus } from "~/lib/outreachServer";
+import { pinFromRequest, pinGate } from "~/lib/staffPin";
 
 interface DbSweepLite {
   id: string;
@@ -76,9 +72,14 @@ const tail4 = (phone: string | null): string | null =>
 async function summary(c: { request: Request }) {
   const url = new URL(c.request.url);
   const caller = normOutreachPhone(url.searchParams.get("phone") ?? c.request.headers.get("x-sg-phone"));
-  const me = await outreachIdentity(caller);
-  if (me.role === null) {
-    return Response.json({ ok: false, error: OUTREACH_CALM_LINE }, { status: 403 });
+  // PIN LOCK (owner-directed 2026-09-11): phone alone no longer opens the
+  // dashboard — the caller must prove it's them with their 4–6 digit PIN.
+  // Machine-readable `code` drives the client: must_set → choose-your-PIN
+  // screen, staff_pin_required → "enter your PIN", wrong/cooldown → calm
+  // inline lines, not_staff → the existing forbidden state.
+  const me = await pinGate(caller, pinFromRequest(c));
+  if (!me.ok) {
+    return Response.json({ ok: false, error: me.error, code: me.code }, { status: 403 });
   }
   const admin = me.role === "admin";
   try {
@@ -130,7 +131,25 @@ async function summary(c: { request: Request }) {
     // Admin-only: resolved alerts + outcomes (time-to-resolve, who helped).
     let resolved: DbAlertLite[] = [];
     let peerOpen = 0;
+    let roster: { phone: string; name: string; role: string; pinMustSet: boolean }[] = [];
     if (admin) {
+      const rawRoster = (await sql()`
+        select phone, display_name, role, pin_must_set
+        from public.outreach_roster
+        where active
+        order by display_name`) as unknown as Array<{
+        phone: string;
+        display_name: string;
+        role: string;
+        pin_must_set: boolean;
+      }>;
+      roster = rawRoster.map((x) => ({
+        phone: x.phone,
+        name: x.display_name,
+        role: x.role,
+        // Team tab shows who still needs to set their PIN — never the hash.
+        pinMustSet: x.pin_must_set === true,
+      }));
       resolved = (await sql()`
         select ea.id, ea.kind, ea.note, ea.location_shared, ea.fuzz_lat, ea.fuzz_lng,
                ea.exact_lat, ea.exact_lng, ea.sender_phone,
@@ -240,7 +259,7 @@ async function summary(c: { request: Request }) {
       })),
       alerts: activeAlerts.map(mapAlert),
       ...(admin
-        ? { resolved: resolved.map(mapAlert), analytics }
+        ? { resolved: resolved.map(mapAlert), analytics, roster }
         : {}),
     });
   } catch {
