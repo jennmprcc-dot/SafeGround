@@ -10,4 +10,10 @@ export type AnalyticsEventType =
   | "resource_search"
   | "peer_support_request"
   | "sweep_alert_view"
-  | "check_in";
+  | "check_in"
+  // Pass 2 — Donation Dispatch (owner-directed 2026-09-12): zero-PII, logged
+  // on submit + complete. Keep in sync with EVENT_TYPES in server.ts.
+  | "donation_offer_submit"
+  | "donation_request_submit"
+  | "donation_offer_complete"
+  | "donation_request_complete";

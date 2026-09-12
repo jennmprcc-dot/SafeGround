@@ -2361,3 +2361,110 @@ comment on table public.disclaimer_acknowledgments is
   'Neighbor acknowledgment of the HomeTeam Help Requests Safety & Liability '
   'Disclaimer (phone identity). No row = first-request gate still applies. '
   'Phone-bound RLS like notice_consents; server fns write service-side.';
+-- ---------------------------------------------------------------------------
+-- Pass 2 — Donation Dispatch (owner-directed 2026-09-12): TWO separate staff
+-- queues (offers + requests), staff-mediated only — no neighbor-to-neighbor
+-- claiming. Public side: a supporter offers an item via one of 3 paths
+-- (porch_drop / scheduled_pickup / mprcc_porch) or a neighbor requests an
+-- item. Staff side: outreach roster (admin OR staff_limited) views the
+-- queues and claims/completes rows — they need contact_phone to coordinate,
+-- so roster staff see full rows (matches the established staff model).
+--
+-- RLS floor (same hardening as outreach_roster / analytics_events):
+--  - ANYONE can INSERT (anonymous app; no auth exists — the requester's own
+--    phone header binds the row, same phone-bound pattern as peer support).
+--  - NO public SELECT/UPDATE policies — anonymous readers get ZERO rows.
+--    All queue reads + status changes run on the service role through
+--    server routes that gate the caller's phone against outreach_roster.
+--  - No delete path exists (by design).
+--
+-- Status: 'open' → 'claimed' → 'completed' (claimed_by_phone + claimed_at are
+-- set by the server from the gated caller — never from the request body).
+-- Photo: optional on porch_drop, stored inline as client-compressed JPEG
+-- base64 (single photo_b64 column, ~400K chars ≈ 300KB binary cap) — no
+-- external storage dependency (free-tier constraint).
+-- ---------------------------------------------------------------------------
+create table if not exists public.donation_offers (
+  id                uuid primary key default gen_random_uuid(),
+  path              text not null
+                    check (path in ('porch_drop', 'scheduled_pickup', 'mprcc_porch')),
+  item_description  text not null check (char_length(item_description) between 1 and 300),
+  category          text not null check (char_length(category) between 1 and 80),
+  condition_note    text check (condition_note is null or char_length(condition_note) <= 200),
+  quantity          text check (quantity is null or char_length(quantity) between 1 and 60),
+  contact_phone     text not null check (char_length(contact_phone) between 7 and 20),
+  address_street    text check (address_street is null or char_length(address_street) between 1 and 120),
+  address_city      text check (address_city is null or char_length(address_city) between 1 and 60),
+  address_zip       text check (address_zip is null or char_length(address_zip) between 1 and 12),
+  approach_notes    text check (approach_notes is null or char_length(approach_notes) <= 300),
+  pickup_time_window text check (pickup_time_window is null or char_length(pickup_time_window) between 1 and 120),
+  photo_b64         text check (photo_b64 is null or char_length(photo_b64) <= 400000),
+  status            text not null default 'open'
+                    check (status in ('open', 'claimed', 'completed')),
+  claimed_by_phone  text check (claimed_by_phone is null or char_length(claimed_by_phone) between 7 and 20),
+  claimed_at        timestamptz,
+  completed_at      timestamptz,
+  outcome_note      text check (outcome_note is null or char_length(outcome_note) <= 500),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+alter table public.donation_offers enable row level security;
+drop policy if exists "donation offers public insert" on public.donation_offers;
+-- Phone-bound like peer support: the offerer's own phone header must match —
+-- anyone may insert, but no public SELECT/UPDATE policy exists below, so
+-- anonymous readers see zero rows (verified via pg_policies).
+create policy "donation offers public insert" on public.donation_offers for insert
+  with check (contact_phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create index if not exists idx_donation_offers_status
+  on public.donation_offers (status, created_at desc);
+create index if not exists idx_donation_offers_created
+  on public.donation_offers (created_at desc);
+comment on table public.donation_offers is
+  'Donation offers (Pass 2). Three paths: porch_drop (own address + optional '
+  'photo), scheduled_pickup (address + time window), mprcc_porch (631 A Wilson '
+  'Ave, Novato). Status open→claimed→completed; staff-claimed via server '
+  'routes only (service role reads/writes, roster-gated). No public SELECT — '
+  'anonymous readers get zero rows. contact_phone = staff coordination number.';
+
+create table if not exists public.donation_requests (
+  id                 uuid primary key default gen_random_uuid(),
+  item               text not null check (char_length(item) between 1 and 200),
+  category           text not null check (char_length(category) between 1 and 80),
+  quantity           text check (quantity is null or char_length(quantity) between 1 and 60),
+  notes              text check (notes is null or char_length(notes) <= 500),
+  size               text check (size is null or char_length(size) between 1 and 60),
+  pickup_or_delivery text not null default 'either'
+                     check (pickup_or_delivery in ('pickup', 'delivery', 'either')),
+  contact_phone      text not null check (char_length(contact_phone) between 7 and 20),
+  status             text not null default 'open'
+                     check (status in ('open', 'claimed', 'completed')),
+  claimed_by_phone   text check (claimed_by_phone is null or char_length(claimed_by_phone) between 7 and 20),
+  claimed_at         timestamptz,
+  completed_at       timestamptz,
+  outcome_note       text check (outcome_note is null or char_length(outcome_note) <= 500),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+alter table public.donation_requests enable row level security;
+drop policy if exists "donation requests public insert" on public.donation_requests;
+create policy "donation requests public insert" on public.donation_requests for insert
+  with check (contact_phone = current_setting('request.headers', true)::json ->> 'x-sg-phone');
+create index if not exists idx_donation_requests_status
+  on public.donation_requests (status, created_at desc);
+create index if not exists idx_donation_requests_created
+  on public.donation_requests (created_at desc);
+comment on table public.donation_requests is
+  'Donation requests (Pass 2) — a neighbor asks for an item. pickup/delivery '
+  'preference + free-text size. Status open→claimed→completed; staff-claimed '
+  'via server routes only. No public SELECT — anonymous readers get zero rows.';
+
+-- Pass 2 analytics (zero-PII, category/status/timestamp only): extend the
+-- analytics_events event_type CHECK with the four donation events. Idempotent:
+-- drop + re-add by the inline column-constraint name (analytics_events_event_type_check).
+alter table public.analytics_events
+  drop constraint if exists analytics_events_event_type_check;
+alter table public.analytics_events
+  add constraint analytics_events_event_type_check
+  check (event_type in ('resource_search', 'peer_support_request', 'sweep_alert_view',
+                        'check_in', 'donation_offer_submit', 'donation_request_submit',
+                        'donation_offer_complete', 'donation_request_complete'));
