@@ -38,12 +38,18 @@ const EN = {
   menu_signed_in_as: "Signed in as",
   // 3-mode navigation (NAV_REFACTOR_SPEC §7) — Row 2 modes + Row 3 sub-nav
   mode_label: "Choose your side",
-  mode_hometeam: "HomeTeam Side",
-  mode_neighbor: "Neighbor Side",
-  mode_admin: "Master Admin",
+  mode_hometeam: "I Want to Help",
+  mode_neighbor: "I Need Help",
+  mode_admin: "Admin",
   mode_status: "You're on {mode}.",
   nav_ht_needs: "Needs Queue",
   nav_ht_give: "Donate/Pickup",
+  // Button captions (owner copy 2026-09-12) — one calm line under each action
+  un_caption: "Urgent. MPRCC team responds directly. Never 911.",
+  ps_caption: "Non-urgent. A peer reaches out to talk.",
+  // Give Money (owner-directed 2026-09-12) — BetterWorld giving link
+  give_money: "Give Money",
+  give_placeholder: "Support MPRCC's community — give items or money. Item donation tools are on the way.",
   nav_ht_food: "Food & Day Use",
   nav_nb_peer: "Talk to Peer",
   nav_nb_requests: "My Requests",
@@ -308,8 +314,8 @@ const EN = {
   welcome_es_soon: "Espanol proximamente · Spanish coming soon.",
   // Offline banner (shell)
   off_banner: "No connection — showing saved list.",
-  // Crisis sheet — MPRCC Safe Team card (owner P0: never 911-only)
-  crisis_safe_title: "MPRCC Safe Team — peer support from people who know",
+  // Crisis sheet — MPRCC peer support staff card (owner P0: never 911-only)
+  crisis_safe_title: "MPRCC Peer Support Staff — peer support from people who know",
   crisis_safe_body: "A real neighbor on the outreach team will reach out. Mon–Fri, 8am–6pm — never 911.",
   crisis_safe_cta: "Ask for a peer",
   // Home page
@@ -350,13 +356,17 @@ const EN = {
   // Landing story card (WELCOME_FRONT_DOOR_SPEC §2) — same "what it is" line
   // as the welcome overlay so the card and the front door tell one story.
   home_story_title: "What is SafeGround?",
-  home_story_body:
-    "SafeGround is your free, private helper. Find food and shelter fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. Just real help when you need it.",
+  // Resource mentions are live links to /help (owner-directed 2026-09-12).
+  // The body is split so "food and shelter" can be the link label.
+  home_story_body: "", // superseded by _a/_link/_b — kept for contract only
+  home_story_body_a: "SafeGround is your free, private helper. Find ",
+  home_story_body_link: "food and shelter",
+  home_story_body_b: " fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. Just real help when you need it.",
   home_story_more: "Tell me more",
   // Welcome mode-choice step (owner-directed 2026-09-11): two equal doors.
   welcome_choice_title: "How will you use SafeGround?",
   welcome_choice_help: "I want to help",
-  welcome_choice_help_sub: "Join the HomeTeam — see what neighbors need and deliver it.",
+  welcome_choice_help_sub: "Support MPRCC's community — give money today, donate items soon.",
   welcome_choice_neighbor: "I need help",
   welcome_choice_neighbor_sub: "Find food and shelter, check in, and stay close to your people.",
   // Sweeps page + report flow
@@ -493,7 +503,7 @@ const EN = {
   // Per-mode hero greetings (owner QA 2026-09-09: make HomeTeam vs Neighbor
   // unmistakable on first screen). Admin keeps its chrome as-is.
   mode_hero_ht: "Help a neighbor today",
-  mode_hero_ht_sub: "See needs, claim one, make it happen.",
+  mode_hero_ht_sub: "Give money today — item donation tools are on the way.",
   mode_hero_nb: "Get the support you need",
   mode_hero_nb_sub: "One tap to talk with a peer from MPRCC.",
   // SMS dispatch team (owner-directed 2026-09-10) — outreach admin Team tab
@@ -569,12 +579,18 @@ const ES: Partial<Record<I18nKey, string>> = {
   menu_signout: "Salir",
   menu_signed_in_as: "Sesión como",
   mode_label: "Elige tu lado",
-  mode_hometeam: "Lado HomeTeam",
-  mode_neighbor: "Lado Vecino",
+  mode_hometeam: "Quiero Ayudar",
+  mode_neighbor: "Necesito Ayuda",
   mode_admin: "Administración",
   mode_status: "Estás en {mode}.",
   nav_ht_needs: "Necesidades",
   nav_ht_give: "Donar/Entrega",
+  // Botones — una línea tranquila bajo cada acción (texto del dueño)
+  un_caption: "Urgente. El equipo de MPRCC responde directamente. Nunca al 911.",
+  ps_caption: "No urgente. Un compañero te contacta para hablar.",
+  // Dar dinero (mejorworld) — enlace externo
+  give_money: "Donar dinero",
+  give_placeholder: "Apoya a la comunidad de MPRCC: dona artículos o dinero. Las herramientas para donar artículos están en camino.",
   nav_ht_food: "Comida y día",
   nav_nb_peer: "Hablar con un par",
   nav_nb_requests: "Mis solicitudes",
@@ -821,7 +837,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   consent_stop: "Cómo detener",
   welcome_es_soon: "Espanol proximamente · Spanish coming soon.",
   off_banner: "Sin conexión — mostrando la lista guardada.",
-  crisis_safe_title: "MPRCC Safe Team — apoyo de personas que saben",
+  crisis_safe_title: "Personal de Apoyo entre Pares de MPRCC — apoyo de personas que saben",
   crisis_safe_body: "Un compañero del equipo te contactará. Lun–vie, 8am–6pm — nunca al 911.",
   crisis_safe_cta: "Pedir apoyo",
   home_morning: "Buenos días.",
@@ -862,6 +878,9 @@ const ES: Partial<Record<I18nKey, string>> = {
   // Owner copy is never auto-translated — empty ES value falls back to EN
   // (translate() treats falsy as missing; container labels stay ES as-is).
   home_story_body: "",
+  home_story_body_a: "",
+  home_story_body_link: "",
+  home_story_body_b: "",
   home_story_more: "Cuéntame más",
   welcome_choice_title: "¿Cómo usarás SafeGround?",
   welcome_choice_help: "Quiero ayudar",
@@ -994,7 +1013,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   invite_own_bad: "Ese número parece incompleto — revísalo sin prisa.",
   invite_own_continue: "Seguir",
   mode_hero_ht: "Ayuda a un vecino hoy",
-  mode_hero_ht_sub: "Mira las necesidades, toma una, hazla realidad.",
+  mode_hero_ht_sub: "Dona dinero hoy — las herramientas para donar artículos están en camino.",
   mode_hero_nb: "Recibe el apoyo que necesitas",
   mode_hero_nb_sub: "Un toque para hablar con un compañero de MPRCC.",
   sms_team_title: "Equipo de avisos por texto",

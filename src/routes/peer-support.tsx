@@ -277,6 +277,8 @@ function RequestSupportPage() {
         >
           {t("ps_submit")}
         </Button>
+        {/* Button caption (owner copy 2026-09-12) — one calm line under. */}
+        <p className="px-1 text-small text-sg-ink-soft">{t("ps_caption")}</p>
 
         <button
           type="button"

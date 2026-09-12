@@ -37,13 +37,34 @@ import {
 import type { CategoryId, DemoResource } from "~/lib/data";
 import { listResources, isAdminPhone } from "~/lib/server";
 import type { ResourceRow, DataSource } from "~/lib/server";
+import { realMarinAsDemoResources } from "~/lib/marinFallback";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
 import { categoryChipLabel, categoryFullName, useLanguage } from "~/lib/i18n";
 import { PlusIcon, ChevronRightIcon } from "~/lib/icons";
 import { cn } from "~/lib/cn";
 
-/* Live fetch from the database via the listResources server fn (demo fallback
+/* Live fetch from the database via the listResources server fn (the server's
+ * own DB-unreachable fallback is demoResources(); the client mirrors it in
+ * demoResourceRows above so a transport failure never shows "0 places" —
+ * source drives the honest offline label). */
+/** DemoResource (Marin copy) → ResourceRow (DB shape) for the transport-failure
+ * fallback. Mirrors the server's demoResources() mapping, client-safe. */
+function demoResourceRows(): ResourceRow[] {
+  return realMarinAsDemoResources().map((r) => ({
+    id: r.id,
+    name: r.name,
+    category: r.category,
+    address: r.address ?? null,
+    hours: r.hours ?? null,
+    phone: r.phone ?? null,
+    note: r.note ?? null,
+    verifiedAt: r.verifiedAt ?? null,
+    lat: r.lat ?? null,
+    lng: r.lng ?? null,
+    openNow: r.openNow ?? false,
+  }));
+}
  * inside the fn keeps this offline-safe; `source` drives the honest label). */
 function useResources(): {
   resources: ResourceRow[];
@@ -71,9 +92,14 @@ function useResources(): {
       })
       .catch(() => {
         if (!alive) return;
-        setResources([]);
+        // Transport-level failure (offline / stale bundle / server-fn 404):
+        // NEVER show "0 places" — degrade to the same typed Marin copy the
+        // server itself falls back to (realMarinAsDemoResources), labeled
+        // honestly as offline. Owner-visible bug 2026-09-12.
+        setResources(demoResourceRows());
         setSource("demo");
         setLoading(false);
+        if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
       });
     return () => {
       alive = false;
