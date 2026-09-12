@@ -112,7 +112,7 @@ export function NeedCard({
             {t("ht_disc_remind")}{" "}
             {t("disc_full_lead")}{" "}
             <Link to={HOMETEAM_DISCLAIMER_ROUTE} className="inline-flex min-h-[44px] items-center text-sg-sky underline underline-offset-2">
-              {t("ht_disc_link")}
+              HomeTeam Safety &amp; Liability Disclaimer
             </Link>
             .
           </p>
@@ -247,11 +247,11 @@ function JoinSheet({
             button stays disabled until checked; the server records the
             acknowledgment timestamp on this consent row at join. */}
         <div className="flex flex-col gap-2">
-          <p className="text-small font-semibold text-sg-ink">{t("ht_disc_link")}</p>
+          <p className="text-small font-semibold text-sg-ink">HomeTeam Safety &amp; Liability Disclaimer</p>
           <div
             className="max-h-52 overflow-y-auto rounded-[12px] border border-sg-line bg-sg-paper p-3"
             tabIndex={0}
-            aria-label={t("ht_disc_link")}
+            aria-label="HomeTeam Safety & Liability Disclaimer"
           >
             <DisclaimerText blocks={HOMETEAM_DISCLAIMER_BLOCKS} />
           </div>
@@ -482,11 +482,11 @@ function LogSheet({
             acknowledged. Submit stays disabled until checked. Self-serve only. */}
         {!isOutreach && discGate ? (
           <div className="flex flex-col gap-2">
-            <p className="text-small font-semibold text-sg-ink">{t("hr_disc_link")}</p>
+            <p className="text-small font-semibold text-sg-ink">HomeTeam Help Requests — Safety &amp; Liability Disclaimer</p>
             <div
               className="max-h-52 overflow-y-auto rounded-[12px] border border-sg-line bg-sg-paper p-3"
               tabIndex={0}
-              aria-label={t("hr_disc_link")}
+              aria-label="HomeTeam Help Requests — Safety & Liability Disclaimer"
             >
               <DisclaimerText blocks={HELP_REQUESTS_DISCLAIMER_BLOCKS} />
             </div>
@@ -510,7 +510,7 @@ function LogSheet({
           {t("hr_disc_remind")}{" "}
           {t("disc_full_lead")}{" "}
           <Link to={HELP_REQUESTS_DISCLAIMER_ROUTE} className="inline-flex min-h-[44px] items-center text-sg-sky underline underline-offset-2">
-            {t("hr_disc_link")}
+            HomeTeam Help Requests — Safety &amp; Liability Disclaimer
           </Link>
           .
         </p>

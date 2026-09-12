@@ -686,10 +686,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             document titles (EN in both languages). */}
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-0">
           <Link to="/hometeam-disclaimer" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
-            {t("ht_disc_link")}
+            HomeTeam Safety &amp; Liability Disclaimer
           </Link>
           <Link to="/help-requests-disclaimer" className="inline-flex min-h-[44px] items-center text-small text-sg-ink-soft underline underline-offset-2">
-            {t("hr_disc_link")}
+            HomeTeam Help Requests — Safety &amp; Liability Disclaimer
           </Link>
         </div>
         <p className="text-small text-sg-ink-soft">© 2026 MPRCC — Marin Peer Resource Community Collective.</p>
