@@ -2467,4 +2467,42 @@ alter table public.analytics_events
   add constraint analytics_events_event_type_check
   check (event_type in ('resource_search', 'peer_support_request', 'sweep_alert_view',
                         'check_in', 'donation_offer_submit', 'donation_request_submit',
-                        'donation_offer_complete', 'donation_request_complete'));
+                        'donation_offer_complete', 'donation_request_complete',
+                        'volunteer_submit'));
+
+
+-- ---------------------------------------------------------------------------
+-- Volunteer sign-ups (owner-directed 2026-09-12, Part B) — a third card on the
+-- Give page ("Volunteer") + a staff queue inside /outreach.
+--
+-- WHO: anyone may submit (anonymous app). Name + interest_note are optional;
+-- CONTACT is required and may be a phone number OR an email (the outreach team
+-- reaches out either way). status: 'new' → 'contacted' (staff mark-contacted).
+--
+-- RLS floor (same hardening as donation_offers / outreach_roster):
+--  - ANYONE can INSERT (anonymous app).
+--  - NO public SELECT/UPDATE policies — anonymous readers get ZERO rows. All
+--    queue reads + status changes run on the service role through server
+--    routes that gate the caller's phone against outreach_roster.
+-- ---------------------------------------------------------------------------
+create table if not exists public.volunteer_signups (
+  id            uuid primary key default gen_random_uuid(),
+  name          text check (name is null or char_length(name) between 1 and 80),
+  contact       text not null check (char_length(contact) between 5 and 120),
+  interest_note text check (interest_note is null or char_length(interest_note) <= 500),
+  status        text not null default 'new' check (status in ('new', 'contacted')),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+alter table public.volunteer_signups enable row level security;
+drop policy if exists "volunteer signups public insert" on public.volunteer_signups;
+create policy "volunteer signups public insert" on public.volunteer_signups for insert
+  with check (true);
+create index if not exists idx_volunteer_signups_status
+  on public.volunteer_signups (status, created_at desc);
+create index if not exists idx_volunteer_signups_created
+  on public.volunteer_signups (created_at desc);
+comment on table public.volunteer_signups is
+  'Volunteer interest sign-ups (Part B). Contact = phone or email, staff-only '
+  'visibility (roster-gated reads via server routes). Status new→contacted. '
+  'No public SELECT — anonymous readers get zero rows.';

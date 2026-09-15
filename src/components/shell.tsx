@@ -17,7 +17,7 @@ import { useLanguage } from "~/lib/i18n";
 import { listSweeps, getMyCheckIn, listTrustedPeers, demoUserId } from "~/lib/server";
 import { BellMoonIcon, CheckIcon, InfoIcon, MenuIcon } from "~/lib/appIcons";
 import { BottomSheet, ToastStack, useToasts } from "~/components/ui";
-import { OPEN_WELCOME_EVENT } from "~/components/welcome";
+import { OPEN_WELCOME_EVENT, WELCOME_KEY } from "~/components/welcome";
 import type { ToastState } from "~/components/ui";
 import { MODES, MODE_KEY, displayMode, readMode, routeHint, writeMode } from "~/lib/modeNav";
 import type { Mode, ModeDef, SubTab } from "~/lib/modeNav";
@@ -204,7 +204,11 @@ function ModeNav() {
   const pickMode = (m: Mode, opts?: { moveFocus?: boolean }) => {
     setStored(m);
     writeMode(m); // persist on tap only — never on deep-link highlight (§5)
-    onModeAnnounce(m);
+    // NAV_RESTRUCTURE §5 fix: `onModeAnnounce` was NEVER defined (TS2304,
+    // shipped since 6954b82) — every mode-chip tap threw ReferenceError after
+    // writeMode and before navigate(), which is the owner's "stuck toggle,
+    // have to hit the logo" report. The mode announce happens below via
+    // setAnnounce in the moveFocus block; this line is deleted, not replaced.
     const def = MODES.find((d) => d.id === m);
     if (def) void navigate({ to: def.home.to, search: def.home.search });
     // Owner QA 2026-09-09: switching modes lands at the top (fixes clunk).
@@ -528,6 +532,46 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
     <>
       <BottomSheet open={open && !crisisOpen} onClose={onClose} title={t("nav_more")}>
         <nav className="flex flex-col gap-1" aria-label="More">
+          {/* PASS 3 §3.3 order: what → why → when → how → utility.
+              GROUP what: what SafeGround is / about + privacy. */}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              window.dispatchEvent(new Event(OPEN_WELCOME_EVENT));
+            }}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-left text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <InfoIcon size={22} aria-hidden />
+            {t("menu_welcome")}
+          </button>
+          <Link
+            to="/privacy"
+            onClick={onClose}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <InfoIcon size={22} aria-hidden />
+            {t("menu_about")}
+          </Link>
+          {/* GROUP why/when: sweep heads-ups (why this exists), crisis (when) */}
+          <Link
+            to="/sweeps"
+            onClick={onClose}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <BellMoonIcon size={22} aria-hidden />
+            {t("menu_sweeps")}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCrisisOpen(true)}
+            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-left text-body text-sg-ink hover:bg-sg-paper"
+          >
+            <CheckIcon size={22} aria-hidden />
+            {t("menu_crisis")}
+          </button>
+          {/* GROUP how: send an alert, my alerts, Give Money (EN-only strings
+              unchanged — spec §3.3 rows 5–7). */}
           <Link
             to="/alerts/new"
             onClick={onClose}
@@ -545,7 +589,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             My alerts
           </Link>
           {/* Give Money (owner-directed 2026-09-12): BetterWorld gift link —
-              secondary entry; the primary spot is the "I Want to Help" mode. */}
+              secondary entry; the primary spot is the "I Want to Give" mode. */}
           <a
             href="https://mprcc.betterworld.org/"
             target="_blank"
@@ -556,25 +600,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             <CheckIcon size={22} aria-hidden />
             Give Money
           </a>
-          <Link
-            to="/privacy"
-            onClick={onClose}
-            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
-          >
-            <InfoIcon size={22} aria-hidden />
-            {t("menu_about")}
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              window.dispatchEvent(new Event(OPEN_WELCOME_EVENT));
-            }}
-            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
-          >
-            <InfoIcon size={22} aria-hidden />
-            {t("menu_welcome")}
-          </button>
+          {/* GROUP utility: notifications test, last. */}
           <Link
             to="/push-test"
             onClick={onClose}
@@ -583,14 +609,6 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
             <InfoIcon size={22} aria-hidden />
             {t("menu_notify")}
           </Link>
-          <button
-            type="button"
-            onClick={() => setCrisisOpen(true)}
-            className="flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 text-body text-sg-ink hover:bg-sg-paper"
-          >
-            <CheckIcon size={22} aria-hidden />
-            {t("menu_crisis")}
-          </button>
           {signedIn ? (
             <>
               <p className="px-3 pt-1 text-small text-sg-ink-soft">{t("menu_signed_in_as")} {displayName}</p>
@@ -639,11 +657,45 @@ export function deviceToken(): string {
   return token;
 }
 
+// PASS 3 §2.1 — cold-start redirect source. Captured ONCE per document load at
+// module scope (the client bundle evaluates it on entry, so SPA navigations
+// keep the ORIGINAL path). "": SSR/non-browser renders never redirect.
+const INITIAL_PATH = typeof window !== "undefined" ? window.location.pathname : "";
+/** At-most-once per load — the redirect may only fire on the first AppShell
+ * mount of a cold start, never on SPA navigation back to "/". */
+let coldStartRedirectDone = false;
+
 export function AppShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
   const { toasts, dismiss } = useToasts();
   const [offline, setOffline] = useState(false);
+  const navigate = useNavigate();
+
+  // PASS 3 §2.1 — What-is page cold-start redirect. The INITIAL_PATH is
+  // captured ONCE per document load at module scope: SPA navigations never
+  // re-evaluate it, so tapping the logo from any mode lands on "/" and STAYS.
+  // The `done` flag makes the redirect fire at most once per load too.
+  useEffect(() => {
+    if (coldStartRedirectDone) return;
+    if (INITIAL_PATH !== "/") return;
+    coldStartRedirectDone = true;
+    let welcomed = false;
+    try {
+      welcomed = localStorage.getItem(WELCOME_KEY) !== null;
+    } catch {
+      welcomed = false; // private mode — first-visit path; no redirect
+    }
+    if (!welcomed) return; // fresh visitor: the gate + welcome own the screen
+    const mode = readMode(); // neighbor default when nothing stored
+    if (mode === "hometeam")
+      void navigate({ to: "/hometeam", search: { view: undefined }, replace: true });
+    else if (mode === "admin")
+      void navigate({ to: "/outreach", search: { tab: "alerts", queue: undefined }, replace: true });
+    else
+      void navigate({ to: "/help", search: { view: undefined, cat: undefined }, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onOff = () => setOffline(true);
