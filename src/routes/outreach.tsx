@@ -27,6 +27,7 @@ import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { DonationQueueSection } from "~/components/donationQueues";
+import { VolunteerQueueSection } from "~/components/volunteerQueues";
 
 /* Staff PIN lock (owner-directed 2026-09-11): the phone only identifies WHO;
    the PIN proves it's them. On a verified unlock we persist sg.alert.phone
@@ -35,7 +36,7 @@ import { DonationQueueSection } from "~/components/donationQueues";
 const STAFF_UNLOCKED_KEY = "sg.staff.unlocked";
 const STAFF_PIN_SESSION = "sg.staff.pin";
 
-type Tab = "sweeps" | "alerts" | "offers" | "needs" | "more";
+type Tab = "sweeps" | "alerts" | "offers" | "needs" | "volunteers" | "more";
 
 interface SweepItem {
   id: string;
@@ -142,7 +143,7 @@ function OutreachPage() {
   // 3-mode nav + Pass 2 push links: /outreach?tab=donations&queue=offers|requests
   // resolves to the Offers/Needs queue tabs; tab=alerts|sweeps|more unchanged.
   const initialTab: Tab =
-    outreachSearch.tab === "alerts" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more"
+    outreachSearch.tab === "alerts" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more" || outreachSearch.tab === "volunteers"
       ? outreachSearch.tab
       : outreachSearch.tab === "offers" || outreachSearch.tab === "needs"
         ? outreachSearch.tab
@@ -597,7 +598,7 @@ function OutreachPage() {
             </div>
 
             <nav className="flex gap-2 overflow-x-auto" aria-label="Dashboard sections">
-              {(["sweeps", "alerts", "offers", "needs", "more"] as Tab[]).map((t) => (
+              {(["sweeps", "alerts", "offers", "needs", "volunteers", "more"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -609,7 +610,7 @@ function OutreachPage() {
                       : "min-h-[48px] flex-1 rounded-[12px] border-2 border-sg-line bg-sg-card px-3 text-btn text-sg-ink"
                   }
                 >
-                  {t === "sweeps" ? "Sweeps" : t === "alerts" ? "Alerts" : t === "offers" ? "Offers" : t === "needs" ? "Needs" : admin ? "Team" : "Chat"}
+                  {t === "sweeps" ? "Sweeps" : t === "alerts" ? "Alerts" : t === "offers" ? "Offers" : t === "needs" ? "Needs" : t === "volunteers" ? "Volunteers" : admin ? "Team" : "Chat"}
                 </button>
               ))}
             </nav>
@@ -785,6 +786,9 @@ function OutreachPage() {
             ) : null}
             {tab === "needs" ? (
               <DonationQueueSection queue="requests" phone={phone} />
+            ) : null}
+            {tab === "volunteers" ? (
+              <VolunteerQueueSection phone={phone} />
             ) : null}
 
             {tab === "more" ? (

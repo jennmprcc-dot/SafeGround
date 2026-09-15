@@ -363,11 +363,12 @@ export function WelcomeOverlay() {
             SafeGround is your free, private helper.
             <br />
             Find{" "}
-            {/* Resource mention links to Find Help (owner-directed 2026-09-12):
+            {/* Resource mention links to Find Resources (owner-directed
+                2026-09-12; route claims the Neighbor mode since PASS 3 §3.4):
                 same choose() mechanics as the doors — closes + navigates. */}
             <Link
               to="/help"
-              onClick={() => choose("hometeam", "/help")}
+              onClick={() => choose("neighbor", "/help")}
               className="text-sg-sky underline underline-offset-2"
             >
               food and shelter
@@ -392,7 +393,7 @@ export function WelcomeOverlay() {
           </button>
           <button
             type="button"
-            onClick={() => choose("neighbor", "/peer-support")}
+            onClick={() => choose("neighbor", "/help")}
             className="flex min-h-[52px] w-full flex-col items-start justify-center gap-0.5 rounded-[12px] border border-sg-sky/50 bg-sg-card px-4 py-3 text-left transition-colors hover:border-sg-sky hover:bg-sg-sky-wash/40 active:bg-sg-sky-wash"
           >
             <span className="text-body font-semibold text-sg-sky">{t("welcome_choice_neighbor")}</span>

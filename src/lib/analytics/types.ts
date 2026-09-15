@@ -16,4 +16,8 @@ export type AnalyticsEventType =
   | "donation_offer_submit"
   | "donation_request_submit"
   | "donation_offer_complete"
-  | "donation_request_complete";
+  | "donation_request_complete"
+  // Pass 3 — Volunteer flow (owner-directed 2026-09-12): zero-PII, logged on
+  // submit only (category/status = contact-kind). Keep in sync with
+  // EVENT_TYPES in server.ts.
+  | "volunteer_submit";

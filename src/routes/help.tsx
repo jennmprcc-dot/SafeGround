@@ -333,7 +333,7 @@ function NavigatorPage() {
       <div className="flex flex-col gap-4 px-4 pt-5">
         <header className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-h1">Find help</h1>
+            <h1 className="text-h1">{t("help_title")}</h1>
             <p className="mt-0.5 text-small text-sg-ink-soft">Find food, rest, and care — no account needed.</p>
           </div>
           {isAdmin ? (

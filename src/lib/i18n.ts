@@ -29,21 +29,24 @@ const EN = {
   menu_title: "Menu",
   menu_hometeam: "HomeTeam — step in for a neighbor",
   menu_about: "About & privacy",
-  menu_welcome: "Welcome & how it works",
+  menu_welcome: "What is SafeGround?", // PASS 3 §3.3 — the More sheet's first entry
   menu_queue: "Peer-support queue (outreach)",
   menu_notify: "Notifications test (team)",
   menu_crisis: "Crisis resources",
+  menu_sweeps: "Sweep heads-ups", // PASS 3 §3.3 — why/when entry ✦
   menu_signin: "Sign in",
   menu_signout: "Sign out",
   menu_signed_in_as: "Signed in as",
-  // 3-mode navigation (NAV_REFACTOR_SPEC §7) — Row 2 modes + Row 3 sub-nav
+  // 3-mode navigation (NAV_REFACTOR_SPEC §7 + NAV_RESTRUCTURE §1) — Row 2
+  // modes + Row 3 sub-nav. Mode names owner-specified 2026-09-12 (verbatim);
+  // ES translations are ✦ candidates for the owner's copy-read.
   mode_label: "Choose your side",
-  mode_hometeam: "I Want to Help",
-  mode_neighbor: "I Need Help",
+  mode_hometeam: "I Want to Give",
+  mode_neighbor: "I Need Resources",
   mode_admin: "Admin",
   mode_status: "You're on {mode}.",
   nav_ht_needs: "Needs Queue",
-  nav_ht_give: "Donate/Pickup",
+  nav_ht_give: "Donate an Item",
   // Button captions (owner copy 2026-09-12) — one calm line under each action
   un_caption: "Urgent. MPRCC team responds directly. Never 911.",
   ps_caption: "Non-urgent. A peer reaches out to talk.",
@@ -51,6 +54,7 @@ const EN = {
   give_money: "Give Money",
   give_placeholder: "Support MPRCC's community — give items or money. Items are matched with neighbors by outreach staff.",
   nav_ht_food: "Food & Day Use",
+  nav_nb_resources: "Find Resources", // PASS 3 — Neighbor mode's first tab
   nav_nb_peer: "Talk to Peer",
   nav_nb_requests: "My Requests",
   nav_nb_checkin: "Daily Check-in",
@@ -59,6 +63,8 @@ const EN = {
   nav_ad_resources: "Manage Resources",
   nav_more: "More",
   privacy_micro: "No background location tracking, ever.",
+  // Resource page H1 (PASS 3 — the hardcoded "Find help" H1 is now i18n'd)
+  help_title: "Find resources",
   mode_admin_locked:
     "The Admin side is for the MPRCC outreach team. Everything you need is on the other sides — no account needed.",
   mode_staff_limited:
@@ -369,11 +375,23 @@ const EN = {
   home_story_body_link: "food and shelter",
   home_story_body_b: " fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. Just real help when you need it.",
   home_story_more: "Tell me more",
+  // Landing page = "What is SafeGround?" (PASS 3 §2.2) — the home route is
+  // rebuilt as a static 7-block page. EN copy here is the owner's verbal ask
+  // lightly reflowed; every string is ✦ for the owner's copy-read.
+  home_what_h1: "A calm place to find help.", // ✦
+  home_what_sub: "Made by neighbors who've been there.", // ✦
+  home_what_body:
+    "SafeGround is your free, private helper. Find food, shelter, and care. Get heads-ups about sweeps. Let your people know you're okay with one tap. No account. No background tracking, ever.", // ✦
+  home_who: "For anyone in Marin who needs a hand — or wants to give one.", // ✦
+  home_here_for: "What are you here for?", // ✦
+  home_sweep_link: "Heads-up near you? See sweep heads-ups", // ✦
+  home_crisis_link: "In crisis? Talk to someone", // ✦
   // Welcome mode-choice step (owner-directed 2026-09-11): two equal doors.
+  // PASS 3 §1.3: labels follow the mode renames (give/resources).
   welcome_choice_title: "How will you use SafeGround?",
-  welcome_choice_help: "I want to help",
+  welcome_choice_help: "I want to give",
   welcome_choice_help_sub: "Support MPRCC's community — give money today, donate items soon.",
-  welcome_choice_neighbor: "I need help",
+  welcome_choice_neighbor: "I need resources",
   welcome_choice_neighbor_sub: "Find food and shelter, check in, and stay close to your people.",
   // Sweeps page + report flow
   sw_sub: "Heads-ups from neighbors, kept calm.",
@@ -571,11 +589,11 @@ const EN = {
   dn_offer_sub: "Your offer goes to MPRCC outreach, who match it with a neighbor who asked. They'll reach out to coordinate.",
   dn_path_question: "How would you like to give?",
   dn_path_hint: "Choose one — staff will follow your lead.",
-  dn_path_porch: "Porch drop",
+  dn_path_porch: "My porch drop", // PASS 3 §4.5 — segmented control label ✦
   dn_path_porch_sub: "I'll leave the items on my porch for staff pickup",
-  dn_path_pickup: "Scheduled pickup",
+  dn_path_pickup: "Staff pickup", // PASS 3 §4.5 — segmented control label ✦
   dn_path_pickup_sub: "Staff pick up from my address at a window I choose",
-  dn_path_mprcc: "Drop at MPRCC",
+  dn_path_mprcc: "MPRCC porch", // PASS 3 §4.5 — segmented control label ✦
   dn_path_mprcc_sub: "I'll bring the items to the MPRCC porch",
   dn_address: "Pickup address",
   dn_address_street: "Street address",
@@ -608,7 +626,7 @@ const EN = {
   dn_phone: "Your phone number",
   dn_phone_help: "Only MPRCC staff see this — it's how they reach you to coordinate.",
   dn_phone_bad: "That number looks incomplete — please check it, no rush.",
-  dn_offer_need: "A few things are still needed: the path, the category, a short description, and your phone.",
+  dn_offer_need: "A few things are still needed: the delivery method, the category, a short description, and your phone.", // PASS 3 §4.5 ✦
   dn_submit_offer: "Send my offer",
   dn_submit_request: "Send my request",
   dn_sending: "Sending…",
@@ -629,13 +647,15 @@ const EN = {
   dn_req_notes_ph: "e.g. For a tall person, or a family of three",
   dn_req_size: "Size (optional)",
   dn_req_pod: "How should we get it to you?",
-  dn_pod_pickup: "I'll pick it up",
+  dn_req_pod_hint: "Choose how you'd like to get the items — staff will follow your lead.", // PASS 3 §4.5 ✦
+  dn_req_porch_lead: "Come to the MPRCC porch — items will be ready for you.", // PASS 3 §4.3 ✦
+  dn_pod_pickup: "Porch pickup", // PASS 3 §4.5 — segmented control label ✦
   dn_pod_pickup_sub: "I can come to MPRCC or another spot",
-  dn_pod_delivery: "Deliver it",
+  dn_pod_delivery: "Delivery", // PASS 3 §4.5 — segmented control label ✦
   dn_pod_delivery_sub: "Outreach brings it to me",
-  dn_pod_either: "Either works",
+  dn_pod_either: "Either", // PASS 3 §4.5 — segmented control label ✦
   dn_pod_either_sub: "Whatever is easiest for the team",
-  dn_request_need: "A few things are still needed: the category, what you need, how we should get it to you, and your phone.",
+  dn_request_need: "A few things are still needed: the delivery method, the category, what you need, and your phone.", // PASS 3 §4.5 ✦
   dn_req_caption: "Only MPRCC staff see your request and phone — never public.",
   dn_who: "MPRCC outreach team",
   dn_what_offer: "Your offer details + phone",
@@ -667,6 +687,35 @@ const EN = {
   dn_q_unavailable: "The queue isn't up yet",
   dn_q_load_err: "Couldn't load the queue — the database didn't answer.",
   dn_staff_action: "No auto-matching — staff read both queues and coordinate by phone.",
+  // Volunteer flow (owner-directed 2026-09-12, Part B) — a third card on the
+  // Give page + a staff Volunteers queue in /outreach. Contact = phone OR
+  // email, name + interest optional. Every new string is ✦ for the owner's
+  // copy-read; the success line is owner-verbatim (EN).
+  vol_card_title: "Volunteer", // ✦
+  vol_card_sub: "Ways to help beyond money and items — the team will reach out.", // ✦
+  vol_title: "Volunteer with MPRCC", // ✦
+  vol_sub: "Give time or skills to MPRCC's community work. Fill this in and the outreach team reaches out to you — filling it in doesn't commit you to anything.", // ✦
+  vol_name: "Your name (optional)",
+  vol_contact: "Phone number or email",
+  vol_contact_help: "So the team can reach you. Only MPRCC outreach staff see this — never public.",
+  vol_contact_bad: "A phone number or email is needed so the team can reach you.",
+  vol_note: "What kind of help are you thinking of? (optional)",
+  vol_note_ph: "e.g. weekday mornings, or I can drive",
+  vol_note_help: "Up to 500 characters — only the outreach team sees this",
+  vol_submit: "Send — I'd like to volunteer",
+  vol_need_contact: "A phone number or email first — the team needs a way to reach you.",
+  vol_done: "Thank you — someone will reach out regarding ways to get involved.", // owner-verbatim EN
+  vol_caption: "Only MPRCC outreach staff see your contact info — never public.",
+  vol_err: "That didn't go through — nothing was sent. No rush to try again.",
+  vol_q_title: "Volunteers",
+  vol_q_sub: "Neighbors who offered to volunteer — reach out to welcome them.",
+  vol_q_empty: "No volunteer sign-ups yet",
+  vol_q_empty_sub: "Volunteer sign-ups land here for the outreach team.",
+  vol_q_mark: "Mark contacted",
+  vol_q_marked: "Contacted",
+  vol_q_saved: "Saved — the queue now shows it.",
+  vol_q_load_err: "Couldn't load the volunteers queue — the database didn't answer.",
+  vol_done_notified: "The team has been notified.",
 } as const;
 
 export type I18nKey = keyof typeof EN;
@@ -685,16 +734,17 @@ const ES: Partial<Record<I18nKey, string>> = {
   menu_queue: "Solicitudes de apoyo (equipo)",
   menu_notify: "Prueba de avisos (equipo)",
   menu_crisis: "Recursos de crisis",
+  menu_sweeps: "Avisos de desalojos", // PASS 3 §3.3 — More sheet why/when entry ✦
   menu_signin: "Entrar",
   menu_signout: "Salir",
   menu_signed_in_as: "Sesión como",
   mode_label: "Elige tu lado",
-  mode_hometeam: "Quiero Ayudar",
-  mode_neighbor: "Necesito Ayuda",
+  mode_hometeam: "Quiero Dar", // PASS 3 §1.1 — ES ✦ (owner copy-read)
+  mode_neighbor: "Necesito Recursos", // PASS 3 §1.1 — ES ✦ (owner copy-read)
   mode_admin: "Administración",
   mode_status: "Estás en {mode}.",
   nav_ht_needs: "Necesidades",
-  nav_ht_give: "Donar/Entrega",
+  nav_ht_give: "Donar un artículo", // PASS 3 §1.3 — ES ✦ (matches dn_offer_title)
   // Botones — una línea tranquila bajo cada acción (texto del dueño)
   un_caption: "Urgente. El equipo de MPRCC responde directamente. Nunca al 911.",
   ps_caption: "No urgente. Un compañero te contacta para hablar.",
@@ -702,6 +752,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   give_money: "Donar dinero",
   give_placeholder: "Apoya a la comunidad de MPRCC: dona artículos o dinero. El equipo de alcance empareja los artículos con los vecinos.",
   nav_ht_food: "Comida y día",
+  nav_nb_resources: "Buscar recursos", // PASS 3 — Neighbor mode's first tab ✦
   nav_nb_peer: "Hablar con un par",
   nav_nb_requests: "Mis solicitudes",
   nav_nb_checkin: "Chequeo diario",
@@ -710,6 +761,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   nav_ad_resources: "Recursos",
   nav_more: "Más",
   privacy_micro: "Sin rastreo de ubicación en segundo plano, nunca.",
+  help_title: "Buscar recursos", // PASS 3 — resource page H1 ✦,
   mode_admin_locked:
     "El lado de administración es para el equipo de MPRCC. Lo que necesitas está en los otros lados — sin cuenta.",
   mode_staff_limited:
@@ -998,11 +1050,20 @@ const ES: Partial<Record<I18nKey, string>> = {
   home_story_body_link: "",
   home_story_body_b: "",
   home_story_more: "Cuéntame más",
+  // PASS 3 — What-is page ES ✦ (owner copy-read candidates)
+  home_what_h1: "Un lugar tranquilo para encontrar ayuda.", // ✦
+  home_what_sub: "Hecho por vecinos que han pasado por lo mismo.", // ✦
+  home_what_body:
+    "SafeGround es tu ayudante gratis y privado. Encuentra comida, refugio y cuidados. Recibe avisos de desalojos. Hazle saber a tu gente que estás bien con un toque. Sin cuenta. Nunca ubicación en segundo plano.", // ✦
+  home_who: "Para cualquiera en Marin que necesite una mano — o quiera dar una.", // ✦
+  home_here_for: "¿Para qué estás aquí?", // ✦
+  home_sweep_link: "¿Aviso cerca de ti? Ver avisos de desalojos", // ✦
+  home_crisis_link: "¿En crisis? Habla con alguien", // ✦
   welcome_choice_title: "¿Cómo usarás SafeGround?",
-  welcome_choice_help: "Quiero ayudar",
+  welcome_choice_help: "Quiero dar", // PASS 3 §1.3 — ES ✦
   // Owner copy is never auto-translated — empty ES value falls back to EN.
   welcome_choice_help_sub: "",
-  welcome_choice_neighbor: "Necesito ayuda",
+  welcome_choice_neighbor: "Necesito recursos", // PASS 3 §1.3 — ES ✦
   welcome_choice_neighbor_sub: "",
   sw_sub: "Avisos de vecinos, con calma.",
   sw_count_one: "aviso activo o planeado",
@@ -1188,11 +1249,11 @@ const ES: Partial<Record<I18nKey, string>> = {
   dn_offer_sub: "Tu oferta llega al equipo de MPRCC, que la empareja con un vecino que la pidió. Te contactarán para coordinar.",
   dn_path_question: "¿Cómo quieres dar?",
   dn_path_hint: "Elige una — el equipo seguirá tu indicación.",
-  dn_path_porch: "Dejar en el porche",
+  dn_path_porch: "Dejar en mi porche", // PASS 3 §4.5 — segmented control label ✦
   dn_path_porch_sub: "Dejo los artículos en mi porche para que el equipo los recoja",
-  dn_path_pickup: "Recogida programada",
+  dn_path_pickup: "Recogida por el equipo", // PASS 3 §4.5 — segmented control label ✦
   dn_path_pickup_sub: "El equipo recoge en mi dirección en una ventana que elija",
-  dn_path_mprcc: "Dejar en MPRCC",
+  dn_path_mprcc: "Porche de MPRCC", // PASS 3 §4.5 — segmented control label ✦
   dn_path_mprcc_sub: "Llevaré los artículos al porche de MPRCC",
   dn_address: "Dirección de recogida",
   dn_address_street: "Calle",
@@ -1246,13 +1307,15 @@ const ES: Partial<Record<I18nKey, string>> = {
   dn_req_notes_ph: "p. ej. Para una persona alta, o una familia de tres",
   dn_req_size: "Talla (opcional)",
   dn_req_pod: "¿Cómo te lo llevamos?",
-  dn_pod_pickup: "Lo recojo yo",
+  dn_req_pod_hint: "Elige cómo quieres recibir los artículos — el equipo seguirá tu indicación.", // PASS 3 §4.5 ✦
+  dn_req_porch_lead: "Ven al porche de MPRCC — tus artículos estarán listos.", // PASS 3 §4.3 ✦
+  dn_pod_pickup: "Recoger en el porche", // PASS 3 §4.5 — segmented control label ✦
   dn_pod_pickup_sub: "Puedo ir a MPRCC u otro lugar",
-  dn_pod_delivery: "Que lo entreguen",
+  dn_pod_delivery: "Entrega", // PASS 3 §4.5 — segmented control label ✦
   dn_pod_delivery_sub: "El equipo me lo trae",
-  dn_pod_either: "Cualquiera está bien",
+  dn_pod_either: "Cualquiera", // PASS 3 §4.5 — segmented control label ✦
   dn_pod_either_sub: "Lo más fácil para el equipo",
-  dn_request_need: "Faltan algunas cosas: la categoría, qué necesitas, cómo llevártelo y tu teléfono.",
+  dn_request_need: "Faltan algunas cosas: el modo de entrega, la categoría, qué necesitas y tu teléfono.", // PASS 3 §4.5 ✦
   dn_req_caption: "Solo el equipo de MPRCC ve tu pedido y tu teléfono — nunca público.",
   dn_who: "Equipo de alcance de MPRCC",
   dn_what_offer: "Tu oferta y tu teléfono",
@@ -1284,6 +1347,32 @@ const ES: Partial<Record<I18nKey, string>> = {
   dn_q_unavailable: "La cola aún no está lista",
   dn_q_load_err: "No se pudo cargar la cola — la base de datos no respondió.",
   dn_staff_action: "Sin emparejamiento automático — el equipo lee ambas colas y coordina por teléfono.",
+  // Volunteer flow (owner-directed 2026-09-12, Part B) — ES ✦ candidates.
+  vol_card_title: "Voluntariado", // ✦
+  vol_card_sub: "Formas de ayudar más allá del dinero y los artículos — el equipo te contactará.", // ✦
+  vol_title: "Voluntariado con MPRCC", // ✦
+  vol_sub: "Regala tiempo o habilidades al trabajo comunitario de MPRCC. Llena esto y el equipo de alcance te contactará — llenarlo no te compromete a nada.", // ✦
+  vol_name: "Tu nombre (opcional)",
+  vol_contact: "Teléfono o correo electrónico",
+  vol_contact_help: "Para que el equipo te contacte. Solo el equipo de alcance de MPRCC lo ve — nunca público.",
+  vol_contact_bad: "Se necesita un teléfono o correo para que el equipo te contacte.",
+  vol_note: "¿Qué tipo de ayuda piensas ofrecer? (opcional)",
+  vol_note_ph: "p. ej. mañanas entre semana, o puedo manejar",
+  vol_note_help: "Hasta 500 letras — solo lo ve el equipo de alcance",
+  vol_submit: "Enviar — quiero ser voluntario/a",
+  vol_need_contact: "Primero un teléfono o correo — el equipo necesita cómo contactarte.",
+  vol_done: "Gracias — alguien se comunicará contigo sobre las formas de participar.", // ES of owner-verbatim EN ✦
+  vol_caption: "Solo el equipo de alcance de MPRCC ve tu información de contacto — nunca público.",
+  vol_err: "No se envió — nada salió. Sin prisa para intentarlo de nuevo.",
+  vol_q_title: "Voluntarios",
+  vol_q_sub: "Vecinos que ofrecieron su tiempo — el equipo los contacta para darles la bienvenida.",
+  vol_q_empty: "Aún no hay inscripciones de voluntarios",
+  vol_q_empty_sub: "Las inscripciones de voluntarios llegan aquí para el equipo.",
+  vol_q_mark: "Marcar como contactado",
+  vol_q_marked: "Contactado",
+  vol_q_saved: "Guardado — la cola ya lo muestra.",
+  vol_q_load_err: "No se pudo cargar la cola de voluntarios — la base de datos no respondió.",
+  vol_done_notified: "El equipo ya fue avisado.",
 };
 
 /* ── Lookup (EN fallback — never blank) ────────────────────────── */

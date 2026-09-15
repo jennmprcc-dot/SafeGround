@@ -42,20 +42,23 @@ export const MODES: ModeDef[] = [
     labelKey: "mode_hometeam",
     icon: "🤝",
     home: { to: "/hometeam" },
-    // PASS 1 (2026-09-12): HomeTeam needs-queue UI decommissioned — the
-    // "I Want to Help" mode keeps Give (money + soon items) and the Find
-    // Help shortcut. PASS 2 adds the real offer forms + separate queues.
+    // PASS 3 (NAV_RESTRUCTURE §3.2): the Give mode is two "how" doors — money
+    // first, then items (same page, two anchor views; ?view=money is new).
     tabs: [
+      { id: "money", labelKey: "give_money", icon: "💝", to: "/hometeam", search: { view: "money" } },
       { id: "give", labelKey: "nav_ht_give", icon: "📦", to: "/hometeam", search: { view: "give" } },
-      { id: "food", labelKey: "nav_ht_food", icon: "🍲", to: "/help", search: { cat: "food,daycenters" } },
     ],
   },
   {
     id: "neighbor",
     labelKey: "mode_neighbor",
     icon: "👤",
-    home: { to: "/peer-support" },
+    home: { to: "/help" },
+    // PASS 3 (NAV_RESTRUCTURE §3.2): the resource navigator MOVED here from the
+    // Give mode as the FIRST tab ("Find Resources") — most common "how" first,
+    // trust-circle last. Order is the spec table, do not reorder.
     tabs: [
+      { id: "resources", labelKey: "nav_nb_resources", icon: "🍲", to: "/help" },
       { id: "peer", labelKey: "nav_nb_peer", icon: "💬", to: "/peer-support" },
       // PASS 2: "Request an item" → /help?view=request (form lifts to the top).
       { id: "itemreq", labelKey: "nav_nb_itemreq", icon: "🧦", to: "/help", search: { view: "request" } },
@@ -68,12 +71,15 @@ export const MODES: ModeDef[] = [
     labelKey: "mode_admin",
     icon: "🔒",
     home: { to: "/outreach", search: { tab: "alerts" } },
+    // PASS 3 (NAV_RESTRUCTURE §3.2): safety-first order — Dispatch (when/now)
+    // first, Sweeps (why/context) second (feeds dispatch), Donations + Manage
+    // last. Order is the spec table, do not reorder.
     tabs: [
       { id: "dispatch", labelKey: "nav_ad_dispatch", icon: "🚨", to: "/outreach", search: { tab: "alerts" }, badge: "alerts" },
+      { id: "sweeps", labelKey: "nav_ad_sweeps", icon: "⚠️", to: "/sweeps", badge: "sweeps" },
       // PASS 2: the donation queues live in /outreach (Offers/Needs tabs);
       // this sub-tab deep-links staff straight to the offers queue.
       { id: "donations", labelKey: "nav_ad_donations", icon: "🧺", to: "/outreach", search: { tab: "donations", queue: "offers" } },
-      { id: "sweeps", labelKey: "nav_ad_sweeps", icon: "⚠️", to: "/sweeps", badge: "sweeps" },
       { id: "manage", labelKey: "nav_ad_resources", icon: "⚙️", to: "/help", search: { view: "manage" } },
     ],
   },
@@ -124,13 +130,17 @@ export function routeHint(pathname: string, query: Record<string, string | undef
   if (view === "manage") return { mode: "admin", tab: "manage" };
   switch (pathname) {
     case "/hometeam":
-      // Needs tab is decommissioned (PASS 1); Give is the default sub-tab.
+      // PASS 3 (NAV_RESTRUCTURE §3.4): ?view=money is the Give Money anchor
+      // sub-tab; default /hometeam highlights Donate an Item.
+      if (view === "money") return { mode: "hometeam", tab: "money" };
       return { mode: "hometeam", tab: "give" };
     case "/help":
-      // PASS 2: ?view=request is the Neighbor mode's "Request an item" sub-tab;
-      // the default /help stays the HomeTeam Food & Day Use shortcut.
+      // PASS 3 (NAV_RESTRUCTURE §3.4): the default /help is now the Neighbor
+      // mode's first tab (Find Resources — moved from the Give mode);
+      // ?view=request stays the "Request an item" sub-tab; ?view=manage is
+      // handled above (Admin).
       if (view === "request") return { mode: "neighbor", tab: "itemreq" };
-      return { mode: "hometeam", tab: "food" };
+      return { mode: "neighbor", tab: "resources" };
     case "/peer-support":
       return { mode: "neighbor", tab: "peer" };
     case "/requests":

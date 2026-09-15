@@ -10,8 +10,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card } from "~/components/ui";
 import { DonateItemForm } from "~/components/donationForms";
+import { VolunteerForm } from "~/components/volunteerForm";
 import { useLanguage } from "~/lib/i18n";
 import { HandsIcon } from "~/lib/icons";
+import { useSearch } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 
 export const GIVE_URL = "https://mprcc.betterworld.org/";
 
@@ -30,6 +33,22 @@ function GiveLink({ variant = "primary" }: { variant?: "primary" | "secondary" }
 
 function HomeTeamPage() {
   const { t } = useLanguage();
+  const search = useSearch({ from: "/hometeam" }) as { view?: string };
+  // PASS 3 §3.2: ?view=money deep-links to the Give Money card (the sub-tab
+  // anchors on the same page); default highlights Donate an Item (routeHint).
+  const moneyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (search.view === "money") {
+      // Double rAF so the sticky header + sub-nav have painted before we offset.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          moneyRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+          window.scrollBy(0, -160);
+        }),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AppShell>
@@ -39,10 +58,11 @@ function HomeTeamPage() {
         <p className="-mt-3 text-small text-sg-ink-soft">{t("mode_hero_ht_sub")}</p>
 
         {/* Give Money — primary spot (owner-directed 2026-09-12). */}
-        <Card className="border-sg-sage/60 bg-sg-sage-wash/40">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start gap-3">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-sg-sage text-white" aria-hidden>
+        <div ref={moneyRef} className="scroll-mt-40">
+          <Card className="border-sg-sage/60 bg-sg-sage-wash/40">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-sg-sage text-white" aria-hidden>
                 <HandsIcon size={24} />
               </span>
               <div className="min-w-0 flex-1">
@@ -53,11 +73,17 @@ function HomeTeamPage() {
             <GiveLink />
           </div>
         </Card>
+        </div>
 
         {/* Donate an item — Pass 2 offer form (owner-directed 2026-09-12):
             porch drop / scheduled pickup / MPRCC porch, photo optional,
             phone only for staff coordination. */}
         <DonateItemForm />
+
+        {/* Volunteer — Pass 3 third card (owner-directed 2026-09-12, Part B):
+            contact (phone or email) + optional name/interest note; lands in
+            the staff Volunteers queue inside /outreach. */}
+        <VolunteerForm />
 
         <p className="text-small text-sg-ink-soft">{t("home_noloc")}</p>
       </div>

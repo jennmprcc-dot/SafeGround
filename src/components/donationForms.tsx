@@ -20,12 +20,12 @@
  * never ~/db or server modules.
  */
 import { useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   ALWAYS_ACCEPTING,
   DONATION_API,
   MPRCC_PORCH,
-  OFFER_PATHS,
   PICKUP_TIME_PLACEHOLDER,
   PORCH_DROP_STAFF_NOTE,
   PHOTO_B64_CAP_CHARS,
@@ -121,44 +121,68 @@ function CategorySelect({
   );
 }
 
-function RadioCard({
-  checked,
-  onSelect,
-  title,
-  sub,
-  children,
+/* ── Segmented delivery-method control (PASS 3 §4.4) ─────────────────
+ * One full-width row of three equal buttons (role="radio", 48px min height,
+ * 8px gaps) — ALWAYS visible, never defaulted. Checked = sage fill on the
+ * DONATE form / sky fill on the REQUEST form (mode accents). Roving tabindex
+ * + ArrowLeft/Right so keyboard users can reach and change the choice. */
+function SegmentedChoice({
+  value,
+  onChange,
+  options,
+  accent,
+  ariaLabel,
 }: {
-  checked: boolean;
-  onSelect: () => void;
-  title: string;
-  sub: string;
-  children?: React.ReactNode;
+  value: string | "";
+  onChange: (v: string) => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  accent: "sage" | "sky";
+  ariaLabel: string;
 }) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>, i: number) => {
+    let next: number | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (i + 1) % options.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (i - 1 + options.length) % options.length;
+    if (next !== null) {
+      e.preventDefault();
+      onChange(options[next].value);
+      refs.current[next]?.focus();
+    }
+  };
   return (
     <div
-      role="radio"
-      aria-checked={checked}
-      tabIndex={-1}
-      onClick={onSelect}
-      className={cn(
-        "flex cursor-pointer flex-col gap-1 rounded-[12px] border-2 bg-sg-card px-4 py-3 transition-colors",
-        checked ? "border-sg-sage bg-sg-sage-wash/50" : "border-sg-line hover:bg-sg-paper",
-      )}
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="grid grid-cols-3 gap-2"
     >
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-body font-medium text-sg-ink">{title}</span>
-        <span
-          aria-hidden
-          className={cn(
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
-            checked ? "border-sg-sage bg-sg-sage" : "border-sg-line bg-sg-card",
-          )}
-        >
-          {checked ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
-        </span>
-      </span>
-      <span className="text-small text-sg-ink-soft">{sub}</span>
-      {children}
+      {options.map((o, i) => {
+        const checked = value === o.value;
+        return (
+          <button
+            key={o.value}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            tabIndex={checked ? 0 : -1}
+            onClick={() => onChange(o.value)}
+            onKeyDown={(e) => onKey(e, i)}
+            className={cn(
+              "flex min-h-[48px] items-center justify-center rounded-[12px] border-2 px-1 text-center text-btn font-medium transition-colors",
+              checked
+                ? accent === "sage"
+                  ? "border-sg-sage bg-sg-sage text-white"
+                  : "border-sg-sky bg-sg-sky text-white"
+                : "border-sg-line bg-sg-card text-sg-ink-soft hover:text-sg-ink focus-visible:border-sg-sky focus-visible:text-sg-ink",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -298,25 +322,31 @@ export function DonateItemForm() {
           </p>
         ) : null}
 
-        <div role="radiogroup" aria-label={t("dn_path_question")} className="flex flex-col gap-2">
+        {/* PASS 3 §4: delivery method is the FIRST field — a 3-button
+            segmented control (My porch drop / Staff pickup / MPRCC porch),
+            always visible, never defaulted. The porch info block reveals
+            inline for MPRCC porch; the address block below reveals for the
+            two address paths (unchanged behavior). */}
+        <div className="flex flex-col gap-2">
           <p className="text-btn font-medium">{t("dn_path_question")}</p>
+          <SegmentedChoice
+            value={path}
+            onChange={(v) => setPath(v as OfferPath)}
+            options={[
+              { value: "porch_drop", label: t("dn_path_porch") },
+              { value: "scheduled_pickup", label: t("dn_path_pickup") },
+              { value: "mprcc_porch", label: t("dn_path_mprcc") },
+            ]}
+            accent="sage"
+            ariaLabel={t("dn_path_question")}
+          />
           {path === "" ? <p className="text-small text-sg-ink-soft">{t("dn_path_hint")}</p> : null}
-          {OFFER_PATHS.map((p) => (
-            <RadioCard
-              key={p}
-              checked={path === p}
-              onSelect={() => setPath(p)}
-              title={t(p === "porch_drop" ? "dn_path_porch" : p === "scheduled_pickup" ? "dn_path_pickup" : "dn_path_mprcc")}
-              sub={t(p === "porch_drop" ? "dn_path_porch_sub" : p === "scheduled_pickup" ? "dn_path_pickup_sub" : "dn_path_mprcc_sub")}
-            >
-              {p === "mprcc_porch" && path === p ? (
-                <span className="mt-1 block rounded-[10px] bg-sg-paper px-3 py-2 text-small text-sg-ink-soft">
-                  {MPRCC_PORCH.address} — {MPRCC_PORCH.hours}
-                  <span className="mt-0.5 block text-sg-ink">“{MPRCC_PORCH.dropInstruction}”</span>
-                </span>
-              ) : null}
-            </RadioCard>
-          ))}
+          {path === "mprcc_porch" ? (
+            <span className="block rounded-[10px] bg-sg-paper px-3 py-2 text-small text-sg-ink-soft">
+              {MPRCC_PORCH.address} — {MPRCC_PORCH.hours}
+              <span className="mt-0.5 block text-sg-ink">“{MPRCC_PORCH.dropInstruction}”</span>
+            </span>
+          ) : null}
         </div>
 
         {path === "porch_drop" || path === "scheduled_pickup" ? (
@@ -572,6 +602,35 @@ export function RequestItemForm({ compact = false }: { compact?: boolean }) {
           </p>
         ) : null}
 
+        {/* PASS 3 §4: delivery method is the FIRST field (moved from the
+            bottom) — a 3-button segmented control (Porch pickup / Delivery /
+            Either), always visible, never defaulted. Porch pickup reveals the
+            MPRCC porch info block so the neighbor knows where to come. */}
+        <div className="flex flex-col gap-2">
+          <p className="text-btn font-medium">{t("dn_req_pod")}</p>
+          <SegmentedChoice
+            value={pod}
+            onChange={(v) => setPod(v as PickupOrDelivery)}
+            options={[
+              { value: "pickup", label: t("dn_pod_pickup") },
+              { value: "delivery", label: t("dn_pod_delivery") },
+              { value: "either", label: t("dn_pod_either") },
+            ]}
+            accent="sky"
+            ariaLabel={t("dn_req_pod")}
+          />
+          {pod === "" ? <p className="text-small text-sg-ink-soft">{t("dn_req_pod_hint")}</p> : null}
+          {pod === "pickup" ? (
+            <div className="rounded-[10px] bg-sg-paper px-3 py-2">
+              <p className="text-small font-medium text-sg-sky">{t("dn_req_porch_lead")}</p>
+              <p className="mt-0.5 text-small text-sg-ink-soft">
+                {MPRCC_PORCH.address} — {MPRCC_PORCH.hours}
+              </p>
+              <p className="mt-0.5 text-small text-sg-ink">“{MPRCC_PORCH.dropInstruction}”</p>
+            </div>
+          ) : null}
+        </div>
+
         <CategorySelect
           label={t("dn_category")}
           value={category}
@@ -611,19 +670,6 @@ export function RequestItemForm({ compact = false }: { compact?: boolean }) {
           placeholder={t("dn_req_notes_ph")}
           maxLength={500}
         />
-
-        <div role="radiogroup" aria-label={t("dn_req_pod")} className="flex flex-col gap-2">
-          <p className="text-btn font-medium">{t("dn_req_pod")}</p>
-          {(["pickup", "delivery", "either"] as const).map((p) => (
-            <RadioCard
-              key={p}
-              checked={pod === p}
-              onSelect={() => setPod(p)}
-              title={t(p === "pickup" ? "dn_pod_pickup" : p === "delivery" ? "dn_pod_delivery" : "dn_pod_either")}
-              sub={t(p === "pickup" ? "dn_pod_pickup_sub" : p === "delivery" ? "dn_pod_delivery_sub" : "dn_pod_either_sub")}
-            />
-          ))}
-        </div>
 
         <TextField
           label={t("dn_phone")}

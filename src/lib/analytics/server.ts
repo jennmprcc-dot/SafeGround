@@ -32,6 +32,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set([
   "donation_request_submit",
   "donation_offer_complete",
   "donation_request_complete",
+  // Pass 3 — Volunteer flow (owner-directed 2026-09-12): zero-PII, submit only.
+  "volunteer_submit",
 ]);
 
 const UUID_RE =
