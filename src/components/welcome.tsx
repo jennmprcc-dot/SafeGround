@@ -93,7 +93,9 @@ export function WelcomeOverlay() {
   const [standalone, setStandalone] = useState(false);
   const [showIOS, setShowIOS] = useState(true);
   const [crisisOpen, setCrisisOpen] = useState(false);
-  const [shareLabel, setShareLabel] = useState("Share SafeGround");
+  // Share/QR card state — `copied` is a flag (not a stored string) so the
+  // label re-renders correctly when the language toggles.
+  const [copied, setCopied] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [linkText, setLinkText] = useState<string | null>(null);
@@ -295,7 +297,7 @@ export function WelcomeOverlay() {
     const url = window.location.origin;
     if (navigator.share) {
       try {
-        await navigator.share({ title: "SafeGround", text: "A calm place to find help — from MPRCC.", url });
+        await navigator.share({ title: "SafeGround", text: t("home_share_text"), url });
       } catch {
         /* user cancelled — stay silent */
       }
@@ -303,7 +305,7 @@ export function WelcomeOverlay() {
     }
     try {
       await navigator.clipboard.writeText(url);
-      setShareLabel("Link copied — pass it along.");
+      setCopied(true);
     } catch {
       setLinkText(url); // clipboard blocked: show the URL as selectable text
     }
@@ -469,29 +471,29 @@ export function WelcomeOverlay() {
 
         {/* 8 · Share / QR — unchanged */}
         <Card>
-          <h2 className="text-h2">Pass it along</h2>
-          <p className="mt-1 text-body text-sg-ink-soft">Know someone who could use this? Share SafeGround.</p>
+          <h2 className="text-h2">{t("home_share_h")}</h2>
+          <p className="mt-1 text-body text-sg-ink-soft">{t("home_share_sub")}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={share}>
               <ShareIcon />
-              {shareLabel}
+              {copied ? t("home_share_copied") : t("home_share_btn")}
             </Button>
             <Button variant="secondary" onClick={toggleQr} aria-expanded={qrOpen} aria-controls="sg-qr-panel">
               <QrIcon />
-              {qrOpen ? "Hide QR code" : "Show QR code"}
+              {qrOpen ? t("home_qr_hide") : t("home_qr_show")}
             </Button>
           </div>
           {linkText ? (
             <p className="mt-3 break-all text-small text-sg-ink">
-              Copy this link: <span className="select-all">{linkText}</span>
+              {t("home_share_link_label")} <span className="select-all">{linkText}</span>
             </p>
           ) : null}
           {qrOpen && qrUrl ? (
             <div id="sg-qr-panel" className="mt-4 flex flex-col items-center gap-2">
               <img src={qrUrl} alt="QR code linking to SafeGround" width={200} height={200} className="h-[200px] w-[200px]" />
-              <p className="text-small text-sg-ink-soft">Point a camera at this to open SafeGround.</p>
+              <p className="text-small text-sg-ink-soft">{t("home_qr_caption")}</p>
               <Button variant="quiet" onClick={() => window.print()} className={cn("self-center")}>
-                Print the QR code
+                {t("home_qr_print")}
               </Button>
             </div>
           ) : null}
