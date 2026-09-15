@@ -2506,3 +2506,144 @@ comment on table public.volunteer_signups is
   'Volunteer interest sign-ups (Part B). Contact = phone or email, staff-only '
   'visibility (roster-gated reads via server routes). Status new→contacted. '
   'No public SELECT — anonymous readers get zero rows.';
+
+-- ---------------------------------------------------------------------------
+-- Peer groups + group check-in send (owner-requested 2026-09-15) — BUILD A
+--
+-- WHY: check-ins currently reach NO peers. Two disconnected peer systems exist
+-- (/checkin ran on a demo device UUID; peer management runs on phone identity),
+-- so peers added by phone never appeared and a check-in pushed nobody. This
+-- section adds the missing phone→users.id bind plus named groups of trusted
+-- peers, so one check-in can reach a whole group AND notify each member.
+--
+-- PRIVACY (non-negotiable; enforced here, not in buttons):
+--   * peer_groups / peer_group_members are person-adjacent data. RLS is ON and
+--     there are ZERO anon/authenticated policies — reads/writes go through the
+--     app's server routes on the service role (the outreach_roster precedent,
+--     PR #50). Anonymous readers get zero rows.
+--   * A group is a VIEW of the existing mutual-accepted peer graph. Membership
+--     grants NO new visibility: peers still see only fuzzed ~150m coords via
+--     public.peer_check_ins, only while sharing, for 24h. The group's name and
+--     its other members are never exposed to peers (they are not in any
+--     peer-facing payload or push).
+--   * No per-recipient notification log exists (deliberate): delivery counts
+--     are computed at send time and returned transiently.
+--   * Group names are length/format constrained at the DB level (no phone-like
+--     runs, no '@') so a name can never smuggle PII; the route adds the calm
+--     copy + the address/full-name heuristics.
+-- ---------------------------------------------------------------------------
+create table if not exists public.peer_groups (
+  id            uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null references public.users (id) on delete cascade,
+  name          text not null
+                check (char_length(btrim(name)) between 1 and 24
+                       and name !~ '[0-9]{7,}'
+                       and position('@' in name) = 0),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create unique index if not exists peer_groups_owner_name
+  on public.peer_groups (owner_user_id, lower(btrim(name)));
+create index if not exists idx_peer_groups_owner
+  on public.peer_groups (owner_user_id, created_at desc);
+alter table public.peer_groups enable row level security;
+-- No anon/authenticated policies: a group name is personal data. Server-route
+-- (service-role) access only — the outreach_roster precedent (PR #50).
+create table if not exists public.peer_group_members (
+  group_id       uuid not null references public.peer_groups (id) on delete cascade,
+  member_user_id uuid not null references public.users (id) on delete cascade,
+  added_at       timestamptz not null default now(),
+  primary key (group_id, member_user_id)
+);
+create index if not exists idx_peer_group_members_member
+  on public.peer_group_members (member_user_id);
+alter table public.peer_group_members enable row level security;
+-- No anon/authenticated policies (same floor as peer_groups).
+comment on table public.peer_groups is
+  'Named audience of trusted peers for one-tap group check-ins. Owner-only; '
+  'RLS on with ZERO public policies (server-route/service-role reads only). '
+  'No PII in name (1-24 chars, no 7+ digit runs, no @). Membership is a view '
+  'of the mutual-accepted peer graph and grants NO new visibility.';
+comment on table public.peer_group_members is
+  'peer_groups membership. RLS on with ZERO public policies. Being in a group '
+  'is not a privacy grant — only the mutual-accepted peer rule exposes a '
+  'fuzzed check-in point.';
+-- Check-in audience: which slice of the peer graph this check-in was sent to
+-- (the owner''s own truthful "who saw this" history + zero-PII analytics).
+-- Kept out of the peer-facing peer_check_ins view (it selects explicit columns).
+alter table public.check_ins add column if not exists audience_kind text
+  check (audience_kind is null or audience_kind in ('me', 'all', 'group', 'peers'));
+alter table public.check_ins add column if not exists audience_group_id uuid
+  references public.peer_groups (id) on delete set null;
+comment on column public.check_ins.audience_kind is
+  'Audience this check-in was sent to: me | all | group | peers. Owner history + '
+  'zero-PII analytics only — never peer-facing.';
+-- The missing phone→users.id bind (the friend-tester bug: "Add your number
+-- first" on a fresh phone). Create-or-bind, idempotent, safe on every app open:
+--   * an existing row for that phone is returned UNCHANGED (never re-keyed,
+--     never overwritten with a different id);
+--   * a first-contact phone gets a fresh users row (auth mirror included, the
+--     same shape ensureUser writes) so every phone-keyed peer RPC works;
+--   * a placeholder display_name ('Neighbor') is upgraded once to the name the
+--     caller typed, so pushes can say "{First} checked in" — a bound name is
+--     never replaced.
+create or replace function public.sg_peer_bind(p_phone text, p_name text default null)
+returns jsonb language plpgsql security definer set search_path = public
+as $sg$
+declare
+  v_phone    text := public.sg_norm_phone(p_phone);
+  v_name     text := left(btrim(coalesce(p_name, '')), 40);
+  v_id       uuid;
+  v_existing uuid;
+  v_current  text;
+begin
+  if v_phone = '' or char_length(v_phone) < 7 or char_length(v_phone) > 15 then
+    raise exception 'That phone number looks incomplete — please check it and try again, no rush.';
+  end if;
+  select id, display_name into v_existing, v_current
+  from public.users where phone = v_phone limit 1;
+  if v_existing is not null then
+    -- Idempotent bind. The ONLY mutation ever allowed on an existing row is
+    -- replacing the untouched placeholder name once (nothing else changes).
+    if v_name <> '' and lower(v_current) = 'neighbor' then
+      update public.users set display_name = v_name, updated_at = now()
+      where id = v_existing;
+      v_current := v_name;
+    end if;
+    return jsonb_build_object('ok', true, 'user_id', v_existing, 'created', false,
+                              'display_name', v_current);
+  end if;
+  -- Serialize two first-contacts on the same number (the unique phone index is
+  -- the backstop; this keeps the loser's response calm and correct).
+  perform pg_advisory_xact_lock(hashtext('sg_peer_bind:' || v_phone));
+  select id, display_name into v_existing, v_current
+  from public.users where phone = v_phone limit 1;
+  if v_existing is not null then
+    return jsonb_build_object('ok', true, 'user_id', v_existing, 'created', false,
+                              'display_name', v_current);
+  end if;
+  v_id := gen_random_uuid();
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                          email_confirmed_at, created_at, updated_at, raw_user_meta_data)
+  values (v_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'peer+' || replace(v_id::text, '-', '') || '@safeground.local', '',
+          now(), now(), now(), jsonb_build_object('peerPhone', true))
+  on conflict (id) do nothing;
+  insert into public.users (id, display_name, role, phone)
+  values (v_id, coalesce(nullif(v_name, ''), 'Neighbor'), 'neighbor', v_phone)
+  on conflict (id) do update set phone = excluded.phone, updated_at = now();
+  return jsonb_build_object('ok', true, 'user_id', v_id, 'created', true,
+                            'display_name', coalesce(nullif(v_name, ''), 'Neighbor'));
+end;
+$sg$;
+-- New zero-PII analytics counters: peer_group_created + checkin_group_send
+-- (audience kind + member-count bucket only — no group names, no ids, no
+-- coordinates). Idempotent drop + re-add, same pattern as the Pass 2 batch.
+alter table public.analytics_events
+  drop constraint if exists analytics_events_event_type_check;
+alter table public.analytics_events
+  add constraint analytics_events_event_type_check
+  check (event_type in ('resource_search', 'peer_support_request', 'sweep_alert_view',
+                        'check_in', 'donation_offer_submit', 'donation_request_submit',
+                        'donation_offer_complete', 'donation_request_complete',
+                        'volunteer_submit', 'peer_group_created', 'checkin_group_send'));

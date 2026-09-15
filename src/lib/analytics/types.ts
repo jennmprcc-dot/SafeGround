@@ -20,4 +20,11 @@ export type AnalyticsEventType =
   // Pass 3 — Volunteer flow (owner-directed 2026-09-12): zero-PII, logged on
   // submit only (category/status = contact-kind). Keep in sync with
   // EVENT_TYPES in server.ts.
-  | "volunteer_submit";
+  | "volunteer_submit"
+  // Peer groups + group check-in send (owner-requested 2026-09-15):
+  //   peer_group_created   — a group was saved (no name, no id, no members)
+  //   checkin_group_send   — a check-in was shared with peers (category =
+  //                          audience kind, status = member-count bucket).
+  // Never a group name, a group id, a member id, a phone or a coordinate.
+  | "peer_group_created"
+  | "checkin_group_send";

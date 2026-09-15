@@ -555,6 +555,10 @@ export const reportSweep = createServerFn({ method: "POST" })
 /* ── Build B: Check-Ins (owner writes; peers read fuzzed only) ── */
 
 /** Owner: insert a check-in. Exact point + note stay with the owner; the DB trigger writes visible_until (+24h) and the fuzzed ~150m coordinates. */
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) path. /checkin and the peer
+ * group feature use the phone-keyed routes instead (src/routes/api/checkin/*
+ * + src/lib/peerGroupServer.ts). Left in place for other callers only — do
+ * NOT call createCheckIn() from any phone-keyed path. */
 export const createCheckIn = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const v = (input ?? {}) as { userId?: unknown; lat?: unknown; lng?: unknown; note?: unknown };
@@ -599,6 +603,10 @@ export const createCheckIn = createServerFn({ method: "POST" })
   );
 
 /** Owner: latest check-in (full row — exact point is the owner's). */
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) path. /checkin and the peer
+ * group feature use the phone-keyed routes instead (src/routes/api/checkin/*
+ * + src/lib/peerGroupServer.ts). Left in place for other callers only — do
+ * NOT call getMyCheckIn() from any phone-keyed path. */
 export const getMyCheckIn = createServerFn({ method: "GET" })
   .validator((input: unknown) => ({ userId: typeof input === "string" ? input.slice(0, 64) : "" }))
   .handler(async ({ data }): Promise<{ row: CheckInRow | null; source: DataSource }> => {
@@ -617,6 +625,10 @@ export const getMyCheckIn = createServerFn({ method: "GET" })
   });
 
 /** Owner: pause (or resume) sharing on the latest check-in — hides instantly (R-P5). */
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) path. /checkin and the peer
+ * group feature use the phone-keyed routes instead (src/routes/api/checkin/*
+ * + src/lib/peerGroupServer.ts). Left in place for other callers only — do
+ * NOT call setCheckInSharing() from any phone-keyed path. */
 export const setCheckInSharing = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const v = (input ?? {}) as { userId?: unknown; paused?: unknown };
@@ -636,6 +648,10 @@ export const setCheckInSharing = createServerFn({ method: "POST" })
   });
 
 /** Peer view: fuzzed check-ins via the RLS-confined peer_check_ins view (mutual accepted peers only). */
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) path. /checkin and the peer
+ * group feature use the phone-keyed routes instead (src/routes/api/checkin/*
+ * + src/lib/peerGroupServer.ts). Left in place for other callers only — do
+ * NOT call listPeerCheckIns() from any phone-keyed path. */
 export const listPeerCheckIns = createServerFn({ method: "GET" })
   .validator((input: unknown) => ({ userId: typeof input === "string" ? input.slice(0, 64) : "" }))
   .handler(async ({ data }): Promise<ListResult<PeerCheckInRow>> => {
@@ -659,6 +675,10 @@ export const listPeerCheckIns = createServerFn({ method: "GET" })
   });
 
 /** Trusted peer list: mutual accepted first, then my pending invites. */
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) path. /checkin and the peer
+ * group feature use the phone-keyed routes instead (src/routes/api/checkin/*
+ * + src/lib/peerGroupServer.ts). Left in place for other callers only — do
+ * NOT call listTrustedPeers() from any phone-keyed path. */
 export const listTrustedPeers = createServerFn({ method: "GET" })
   .validator((input: unknown) => ({ userId: typeof input === "string" ? input.slice(0, 64) : "" }))
   .handler(async ({ data }): Promise<ListResult<PeerRow>> => {
@@ -711,6 +731,10 @@ export const listTrustedPeers = createServerFn({ method: "GET" })
   });
 
 /** Ensure the user row exists (demo auth → auth.users mirror + public.users). */
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) path. /checkin and the peer
+ * group feature use the phone-keyed routes instead (src/routes/api/checkin/*
+ * + src/lib/peerGroupServer.ts). Left in place for other callers only — do
+ * NOT call ensureUser() from any phone-keyed path. */
 export const ensureUser = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const v = (input ?? {}) as { userId?: unknown; displayName?: unknown };

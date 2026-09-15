@@ -34,6 +34,10 @@ const EVENT_TYPES: ReadonlySet<string> = new Set([
   "donation_request_complete",
   // Pass 3 — Volunteer flow (owner-directed 2026-09-12): zero-PII, submit only.
   "volunteer_submit",
+  // Peer groups + group check-in send (owner-requested 2026-09-15): group
+  // created + a check-in shared with peers (audience kind + member bucket only).
+  "peer_group_created",
+  "checkin_group_send",
 ]);
 
 const UUID_RE =

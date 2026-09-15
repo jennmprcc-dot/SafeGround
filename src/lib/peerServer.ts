@@ -61,3 +61,65 @@ export async function userIdForPhone(phone: string): Promise<string | null> {
  * PEER-1 STATE pending-invite: "Waiting for them to accept"; only code invites
  * show 48h). */
 export const PHONE_INVITE_WAIT = "Waiting for them to accept";
+
+/* ── The single server-side peer reader ─────────────────────────────
+ * Extracted from GET /api/peers so the phone-keyed check-in path does NOT grow
+ * a second peer reader (peer groups spec §2.1). Same SQL, same shape — the peer
+ * screen and the check-in share sheet therefore always agree. Identity is the
+ * caller's resolved users.id; a client user id is never involved. */
+export interface PeerListEntry {
+  userId: string;
+  name: string;
+  status: "accepted" | "pending";
+  mutual: boolean;
+  direction: "in" | "out";
+  codeExpiresAt: string | null;
+}
+export async function listPeersForUser(requesterId: string): Promise<PeerListEntry[]> {
+  if (!requesterId) return [];
+  const rows = (await query(
+    `select
+        o.user_id as user_id,
+        u.display_name as name,
+        (a.peer_id is not null and b.peer_id is not null) as mutual,
+        case
+          when exists (
+            select 1 from public.trusted_peers x
+            where x.requester_id = o.user_id and x.peer_id = $1 and x.status = 'pending')
+          then 'in' else 'out'
+        end as direction,
+        (
+          select max(c.expires_at)::text
+          from public.peer_invite_codes c
+          where c.inviter_user_id = $1
+            and c.redeemed_by = o.user_id and c.redeemed_at is not null
+        ) as code_expires_at
+      from (
+        select distinct peer_id as user_id from public.trusted_peers where requester_id = $1
+        union
+        select distinct requester_id as user_id from public.trusted_peers where peer_id = $1
+      ) o
+      join public.users u on u.id = o.user_id
+      left join public.trusted_peers a
+        on a.requester_id = $1 and a.peer_id = o.user_id and a.status = 'accepted'
+      left join public.trusted_peers b
+        on b.requester_id = o.user_id and b.peer_id = $1 and b.status = 'accepted'
+      order by mutual desc, u.display_name asc
+      limit 100`,
+    [requesterId],
+  )) as unknown as Array<{
+    user_id: string;
+    name: string;
+    mutual: boolean;
+    direction: "out" | "in";
+    code_expires_at: string | null;
+  }>;
+  return rows.map((r) => ({
+    userId: r.user_id,
+    name: r.name,
+    status: r.mutual ? ("accepted" as const) : ("pending" as const),
+    mutual: r.mutual,
+    direction: r.direction,
+    codeExpiresAt: r.code_expires_at,
+  }));
+}
