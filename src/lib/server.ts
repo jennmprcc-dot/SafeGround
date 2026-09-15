@@ -205,6 +205,10 @@ function sha1Hex(input: string): string {
 
 const SG_DEVICE_NS = "8f2d4a6c-3e5b-4f1a-9c7d-0b2e8f4a61d3"; // safeground-device namespace
 
+/** @deprecated (2026-09-15) Demo-UUID (sg.device) identity. /checkin and the
+ * peer group feature key on the caller's own PHONE (getAlertIdentity +
+ * x-sg-phone) instead; a client-supplied user id is never trusted. Left in
+ * place for other callers only -- do NOT call from any phone-keyed path. */
 export function demoUserId(displayName: string, deviceToken: string): string {
   const name = displayName.trim().toLowerCase();
   // An empty device token (e.g. a missing phone) must NEVER break the UUID

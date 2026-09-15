@@ -36,6 +36,7 @@ import {
   useToasts,
 } from "~/components/ui";
 import { getAlertIdentity } from "~/lib/alertIdentity";
+import { type I18nKey, useLanguage } from "~/lib/i18n";
 import { PersonIcon, CloseIcon } from "~/lib/icons";
 
 interface PeerRow {
@@ -89,8 +90,167 @@ async function fetchPeers(): Promise<{ state: PeersState; source: "db" | "offlin
 /** First name only (the app never shows surnames). */
 const first = (name: string): string => (name || "a peer").split(" ")[0];
 
+/* ── Peer groups (PEER_GROUPS_SPEC §4) ────────────────────────────
+ * Owner-only, server-enforced: GET/POST /api/checkin/groups. The client
+ * mirrors the server's name rules + caps so most violations never leave the
+ * phone; the server stays the enforcement layer either way. */
+
+interface GroupRow {
+  id: string;
+  name: string;
+  memberCount: number;
+  members: Array<{ userId: string; name: string }>;
+  staleCount: number;
+  createdAt: string | null;
+}
+
+async function fetchGroups(phone: string): Promise<{ groups: GroupRow[]; ok: boolean }> {
+  try {
+    const res = await fetch(`/api/checkin/groups?${new URLSearchParams({ phone })}`, {
+      headers: { "x-sg-phone": phone },
+    });
+    const data = (await res.json().catch(() => null)) as { ok?: boolean; groups?: GroupRow[] } | null;
+    if (!res.ok || !data || !data.ok || !Array.isArray(data.groups)) return { groups: [], ok: false };
+    return { groups: data.groups, ok: true };
+  } catch {
+    return { groups: [], ok: false };
+  }
+}
+
+async function groupMutate(
+  phone: string,
+  body: { action: string; groupId?: string; name?: string; memberIds?: string[] },
+): Promise<{ ok: boolean; groups: GroupRow[]; dropped?: number; error?: string }> {
+  try {
+    const res = await fetch("/api/checkin/groups", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-sg-phone": phone },
+      body: JSON.stringify({ phone, ...body }),
+    });
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      groups?: GroupRow[];
+      dropped?: number;
+      error?: string;
+    } | null;
+    if (res.ok && data?.ok) return { ok: true, groups: data.groups ?? [], dropped: data.dropped };
+    return { ok: false, groups: [], error: data?.error ?? "That didn't go through — nothing changed. Try again in a moment." };
+  } catch {
+    return { ok: false, groups: [], error: "No connection right now — nothing was saved. Try again when you can." };
+  }
+}
+
+/** Client mirror of the server's group-name rules (spec §4 naming rules).
+ * Returns null when the name is fine, else the calm translated error. */
+function groupNameError(
+  raw: string,
+  existingNames: string[],
+  ownPhone: string,
+  t: (k: I18nKey) => string,
+): string | null {
+  const name = raw.replace(/\s+/g, " ").trim();
+  if (name.length === 0) return t("grp_name_empty");
+  if (name.length > 24) return t("grp_name_long");
+  // No phone-like runs, no emails, no dot-TLDs, no street addresses.
+  if (
+    /[0-9]{7,}/.test(name) ||
+    name.includes("@") ||
+    /\.(com|net|org|edu|gov|io|co|us)\b/i.test(name) ||
+    /\b\d{1,6}\s+[A-Za-z]{2,}\s+(st|street|ave|avenue|rd|road|blvd|boulevard|ln|lane|dr|drive|ct|court|way|hwy|highway|pl|place|ter|terrace|cir|circle)\b/i.test(name)
+  ) {
+    return t("grp_name_bad");
+  }
+  // Never the caller's own number, digits or formatted.
+  const digits = name.replace(/[^0-9]/g, "");
+  const own = ownPhone.replace(/[^0-9]/g, "");
+  if (digits.length >= 7 && own && digits === own) return t("grp_name_bad");
+  // Case-insensitive unique per owner.
+  if (existingNames.some((n) => n.toLowerCase() === name.toLowerCase())) return t("grp_name_dup");
+  return null;
+}
+
+/** Map a rare server-side rejection (race / bypass) back to the calm copy. */
+function mapGroupError(msg: string, t: (k: I18nKey) => string): string {
+  if (/already have a group/i.test(msg)) return t("grp_name_dup");
+  if (/all the groups/i.test(msg)) return t("grp_cap_reached");
+  if (/12 people is the most/i.test(msg)) return t("grp_members_full");
+  if (/at least one trusted peer/i.test(msg)) return t("grp_needs_one");
+  if (/peer any more|left out/i.test(msg)) return t("grp_stale_member");
+  if (/no connection|didn.t go through|didn.t save|didn.t work/i.test(msg)) return t("grp_save_offline");
+  return msg;
+}
+
+/** Checkbox list of accepted peers (pending invites shown disabled) — shared
+ * by the create + edit sheets. Caps at 12 with a calm note (spec §4). */
+function MemberPicker({
+  peers,
+  selected,
+  onChange,
+  cap,
+  t,
+}: {
+  peers: PeerRow[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  cap: number;
+  t: (k: I18nKey) => string;
+}) {
+  const accepted = peers.filter((p) => p.status === "accepted");
+  const pending = peers.filter((p) => p.status === "pending");
+  const atCap = selected.length >= cap;
+  const allSelected = accepted.length > 0 && selected.length === accepted.length;
+  const toggle = (id: string) => {
+    if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
+    else if (!atCap) onChange([...selected, id]);
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-[12px] px-2 text-small font-medium text-sg-ink">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={() => onChange(allSelected ? [] : accepted.map((p) => p.userId))}
+          className="h-5 w-5 accent-[#2F6B4F]"
+        />
+        {t("ck_pick_select_all")}
+      </label>
+      <div className="flex flex-col">
+        {accepted.map((p) => {
+          const checked = selected.includes(p.userId);
+          return (
+            <label key={p.userId} className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-[12px] px-2">
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={!checked && atCap}
+                onChange={() => toggle(p.userId)}
+                className="h-5 w-5 accent-[#2F6B4F]"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-body font-medium text-sg-ink">{first(p.name)}</span>
+                <span className="block text-small text-sg-ink-soft">sees your check-ins</span>
+              </span>
+            </label>
+          );
+        })}
+        {pending.map((p) => (
+          <div key={p.userId} className="flex min-h-[48px] items-center gap-3 rounded-[12px] px-2 opacity-60">
+            <input type="checkbox" disabled className="h-5 w-5" aria-label={`${first(p.name)} — ${t("grp_pending_disabled")}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body font-medium text-sg-ink">{first(p.name)}</span>
+              <span className="block text-small text-sg-ink-soft">{t("grp_pending_disabled")}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      {atCap ? <p className="px-2 text-small text-sg-ink-soft">{t("grp_members_full")}</p> : null}
+    </div>
+  );
+}
+
 function PeersPage() {
   const { push } = useToasts();
+  const { t } = useLanguage();
   const [state, setState] = useState<PeersState>(EMPTY_PEERS);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
@@ -101,12 +261,23 @@ function PeersPage() {
   const [codeOpen, setCodeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
+  // Peer groups (spec §4): owner-only list + create/edit sheets + delete.
+  const [groups, setGroups] = useState<GroupRow[]>([]);
+  const [groupsOk, setGroupsOk] = useState(true);
+  const [groupSheet, setGroupSheet] = useState<{ mode: "create" } | { mode: "edit"; group: GroupRow } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GroupRow | null>(null);
+  const [howGroupsOpen, setHowGroupsOpen] = useState(false);
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     const { state: s, source } = await fetchPeers();
     setState(s);
     setOffline(source === "offline");
+    if (s.phone) {
+      const g = await fetchGroups(s.phone);
+      setGroups(g.groups);
+      setGroupsOk(g.ok);
+    }
     setLoading(false);
   };
   useEffect(() => {
@@ -114,11 +285,24 @@ function PeersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Deep link from the check-in audience control: /checkin/peers#groups
+  // (spec §4 "second entry point") scrolls to the groups section.
+  const needsPhone = !state.phone;
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.location.hash === "#groups" &&
+      !loading &&
+      !needsPhone
+    ) {
+      document.getElementById("groups")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [loading, needsPhone]);
+
   const peers = state.peers ?? [];
   const incoming = useMemo(() => peers.filter((p) => p.status === "pending" && p.direction === "in"), [peers]);
   const outgoing = useMemo(() => peers.filter((p) => p.status === "pending" && p.direction === "out"), [peers]);
   const accepted = useMemo(() => peers.filter((p) => p.status === "accepted"), [peers]);
-  const needsPhone = !state.phone;
 
   const act = async (action: "accept" | "decline" | "remove", peer: PeerRow) => {
     if (action === "remove") setRemoveTarget(peer); // confirm dialog first
@@ -184,6 +368,26 @@ function PeersPage() {
       push({ kind: "error", message: "No connection right now — try again when you can." });
       setLoading(false);
     }
+  };
+
+  /** Group delete (spec §4): only the group + its membership rows go. */
+  const confirmDeleteGroup = async () => {
+    if (!deleteTarget || !state.phone) return;
+    const g = deleteTarget;
+    setDeleteTarget(null);
+    const r = await groupMutate(state.phone, { action: "delete", groupId: g.id });
+    if (r.ok) {
+      setGroups(r.groups);
+      push({ kind: "success", message: t("grp_delete_done") });
+    } else {
+      push({ kind: "error", message: mapGroupError(r.error ?? "", t) });
+    }
+  };
+
+  const onGroupsSaved = (next: GroupRow[]) => {
+    setGroups(next);
+    setGroupSheet(null);
+    push({ kind: "success", message: t("grp_edit_saved") });
   };
 
   return (
@@ -334,6 +538,99 @@ function PeersPage() {
               </>
             )}
 
+            {/* Your groups (PEER_GROUPS_SPEC §4) — placed after accepted peers
+                in the top→bottom order; owner-only, membership = accepted peers */}
+            <section id="groups" className="scroll-mt-24">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <p className="text-small font-medium text-sg-ink">{t("grp_title")}</p>
+                <button
+                  type="button"
+                  onClick={() => setHowGroupsOpen(true)}
+                  className="inline-flex min-h-[44px] items-center px-1 text-sg-sky underline underline-offset-2"
+                >
+                  {t("grp_how")}
+                </button>
+              </div>
+
+              {!groupsOk ? (
+                <Card>
+                  <p className="text-small text-sg-ink-soft">Couldn&apos;t load your groups right now — try again in a moment.</p>
+                </Card>
+              ) : groups.length === 0 ? (
+                accepted.length === 0 ? (
+                  /* Peer-less empty state: a group is built from accepted peers. */
+                  <Card>
+                    <p className="text-body text-sg-ink-soft">{t("grp_no_peers")}</p>
+                    <div className="mt-3">
+                      <Link to="/checkin/peers/invite" className="block w-full">
+                        <Button variant="secondary" full>Invite a peer</Button>
+                      </Link>
+                    </div>
+                  </Card>
+                ) : (
+                  <Card>
+                    <p className="text-body font-medium text-sg-ink">{t("grp_empty_title")}</p>
+                    <p className="mt-1 text-small text-sg-ink-soft">{t("grp_empty_body")}</p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <Button full onClick={() => setGroupSheet({ mode: "create" })}>{t("grp_new")}</Button>
+                      <Button variant="quiet" full onClick={() => setHowGroupsOpen(true)}>{t("grp_how")}</Button>
+                    </div>
+                  </Card>
+                )
+              ) : (
+                <>
+                  <ul className="flex flex-col">
+                    {groups.map((g) =>
+                      g.memberCount === 0 ? (
+                        /* Group with all members removed — calm recovery paths. */
+                        <li key={g.id}>
+                          <Card className="border-sg-gold/40 bg-sg-gold-wash/40">
+                            <p className="text-body font-medium text-sg-ink">{g.name}</p>
+                            <p className="mt-1 text-small text-sg-ink-soft">
+                              {t("grp_empty_group_title")} — {t("grp_empty_group_body")}
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button variant="secondary" onClick={() => setGroupSheet({ mode: "edit", group: g })}>
+                                {t("grp_add")}
+                              </Button>
+                              <Button variant="destructive" onClick={() => setDeleteTarget(g)}>
+                                {t("grp_manage_delete")}
+                              </Button>
+                            </div>
+                          </Card>
+                        </li>
+                      ) : (
+                        <ListRow key={g.id}>
+                          <IconTile wash="bg-sg-sage-wash">
+                            <PersonIcon size={20} />
+                          </IconTile>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-body font-medium text-sg-ink">{g.name}</span>
+                            <span className="block text-small text-sg-ink-soft">
+                              {t("grp_members").replace("{n}", String(g.memberCount))}
+                            </span>
+                          </span>
+                          <Button variant="quiet" className="!min-h-[44px] !px-2" onClick={() => setGroupSheet({ mode: "edit", group: g })}>
+                            {t("grp_manage_one")}
+                          </Button>
+                        </ListRow>
+                      ),
+                    )}
+                  </ul>
+                  <div className="mt-3">
+                    <Button
+                      full
+                      disabled={groups.length >= 6}
+                      disabledReason={groups.length >= 6 ? t("grp_cap_reached") : undefined}
+                      onClick={() => setGroupSheet({ mode: "create" })}
+                    >
+                      {t("grp_new")}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </section>
+
             {/* saved notes (NOTE-1 sender view) */}
             {state.notes && state.notes.length > 0 ? (
               <section>
@@ -411,6 +708,42 @@ function PeersPage() {
         onError={(msg) => push({ kind: "error", message: msg })}
       />
 
+      {/* Group create / edit (spec §4) */}
+      <GroupCreateSheet
+        open={groupSheet?.mode === "create"}
+        peers={peers}
+        phone={state.phone}
+        existingNames={groups.map((g) => g.name)}
+        onClose={() => setGroupSheet(null)}
+        onSaved={onGroupsSaved}
+        onError={(msg) => push({ kind: "info", message: msg })}
+      />
+      <GroupManageSheet
+        open={groupSheet?.mode === "edit"}
+        group={groupSheet?.mode === "edit" ? groupSheet.group : null}
+        peers={peers}
+        phone={state.phone}
+        existingNames={groups.map((g) => g.name)}
+        onClose={() => setGroupSheet(null)}
+        onSaved={onGroupsSaved}
+        onError={(msg) => push({ kind: "info", message: msg })}
+        onDelete={() => {
+          if (groupSheet?.mode === "edit") setDeleteTarget(groupSheet.group);
+          setGroupSheet(null);
+        }}
+      />
+      <Dialog
+        open={deleteTarget != null}
+        title={deleteTarget ? t("grp_delete_title").replace("{group}", deleteTarget.name) : ""}
+        confirmLabel={t("grp_delete_confirm")}
+        destructive
+        onConfirm={() => void confirmDeleteGroup()}
+        onClose={() => setDeleteTarget(null)}
+      >
+        {t("grp_delete_body")}
+      </Dialog>
+
+      <HowGroupsSheet open={howGroupsOpen} onClose={() => setHowGroupsOpen(false)} />
       <HowSheet open={howOpen} onClose={() => setHowOpen(false)} />
       <CrisisSheet open={crisisOpen} onClose={() => setCrisisOpen(false)} />
     </AppShell>
@@ -488,6 +821,276 @@ function HowSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
         <p><span className="font-medium text-sg-ink">Only 24 hours.</span> Each check-in disappears the next day. No trails, no history.</p>
         <p><span className="font-medium text-sg-ink">You can stop anytime.</span> Pause sharing hides you instantly; removing someone stops everything right away.</p>
       </div>
+    </BottomSheet>
+  );
+}
+
+/** Spec §4 "How groups work" — the group explainer sheet. */
+function HowGroupsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useLanguage();
+  return (
+    <BottomSheet open={open} onClose={onClose} title={t("grp_how")}>
+      <div className="flex flex-col gap-3 pb-2 text-small text-sg-ink-soft">
+        <p><span className="font-medium text-sg-ink">{t("grp_how_1")}</span></p>
+        <p>{t("grp_how_2")}</p>
+        <p>{t("grp_how_3")}</p>
+        <p>{t("grp_how_4")}</p>
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** Create a group (spec §4): name + accepted peers, consent line, Save. */
+function GroupCreateSheet({
+  open,
+  peers,
+  phone,
+  existingNames,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  open: boolean;
+  peers: PeerRow[];
+  phone: string;
+  existingNames: string[];
+  onClose: () => void;
+  onSaved: (groups: GroupRow[]) => void;
+  onError: (msg: string) => void;
+}) {
+  const { t } = useLanguage();
+  const [name, setName] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setSelected([]);
+      setError(null);
+      setSaving(false);
+    }
+  }, [open]);
+
+  const nameError = groupNameError(name, existingNames, phone, t);
+  const canSave = !saving && nameError == null && selected.length > 0;
+  const disabledReason = nameError ?? (selected.length === 0 ? t("grp_needs_one") : undefined);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    const r = await groupMutate(phone, {
+      action: "create",
+      name: name.replace(/\s+/g, " ").trim(),
+      memberIds: selected,
+    });
+    setSaving(false);
+    if (r.ok) {
+      if (r.dropped && r.dropped > 0) onError(t("grp_stale_member"));
+      onSaved(r.groups);
+    } else {
+      setError(mapGroupError(r.error ?? "", t));
+    }
+  };
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title={t("grp_new")}>
+      <div className="flex flex-col gap-4 pb-2">
+        <TextField
+          label={t("grp_name_label")}
+          helper={t("grp_name_help")}
+          value={name}
+          maxLength={24}
+          onChange={(e) => {
+            setName(e.target.value);
+            setError(null);
+          }}
+          error={name.trim().length > 0 && nameError ? nameError : undefined}
+        />
+        <p className="text-right text-small text-sg-ink-soft">{name.length}/24</p>
+        <div className="flex flex-col gap-1">
+          <p className="text-btn font-medium">{t("grp_who")}</p>
+          <MemberPicker peers={peers} selected={selected} onChange={setSelected} cap={12} t={t} />
+        </div>
+        <p className="text-small text-sg-ink-soft">{t("grp_consent_line")}</p>
+        {error ? (
+          <p role="alert" className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay">
+            {error}
+          </p>
+        ) : null}
+        <Button full disabled={!canSave} disabledReason={disabledReason} onClick={() => void save()}>
+          {saving ? "Saving…" : t("grp_save")}
+        </Button>
+        <Button variant="quiet" full onClick={onClose}>
+          {t("grp_cancel")}
+        </Button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+/** Manage a group (spec §4): menu → rename | who's in it | delete. One idea
+ * per screen; delete asks again in the gentle-red confirm dialog. */
+function GroupManageSheet({
+  open,
+  group,
+  peers,
+  phone,
+  existingNames,
+  onClose,
+  onSaved,
+  onError,
+  onDelete,
+}: {
+  open: boolean;
+  group: GroupRow | null;
+  peers: PeerRow[];
+  phone: string;
+  existingNames: string[];
+  onClose: () => void;
+  onSaved: (groups: GroupRow[]) => void;
+  onError: (msg: string) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useLanguage();
+  const [view, setView] = useState<"menu" | "rename" | "members">("menu");
+  const [name, setName] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open && group) {
+      setView("menu");
+      setName(group.name);
+      setSelected(group.members.map((m) => m.userId));
+      setError(null);
+      setSaving(false);
+    }
+  }, [open, group]);
+
+  if (!group) return null;
+  // Rename may keep its own name; duplicates are checked against the others.
+  const others = existingNames.filter((n) => n.toLowerCase() !== group.name.toLowerCase());
+  const renameError = groupNameError(name, others, phone, t);
+
+  const rename = async () => {
+    setSaving(true);
+    setError(null);
+    const r = await groupMutate(phone, { action: "rename", groupId: group.id, name: name.replace(/\s+/g, " ").trim() });
+    setSaving(false);
+    if (r.ok) onSaved(r.groups);
+    else setError(mapGroupError(r.error ?? "", t));
+  };
+
+  /** Remove-flow: add + remove are separate server actions (AC-9 — removal
+   * never notifies, never touches the peer relationship). */
+  const saveMembers = async () => {
+    setSaving(true);
+    setError(null);
+    const current = group.members.map((m) => m.userId);
+    const toAdd = selected.filter((id) => !current.includes(id));
+    const toRemove = current.filter((id) => !selected.includes(id));
+    let groupsOut: GroupRow[] | null = null;
+    let dropped = 0;
+    if (toAdd.length > 0) {
+      const r = await groupMutate(phone, { action: "addMembers", groupId: group.id, memberIds: toAdd });
+      if (!r.ok) {
+        setSaving(false);
+        setError(mapGroupError(r.error ?? "", t));
+        return;
+      }
+      groupsOut = r.groups;
+      dropped = r.dropped ?? 0;
+    }
+    for (const id of toRemove) {
+      const r = await groupMutate(phone, { action: "removeMember", groupId: group.id, memberIds: [id] });
+      if (!r.ok) {
+        setSaving(false);
+        setError(mapGroupError(r.error ?? "", t));
+        return;
+      }
+      groupsOut = r.groups;
+    }
+    setSaving(false);
+    if (dropped > 0) onError(t("grp_stale_member"));
+    if (groupsOut) onSaved(groupsOut);
+    else onClose();
+  };
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title={group.name}>
+      {view === "members" ? (
+        <div className="flex flex-col gap-4 pb-2">
+          <div className="flex flex-col gap-1">
+            <p className="text-btn font-medium">{t("grp_who")}</p>
+            <MemberPicker peers={peers} selected={selected} onChange={setSelected} cap={12} t={t} />
+          </div>
+          {error ? (
+            <p role="alert" className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay">
+              {error}
+            </p>
+          ) : null}
+          <Button full disabled={saving} onClick={() => void saveMembers()}>
+            {saving ? "Saving…" : t("grp_save")}
+          </Button>
+          <Button variant="quiet" full onClick={() => setView("menu")}>
+            {t("grp_cancel")}
+          </Button>
+        </div>
+      ) : view === "rename" ? (
+        <div className="flex flex-col gap-4 pb-2">
+          <TextField
+            label={t("grp_name_label")}
+            helper={t("grp_name_help")}
+            value={name}
+            maxLength={24}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
+            error={name.trim().length > 0 && renameError ? renameError : undefined}
+          />
+          <p className="text-right text-small text-sg-ink-soft">{name.length}/24</p>
+          {error ? (
+            <p role="alert" className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay">
+              {error}
+            </p>
+          ) : null}
+          <Button full disabled={saving || renameError != null} onClick={() => void rename()}>
+            {saving ? "Saving…" : t("grp_manage_rename")}
+          </Button>
+          <Button variant="quiet" full onClick={() => setView("menu")}>
+            {t("grp_cancel")}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1 pb-2">
+          <p className="text-small text-sg-ink-soft">
+            {t("grp_members").replace("{n}", String(group.memberCount))}
+          </p>
+          <button
+            type="button"
+            onClick={() => setView("rename")}
+            className="flex min-h-[52px] items-center justify-between gap-3 text-body text-sg-ink"
+          >
+            {t("grp_manage_rename")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("members")}
+            className="flex min-h-[52px] items-center justify-between gap-3 text-body text-sg-ink"
+          >
+            {t("grp_who")}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex min-h-[52px] items-center justify-between gap-3 text-body text-sg-danger-gentle"
+          >
+            {t("grp_manage_delete")}
+          </button>
+        </div>
+      )}
     </BottomSheet>
   );
 }
