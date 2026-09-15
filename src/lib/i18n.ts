@@ -386,6 +386,18 @@ const EN = {
   home_here_for: "What are you here for?", // ✦
   home_sweep_link: "Heads-up near you? See sweep heads-ups", // ✦
   home_crisis_link: "In crisis? Talk to someone", // ✦
+  // Landing share/QR card (owner request 2026-09-15) — same mechanics as the
+  // welcome overlay §8 so the home page can pass the app along on its own.
+  home_share_h: "Pass it along", // ✦
+  home_share_sub: "Know someone who could use this? Share SafeGround.", // ✦
+  home_share_btn: "Share SafeGround", // ✦
+  home_share_text: "A calm place to find help — from MPRCC.", // ✦
+  home_share_copied: "Link copied — pass it along.", // ✦
+  home_share_link_label: "Copy this link:", // ✦
+  home_qr_show: "Show QR code", // ✦
+  home_qr_hide: "Hide QR code", // ✦
+  home_qr_caption: "Point a camera at this to open SafeGround.", // ✦
+  home_qr_print: "Print the QR code", // ✦
   // Welcome mode-choice step (owner-directed 2026-09-11): two equal doors.
   // PASS 3 §1.3: labels follow the mode renames (give/resources).
   welcome_choice_title: "How will you use SafeGround?",
@@ -1059,6 +1071,17 @@ const ES: Partial<Record<I18nKey, string>> = {
   home_here_for: "¿Para qué estás aquí?", // ✦
   home_sweep_link: "¿Aviso cerca de ti? Ver avisos de desalojos", // ✦
   home_crisis_link: "¿En crisis? Habla con alguien", // ✦
+  // Landing share/QR card — ES ✦ (translator-style match; owner review owed)
+  home_share_h: "Compártelo", // ✦
+  home_share_sub: "¿Conoces a alguien que pueda necesitarlo? Comparte SafeGround.", // ✦
+  home_share_btn: "Compartir SafeGround", // ✦
+  home_share_text: "Un lugar tranquilo para encontrar ayuda — de MPRCC.", // ✦
+  home_share_copied: "Enlace copiado — compártelo.", // ✦
+  home_share_link_label: "Copia este enlace:", // ✦
+  home_qr_show: "Ver código QR", // ✦
+  home_qr_hide: "Ocultar código QR", // ✦
+  home_qr_caption: "Apunta una cámara a esto para abrir SafeGround.", // ✦
+  home_qr_print: "Imprimir el código QR", // ✦
   welcome_choice_title: "¿Cómo usarás SafeGround?",
   welcome_choice_help: "Quiero dar", // PASS 3 §1.3 — ES ✦
   // Owner copy is never auto-translated — empty ES value falls back to EN.
