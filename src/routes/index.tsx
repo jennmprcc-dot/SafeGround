@@ -1,6 +1,8 @@
 /**
  * Home / Landing (PASS 3 §2, NAV_RESTRUCTURE_SPEC) — the "What is SafeGround"
- * page: calm, short, plain words (7 blocks per §2.2, order is the spec).
+ * page: calm, short, plain words (7 blocks per §2.2, order is the spec; an
+ * 8th block — share/QR "Pass it along" card — was added 2026-09-15 on the
+ * owner's request, ported from the welcome overlay §8).
  * Routes by intent through three mode entries; quiet sweeps + crisis links;
  * privacy line. The AppShell footer (Terms · Privacy · ©) renders as today.
  *
@@ -15,11 +17,45 @@
  */
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import qrcode from "qrcode-generator";
 import { AppShell, CrisisSheet } from "~/components/shell";
+import { Button, Card } from "~/components/ui";
 import { useLanguage } from "~/lib/i18n";
 import { MODE_KEY, writeMode } from "~/lib/modeNav";
 import type { Mode } from "~/lib/modeNav";
 import { cn } from "~/lib/cn";
+
+/* Share/QR helpers — duplicated from components/welcome.tsx §8 (owner request
+ * 2026-09-15: the landing page needs the same pass-it-along mechanics without
+ * importing the overlay module; welcome.tsx keeps these module-private). Keep
+ * in sync if the welcome overlay's QR rendering ever changes. */
+function qrDataUrl(url: string): string {
+  const qr = qrcode(0, "M");
+  qr.addData(url);
+  qr.make();
+  return qr.createDataURL(6, 2);
+}
+
+function ShareIcon() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 15V4" />
+      <path d="m7 8 5-4 5 4" />
+      <path d="M5 12v8h14v-8" />
+    </svg>
+  );
+}
+
+function QrIcon() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1" />
+      <path d="M13.5 13.5h2.5v2.5h-2.5zM17.5 13.5h3v3h-3zM13.5 17.5h3v3h-3z" />
+    </svg>
+  );
+}
 
 /** Mode entry card — the welcome doors' exact choose() mechanics (writeMode +
  * synthetic StorageEvent so the header highlight stays honest + navigate),
@@ -82,6 +118,42 @@ function ModeCard({
 function HomePage() {
   const { t } = useLanguage();
   const [crisisOpen, setCrisisOpen] = useState(false);
+  // Share/QR card state — same mechanics as welcome.tsx §8. `copied` is a flag
+  // (not a stored string) so the label re-renders correctly on language toggle.
+  const [copied, setCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [linkText, setLinkText] = useState<string | null>(null);
+
+  async function share() {
+    const url = window.location.origin;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "SafeGround", text: t("home_share_text"), url });
+      } catch {
+        /* user cancelled — stay silent */
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setLinkText(url); // clipboard blocked: show the URL as selectable text
+    }
+  }
+
+  function toggleQr() {
+    if (!qrOpen && qrUrl === null) {
+      try {
+        setQrUrl(qrDataUrl(window.location.origin));
+      } catch {
+        setLinkText(window.location.origin);
+        return;
+      }
+    }
+    setQrOpen((v) => !v);
+  }
 
   return (
     <AppShell>
@@ -136,7 +208,45 @@ function HomePage() {
           </button>
         </div>
 
-        {/* 7 · Privacy line (existing key, unchanged). */}
+        {/* 7 · Share / QR — pass it along (owner request 2026-09-15). Same
+            mechanics as the welcome overlay §8; copy via t(). Share URL is
+            window.location.origin at click time — never a hardcoded domain. */}
+        <Card>
+          <h2 className="text-h2 text-sg-ink">{t("home_share_h")}</h2>
+          <p className="mt-1 text-body text-sg-ink-soft">{t("home_share_sub")}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={share}>
+              <ShareIcon />
+              {copied ? t("home_share_copied") : t("home_share_btn")}
+            </Button>
+            <Button variant="secondary" onClick={toggleQr} aria-expanded={qrOpen} aria-controls="sg-home-qr-panel">
+              <QrIcon />
+              {qrOpen ? t("home_qr_hide") : t("home_qr_show")}
+            </Button>
+          </div>
+          {linkText ? (
+            <p className="mt-3 break-all text-small text-sg-ink">
+              {t("home_share_link_label")} <span className="select-all">{linkText}</span>
+            </p>
+          ) : null}
+          {qrOpen && qrUrl ? (
+            <div id="sg-home-qr-panel" className="mt-4 flex flex-col items-center gap-2">
+              <img
+                src={qrUrl}
+                alt={t("home_qr_caption")}
+                width={200}
+                height={200}
+                className="h-[200px] w-[200px]"
+              />
+              <p className="text-small text-sg-ink-soft">{t("home_qr_caption")}</p>
+              <Button variant="quiet" onClick={() => window.print()} className="self-center">
+                {t("home_qr_print")}
+              </Button>
+            </div>
+          ) : null}
+        </Card>
+
+        {/* 8 · Privacy line (existing key, unchanged). */}
         <p className="pb-2 text-small text-sg-ink-soft">{t("home_noloc")}</p>
       </div>
 
