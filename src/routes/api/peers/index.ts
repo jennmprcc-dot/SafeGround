@@ -20,6 +20,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "~/db";
 import {
+  listPeersForUser,
   peerCallerPhone,
   peerErrOf,
   peerRpc,
@@ -44,41 +45,10 @@ async function listPeers(c: { request: Request }) {
     // codeExpiresAt: set only for outgoing pending invites that came from a
     // redeemed 6-char code — the "expires in 48h" line (PEER-3). Phone invites
     // carry NO expiry (spec §1.2 pending-out state).
-    const rows = (await sql()`
-      select
-        o.user_id as user_id,
-        u.display_name as name,
-        (a.peer_id is not null and b.peer_id is not null) as mutual,
-        case
-          when exists (
-            select 1 from public.trusted_peers x
-            where x.requester_id = o.user_id and x.peer_id = ${requesterId} and x.status = 'pending')
-          then 'in' else 'out'
-        end as direction,
-        (
-          select max(c.expires_at)::text
-          from public.peer_invite_codes c
-          where c.inviter_user_id = ${requesterId}
-            and c.redeemed_by = o.user_id and c.redeemed_at is not null
-        ) as code_expires_at
-      from (
-        select distinct peer_id as user_id from public.trusted_peers where requester_id = ${requesterId}
-        union
-        select distinct requester_id as user_id from public.trusted_peers where peer_id = ${requesterId}
-      ) o
-      join public.users u on u.id = o.user_id
-      left join public.trusted_peers a
-        on a.requester_id = ${requesterId} and a.peer_id = o.user_id and a.status = 'accepted'
-      left join public.trusted_peers b
-        on b.requester_id = o.user_id and b.peer_id = ${requesterId} and b.status = 'accepted'
-      order by mutual desc, u.display_name asc
-      limit 100`) as unknown as Array<{
-      user_id: string;
-      name: string;
-      mutual: boolean;
-      direction: "out" | "in";
-      code_expires_at: string | null;
-    }>;
+    // The query itself moved to listPeersForUser() (~/lib/peerServer) so the
+    // phone-keyed check-in path shares THIS reader instead of growing a
+    // second one (peer groups spec §2.1). Shape + behaviour unchanged.
+    const peers = await listPeersForUser(requesterId);
 
     // Saved notes (NOTE-1 sender view) — delivered_at NULL = "saved, not yet
     // delivered"; the UI reads this as the honest saved-not-sent status.
@@ -110,14 +80,7 @@ async function listPeers(c: { request: Request }) {
       requesterId,
       requesterName: me[0]?.display_name ?? null,
       phone: caller,
-      peers: rows.map((r) => ({
-        userId: r.user_id,
-        name: r.name,
-        status: r.mutual ? ("accepted" as const) : ("pending" as const),
-        mutual: r.mutual,
-        direction: r.direction,
-        codeExpiresAt: r.code_expires_at,
-      })),
+      peers,
       notes: notes.map((n) => ({
         id: n.id,
         note: n.note,
