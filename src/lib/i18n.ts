@@ -384,9 +384,9 @@ const EN = {
   // rebuilt as a static 7-block page. EN copy here is the owner's verbal ask
   // lightly reflowed; every string is ✦ for the owner's copy-read.
   home_what_h1: "A hand from people who've been there.", // ✦
-  home_what_sub: "SafeGround is made by MPRCC — a peer-led collective founded by people with lived experience of homelessness.", // ✦
+  home_what_sub: "SafeGround is built by MPRCC — a peer-led collective started by people who've lived through homelessness, poverty, and recovery themselves. It's free, private, and simple: find food, shelter, and care, get a heads-up on sweeps, and let your people know you're okay with one tap. No account needed. No background tracking, ever.", // ✦ owner verbatim
   home_what_body:
-    "SafeGround is MPRCC's free, private helper. Find food, shelter, and care. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking, ever. We're more than mutual aid — we're lived-experience support and advocacy, walking alongside you toward the long road home: a peer-led wellness village, tiny homes, and permanent housing for all. We hold a seat on the County Homeless Policy Steering Committee and the Marin County Lived Experience Advisory Board — peer voices shaping policy.", // ✦
+    "We're not just mutual aid. MPRCC walks alongside people for the long road home. We also work with local policymakers to help shape solutions, bringing peer voices — people who've actually lived it — into the conversation.", // ✦ EN
   home_who: "For anyone in Marin who needs a hand — or wants to give one. Six-plus years of peer-led outreach, advocacy, and community care.", // ✦
   home_here_for: "What are you here for?", // ✦
   home_sweep_link: "Heads-up near you? See sweep heads-ups", // ✦
@@ -1300,9 +1300,9 @@ const ES: Partial<Record<I18nKey, string>> = {
   home_story_more: "Cuéntame más",
   // PASS 3 — What-is page ES ✦ (owner copy-read candidates)
   home_what_h1: "Una mano de personas que han pasado por lo mismo.", // ✦
-  home_what_sub: "SafeGround es creado por MPRCC — un colectivo liderado por pares, fundado por personas con experiencia vivida de la falta de vivienda.", // ✦
+  home_what_sub: "SafeGround está construido por MPRCC — un colectivo liderado por pares, fundado por personas que han vivido la falta de vivienda, la pobreza y la recuperación en carne propia. Es gratis, privado y sencillo: encuentra comida, refugio y cuidado, recibe avisos de barridos y haz saber a los tuyos que estás bien con un toque. No necesitas cuenta. Nunca rastreamos tu ubicación.", // ✦ ES faithful - owner copy-read
   home_what_body:
-    "SafeGround es el asistente gratuito y privado de MPRCC. Encuentra comida, refugio y cuidado. Recibe avisos de barridos. Haz saber a los tuyos que estás bien con un toque. Sin cuenta. Sin seguimiento de ubicación, nunca. Somos más que ayuda mutua — somos apoyo y defensa desde la experiencia vivida, caminando a tu lado por el camino a casa: una aldea de bienestar entre pares, mini casas y vivienda permanente para todos. Tenemos un asiento en el Comité Directivo de Políticas de Personas sin Hogar del Condado y en la Junta Asesora de Experiencia Vivida — las voces de los pares dan forma a la política.", // ✦
+    "No somos solo ayuda mutua. MPRCC acompaña a las personas en el largo camino a casa. También trabajamos con quienes deciden las políticas locales para ayudar a dar forma a las soluciones, trayendo las voces de los pares — personas que realmente lo han vivido — a la conversación.", // ✦ ES faithful - owner copy-read
   home_who: "Para cualquiera en Marin que necesite una mano — o quiera dar una. Más de seis años de alcance, defensa y cuidado comunitario entre pares.", // ✦
   home_here_for: "¿Para qué estás aquí?", // ✦
   home_sweep_link: "¿Aviso cerca de ti? Ver avisos de desalojos", // ✦
