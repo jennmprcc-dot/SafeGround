@@ -2468,7 +2468,8 @@ alter table public.analytics_events
   check (event_type in ('resource_search', 'peer_support_request', 'sweep_alert_view',
                         'check_in', 'donation_offer_submit', 'donation_request_submit',
                         'donation_offer_complete', 'donation_request_complete',
-                        'volunteer_submit'));
+                        'volunteer_submit', 'peer_group_created', 'checkin_group_send',
+                        'peer_text_send', 'peer_text_reply'));
 
 
 -- ---------------------------------------------------------------------------
