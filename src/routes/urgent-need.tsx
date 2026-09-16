@@ -24,6 +24,7 @@ import {
 import { CheckCircleIcon } from "~/lib/icons";
 import { useLanguage, type I18nKey } from "~/lib/i18n";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
+import { StepGuide } from "~/components/stepGuide";
 
 type UrgentCategory = "help" | "advocacy" | "er_ride" | "er_supplies" | "support";
 type UrgentLocation = "none" | "fuzzed" | "exact";
@@ -260,6 +261,14 @@ function UrgentNeedPage() {
           <h1 className="text-h1">{t("un_title")}</h1>
           <p className="mt-0.5 text-small text-sg-ink-soft">{t("un_sub")}</p>
         </header>
+
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.2. No urgency added; "never 911" stays calm. */}
+        <StepGuide
+          id="urgent-need"
+          steps={[t("un_step1"), t("un_step2"), t("un_step3"), t("un_step4")]}
+          whatNext={t("un_whatnext")}
+        />
 
         <fieldset>
           <legend className="sr-only">{t("un_cat_label")}</legend>

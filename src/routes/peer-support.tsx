@@ -26,6 +26,7 @@ import {
 import { CheckCircleIcon } from "~/lib/icons";
 import { useLanguage } from "~/lib/i18n";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
+import { StepGuide } from "~/components/stepGuide";
 
 type Phase = "form" | "confirm" | "done";
 
@@ -225,6 +226,14 @@ function RequestSupportPage() {
             {t("ps_sub")}
           </p>
         </header>
+
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.6. Calm, non-urgent; "nothing goes to 911" kept. */}
+        <StepGuide
+          id="peer-support"
+          steps={[t("ps_step1"), t("ps_step2"), t("ps_step3")]}
+          whatNext={t("ps_whatnext")}
+        />
 
         <Card>
           <div className="flex flex-col gap-4">

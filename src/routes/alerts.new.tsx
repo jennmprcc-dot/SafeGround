@@ -21,6 +21,8 @@ import type { AlertKind, AlertLocation, AlertAudienceGroup, AlertSource } from "
 import { ALERT_LIFE_COPY } from "~/lib/alerts";
 import { CheckCircleIcon } from "~/lib/icons";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
+import { StepGuide } from "~/components/stepGuide";
+import { useLanguage } from "~/lib/i18n";
 import { cn } from "~/lib/cn";
 
 /* ── Business-hours line (dynamic, Marin local) ────────────────────
@@ -274,6 +276,7 @@ function LocationStep({ location, setLocation, onSend, onBack, sending, locating
 
 /* ── Send page ──────────────────────────────────────────────────── */
 function SendAlertPage() {
+  const { t } = useLanguage();
   const { signedIn, displayName, signIn } = useAuth();
   const { push } = useToasts();
 
@@ -484,6 +487,14 @@ function SendAlertPage() {
           <p className="mt-0.5 text-small text-sg-ink-soft">A one-tap heads-up to the people you trust. Never calls 911.</p>
         </header>
 
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.2 style, adapted to this three-screen send flow
+            (see the al_* keys). Calm: no urgency, never 911. */}
+        <StepGuide
+          id="alerts-new"
+          steps={[t("al_step1"), t("al_step2"), t("al_step3")]}
+          whatNext={t("al_whatnext")}
+        />
         {needsIdentity ? (
           <Card>
             <h2 className="text-h2">Your number, so your people know it's you</h2>

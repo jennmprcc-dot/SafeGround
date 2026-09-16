@@ -38,6 +38,7 @@ import { NoticeConsentOptIn } from "~/components/noticeConsent";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
+import { StepGuide } from "~/components/stepGuide";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
 
 /* ── Row shapes from the phone-keyed API (GET /api/checkin) ─────── */
@@ -765,6 +766,14 @@ function CheckInPage() {
             ✉️ {t("ptext_home_cta")}
           </Link>
         </header>
+
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.1. Expanded on the first visit, quiet after that. */}
+        <StepGuide
+          id="checkin"
+          steps={[t("ck_step1"), t("ck_step2"), t("ck_step3"), t("ck_step4")]}
+          whatNext={t("ck_whatnext")}
+        />
 
         {!phone ? (
           /* Phone-less state (spec §2.1): calm "add your number" card — the

@@ -29,6 +29,7 @@ import {
   SG_SAFETY_DISCLAIMER_TITLE,
 } from "~/components/disclaimer";
 import { LegalLinks } from "~/components/legalLinks";
+import { StepGuide } from "~/components/stepGuide";
 import { useLanguage } from "~/lib/i18n";
 
 /** Single acceptance key for the whole app. Written once, never bumped —
@@ -142,6 +143,16 @@ export function SafetyGate() {
           </h1>
           <p className="text-small text-sg-ink-soft">{t("sg_gate_intro")}</p>
         </header>
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.8. Chrome only: the legal body below stays the
+            owner's verbatim, immutable, EN-only text. Carries the one ✦
+            intro line, the guide can be collapsed, and it never re-gates. */}
+        <StepGuide
+          id="first-visit"
+          steps={[t("sg_gate_step1"), t("sg_gate_step2"), t("sg_gate_step3")]}
+          whatNext={t("sg_gate_whatnext")}
+          className="text-left"
+        />
 
         {/* Full legal body — scrollable, explicitly focusable (owner's
             verbatim SafeGround text; EN-only by design). */}

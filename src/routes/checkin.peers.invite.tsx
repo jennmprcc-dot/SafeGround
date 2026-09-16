@@ -22,6 +22,7 @@ import { formatPhone, getAlertIdentity, normPhone, phoneLooksOk, setAlertIdentit
 import { useLanguage } from "~/lib/i18n";
 import { CheckCircleIcon, CopyIcon } from "~/lib/icons";
 import { LegalLinks } from "~/components/legalLinks";
+import { StepGuide } from "~/components/stepGuide";
 
 type Step = "own" | "phone" | "code" | "code-done";
 
@@ -191,6 +192,13 @@ function InvitePage() {
             <h1 className="text-h1">{t("invite_own_title")}</h1>
             <p className="mt-0.5 text-small text-sg-ink-soft">{t("invite_own_sub")}</p>
           </header>
+          {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+              spec Part B §B3.3. Expanded on the first visit, quiet after. */}
+          <StepGuide
+            id="invite"
+            steps={[t("invite_step1"), t("invite_step2"), t("invite_step3")]}
+            whatNext={t("invite_whatnext")}
+          />
           <Card>
             <TextField
               label={t("invite_own")}
@@ -270,6 +278,14 @@ function InvitePage() {
           <h1 className="text-h1">Invite a peer</h1>
           <p className="mt-0.5 text-small text-sg-ink-soft">One person you trust, one number you type.</p>
         </header>
+
+        {/* Same guide, same on-device collapse memory — this screen shows when
+            the inviter already has a number stored (spec Part B §B3.3). */}
+        <StepGuide
+          id="invite"
+          steps={[t("invite_step1"), t("invite_step2"), t("invite_step3")]}
+          whatNext={t("invite_whatnext")}
+        />
 
         <Card>
           <div className="flex flex-col gap-4">
