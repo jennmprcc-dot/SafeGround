@@ -813,6 +813,58 @@ const EN = {
   grp_remove: "Remove",
   grp_edit_saved: "Saved — your group is up to date.",
   grp_delete_done: "Group deleted — your check-ins are untouched.",
+
+  // Peer-to-peer texting (owner goal 2026-09-16 — spec Part A §A10).
+  // All ✦ strings need the owner's copy-read (EN source + ES below).
+  nav_nb_peertext: "Text my people", // ✦
+  ptext_title: "Text my people", // ✦
+  ptext_sub: "Send a message to the people you trust — they can reply by text.", // ✦
+  ptext_home_cta: "Message my people", // ✦
+  ptext_home_sub: "Text your trusted peers — with your location if you choose.", // ✦
+  ptext_step: "Step {n} of 3", // ✦
+  ptext_step_what: "What's happening?", // ✦
+  ptext_intent_need: "I need support", // ✦
+  ptext_intent_need_sub: "Tell a peer you'd like a hand. Never calls 911.", // ✦
+  ptext_intent_unsafe: "Unsafe location", // ✦
+  ptext_intent_unsafe_sub: "Let your people know where you are. Never calls 911.", // ✦
+  ptext_intent_ok: "I'm OK", // ✦
+  ptext_intent_ok_sub: "Just letting people know you're alright.", // ✦
+  ptext_note_label: "A short note (optional)", // ✦
+  ptext_note_ph: "Anything else they should know?", // ✦
+  ptext_step_who: "Who should know?", // ✦
+  ptext_channel_note: "Texts go to your people 8am–6pm Mon–Fri. Anyone who hasn't turned on texts, or is outside those hours, still sees this in the app. They can reply by text.", // ✦
+  ptext_step_loc: "Your location (never chosen for you)", // ✦
+  ptext_loc_choose: "Do you want to send a location? Nothing is chosen until you tap.", // ✦
+  ptext_loc_none: "No location", // ✦
+  ptext_loc_none_sub: "Just the words — nothing else is shared.", // ✦
+  ptext_loc_fuzzed: "Approx area (~150m)", // ✦
+  ptext_loc_fuzzed_sub: "A rough circle, not the exact spot. Your people and the team see it. Clears in 24h.", // ✦
+  ptext_loc_exact: "Exact spot", // ✦
+  ptext_loc_exact_sub: "The exact spot. Your people and the team see it. Clears in 24h.", // ✦
+  ptext_consent_title: "Your text messages", // ✦
+  ptext_consent_body: "This goes to your people by text message, not just the app.", // ✦
+  ptext_consent_check: "I understand — texts are how this reaches my people. Texts go 8am–6pm Mon–Fri unless a person opts in for after hours. They can reply STOP anytime.", // ✦
+  ptext_consent_btn: "I understand — send it", // ✦
+  ptext_afterhours_note: "It's outside texting hours (8am–6pm Mon–Fri), so your people get this in the app now — your texts go out in the morning unless they've opted into after-hours.", // ✦
+  ptext_send: "Send my message", // ✦
+  ptext_done: "Sent — your people were notified.", // ✦
+  ptext_done_justme: "Saved — just for you.", // ✦
+  ptext_count: "Sent to {n} people — {sms} by text, {app} in-app.", // ✦
+  ptext_reply_echo: "{name}: {reply}", // ✦
+  ptext_no_peers: "You don't have any trusted peers yet — add one first.", // ✦
+  ptext_add_peer: "Add a peer", // ✦
+  ptext_inbox: "My messages", // ✦
+  ptext_thread_empty: "No messages yet.", // ✦
+  ptext_reply_badge: "{n} replies", // ✦
+  ptext_send_another: "Send another", // ✦
+  ptext_map_fuzzed: "Approximate area (~150m)", // ✦
+  ptext_map_exact: "Exact spot — clears in 24h", // ✦
+  ptext_map_expired: "This location link has expired.", // ✦
+  ptext_what_next: "What happens next", // ✦
+  ptext_next_1: "They get a text (8am–6pm Mon–Fri, if they've turned on texts) or an app notice right away.", // ✦
+  ptext_next_2: "If they reply, their words come back to you here.", // ✦
+  ptext_next_3: "You can send another message, or close this — it's saved.", // ✦
+  ptext_back_mine: "Back to my messages", // ✦
 } as const;
 
 export type I18nKey = keyof typeof EN;
@@ -1565,6 +1617,59 @@ const ES: Partial<Record<I18nKey, string>> = {
   grp_remove: "Quitar",
   grp_edit_saved: "Guardado — tu grupo está al día.",
   grp_delete_done: "Grupo borrado — tus registros siguen intactos.",
+
+  // Peer-to-peer texting (owner goal 2026-09-16 — spec Part A §A10).
+  // All ✦ strings need the owner's Spanish copy-read.
+  nav_nb_peertext: "Mensajear a mis personas", // ✦
+  ptext_title: "Mensajear a mis personas", // ✦
+  ptext_sub: "Envía un mensaje a las personas de confianza — pueden responder por texto.", // ✦
+  ptext_home_cta: "Mensajear a mis personas", // ✦
+  ptext_home_sub: "Envía un texto a tus personas de confianza — con tu ubicación si eliges.", // ✦
+  ptext_step: "Paso {n} de 3", // ✦
+  ptext_step_what: "¿Qué está pasando?", // ✦
+  ptext_intent_need: "Necesito apoyo", // ✦
+  ptext_intent_need_sub: "Dile a un compañero que necesitas una mano. Nunca llama al 911.", // ✦
+  ptext_intent_unsafe: "Lugar no seguro", // ✦
+  ptext_intent_unsafe_sub: "Avisa a tus personas dónde estás. Nunca llama al 911.", // ✦
+  ptext_intent_ok: "Estoy bien", // ✦
+  ptext_intent_ok_sub: "Solo para avisar que estás bien.", // ✦
+  ptext_note_label: "Una nota corta (opcional)", // ✦
+  ptext_note_ph: "¿Algo más que deban saber?", // ✦
+  ptext_step_who: "¿Quién debe saberlo?", // ✦
+  ptext_channel_note: "Los textos van a tus personas de 8am a 6pm de lunes a viernes. Quien no haya activado los textos, o esté fuera de ese horario, igual lo ve en la app. Pueden responder por texto.", // ✦
+  ptext_step_loc: "Tu ubicación (nunca se elige por ti)", // ✦
+  ptext_loc_choose: "¿Quieres enviar una ubicación? Nada se elige hasta que toques.", // ✦
+  ptext_loc_none: "Sin ubicación", // ✦
+  ptext_loc_none_sub: "Solo las palabras — nada más se comparte.", // ✦
+  ptext_loc_fuzzed: "Área aproximada (~150m)", // ✦
+  ptext_loc_fuzzed_sub: "Un círculo amplio, no el punto exacto. Tus personas y el equipo lo ven. Se borra en 24h.", // ✦
+  ptext_loc_exact: "Punto exacto", // ✦
+  ptext_loc_exact_sub: "El punto exacto. Tus personas y el equipo lo ven. Se borra en 24h.", // ✦
+  ptext_consent_title: "Tus mensajes de texto", // ✦
+  ptext_consent_body: "Esto llega a tus personas por mensaje de texto, no solo por la app.", // ✦
+  ptext_consent_check: "Entiendo — los textos son cómo esto llega a mis personas. Los textos van de 8am a 6pm de lunes a viernes, a menos que alguien elija recibirlos fuera de horario. Pueden responder STOP cuando quieran.", // ✦
+  ptext_consent_btn: "Entiendo — enviar", // ✦
+  ptext_afterhours_note: "Está fuera del horario de textos (8am–6pm de lunes a viernes), así que tus personas lo ven en la app ahora — tus textos salen por la mañana a menos que hayan elegido recibirlos fuera de horario.", // ✦
+  ptext_send: "Enviar mi mensaje", // ✦
+  ptext_done: "Enviado — tus personas fueron avisadas.", // ✦
+  ptext_done_justme: "Guardado — solo para ti.", // ✦
+  ptext_count: "Enviado a {n} personas — {sms} por texto, {app} en la app.", // ✦
+  ptext_reply_echo: "{name}: {reply}", // ✦
+  ptext_no_peers: "Aún no tienes personas de confianza — agrega una primero.", // ✦
+  ptext_add_peer: "Agregar una persona", // ✦
+  ptext_inbox: "Mis mensajes", // ✦
+  ptext_thread_empty: "Aún no hay mensajes.", // ✦
+  ptext_reply_badge: "{n} respuestas", // ✦
+  ptext_send_another: "Enviar otro", // ✦
+  ptext_map_fuzzed: "Área aproximada (~150m)", // ✦
+  ptext_map_exact: "Punto exacto — se borra en 24h", // ✦
+  ptext_map_expired: "Este enlace de ubicación ya expiró.", // ✦
+  ptext_what_next: "Qué sigue después", // ✦
+  ptext_next_1: "Reciben un texto (8am–6pm de lunes a viernes, si activaron los textos) o un aviso en la app de inmediato.", // ✦
+  ptext_next_2: "Si responden, sus palabras vuelven a ti aquí.", // ✦
+  ptext_next_3: "Puedes enviar otro mensaje, o cerrar esto — queda guardado.", // ✦
+  ptext_back_mine: "Volver a mis mensajes", // ✦
+
 };
 
 /* ── Lookup (EN fallback — never blank) ────────────────────────── */

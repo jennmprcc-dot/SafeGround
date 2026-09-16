@@ -38,6 +38,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set([
   // created + a check-in shared with peers (audience kind + member bucket only).
   "peer_group_created",
   "checkin_group_send",
+  "peer_text_send",
+  "peer_text_reply",
 ]);
 
 const UUID_RE =

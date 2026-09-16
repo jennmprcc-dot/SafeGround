@@ -27,4 +27,7 @@ export type AnalyticsEventType =
   //                          audience kind, status = member-count bucket).
   // Never a group name, a group id, a member id, a phone or a coordinate.
   | "peer_group_created"
-  | "checkin_group_send";
+  | "checkin_group_send"
+  // Peer-to-peer texting (owner goal 2026-09-16).
+  | "peer_text_send"
+  | "peer_text_reply";

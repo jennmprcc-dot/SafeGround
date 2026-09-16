@@ -349,6 +349,18 @@ function NavigatorPage() {
           ) : null}
         </header>
 
+        {/* Peer-texting home card (owner goal 2026-09-16, spec §A2): same
+            route as the ✉️ sub-tab — one calm entry from the Neighbor home. */}
+        {!requestMode && !manageMode ? (
+          <Link to="/peer-text" className="flex min-h-[64px] items-center gap-3 rounded-[12px] bg-sg-sage-wash/70 px-4 transition-colors hover:bg-sg-sage-wash">
+            <span aria-hidden className="text-[22px]">✉️</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-body font-semibold text-sg-ink">{t("ptext_home_cta")}</span>
+              <span className="block text-small text-sg-ink-soft">{t("ptext_home_sub")}</span>
+            </span>
+          </Link>
+        ) : null}
+
         <SearchField
           value={query}
           onChange={setQuery}

@@ -60,6 +60,9 @@ export const MODES: ModeDef[] = [
     tabs: [
       { id: "resources", labelKey: "nav_nb_resources", icon: "🍲", to: "/help" },
       { id: "peer", labelKey: "nav_nb_peer", icon: "💬", to: "/peer-support" },
+      // Peer-texting (owner goal 2026-09-16) — right after "Talk to Peer",
+      // before "Request an Item" (spec §A2): the on-demand trust-circle channel.
+      { id: "peertext", labelKey: "nav_nb_peertext", icon: "✉️", to: "/peer-text" },
       // PASS 2: "Request an item" → /help?view=request (form lifts to the top).
       { id: "itemreq", labelKey: "nav_nb_itemreq", icon: "🧦", to: "/help", search: { view: "request" } },
       { id: "requests", labelKey: "nav_nb_requests", icon: "📋", to: "/requests" },
@@ -162,6 +165,11 @@ export function routeHint(pathname: string, query: Record<string, string | undef
       return { mode: "neighbor", tab: "resources" };
     case "/peer-support":
       return { mode: "neighbor", tab: "peer" };
+    case "/peer-text":
+    case "/peer-text/map":
+      // Peer-texting claims the neighbor mode + the ✉️ sub-tab (spec §A2); the
+      // map deep-link (24h SMS location view) highlights the same tab.
+      return { mode: "neighbor", tab: "peertext" };
     case "/requests":
     case "/alerts":
     case "/alerts/new":
