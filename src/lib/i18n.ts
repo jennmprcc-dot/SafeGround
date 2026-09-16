@@ -699,6 +699,23 @@ const EN = {
   dn_q_unavailable: "The queue isn't up yet",
   dn_q_load_err: "Couldn't load the queue — the database didn't answer.",
   dn_staff_action: "No auto-matching — staff read both queues and coordinate by phone.",
+  // Donation dispatch: claim → In route → outcome, with the requester told at
+  // each step (owner-directed 2026-09-16). Every new string is ✦ for the
+  // owner's copy-read — calm, short, plain, no urgency.
+  dsp_status_in_route: "In route", // ✦
+  dsp_mark_in_route: "In route — on the way", // ✦
+  dsp_outcome_open: "What happened?", // ✦
+  dsp_outcome_note: "Note for the record (optional)", // ✦
+  dsp_outcome_note_ph: "e.g. handed it to the neighbor by the creek", // ✦
+  dsp_delivered: "Delivered", // ✦
+  dsp_not_at_spot: "Peer not at spot", // ✦
+  dsp_saved_in_route: "Saved — the queue shows In route.", // ✦
+  dsp_saved_delivered: "Saved — delivered. Cleared from the active queue.", // ✦
+  dsp_saved_held: "Saved — the request stays open and the item is held for another try.", // ✦
+  dsp_held_note: "Not at the spot last time — held for another try.", // ✦
+  dsp_attempts_note: "{n} tries so far.", // ✦
+  dsp_in_route_at: "In route since {time}.", // ✦
+  dsp_ping_note: "The neighbor gets a calm heads-up: an app notification, and a text only if they opted in.", // ✦
   // Volunteer flow (owner-directed 2026-09-12, Part B) — a third card on the
   // Give page + a staff Volunteers queue in /outreach. Contact = phone OR
   // email, name + interest optional. Every new string is ✦ for the owner's
@@ -743,6 +760,7 @@ const EN = {
   myr_status_claimed: "Being handled — someone on the team is on it.", // ✦
   myr_status_completed: "Done — thank you.", // ✦
   myr_status_unknown: "On file — the team can see it.", // ✦
+  myr_status_in_route: "On the way — someone from the team is bringing it.", // ✦
   myr_sent: "Sent {when}", // ✦
   // Peer groups + check-in audience (PEER_GROUPS_SPEC §7 — BUILD B frontend).
   // EN from the spec table verbatim; ES ✦ owner copy-read candidates.
@@ -1507,6 +1525,21 @@ const ES: Partial<Record<I18nKey, string>> = {
   dn_q_unavailable: "La cola aún no está lista",
   dn_q_load_err: "No se pudo cargar la cola — la base de datos no respondió.",
   dn_staff_action: "Sin emparejamiento automático — el equipo lee ambas colas y coordina por teléfono.",
+  // Donation dispatch requester notices (owner-directed 2026-09-16) — ES ✦ candidates.
+  dsp_status_in_route: "En camino", // ✦
+  dsp_mark_in_route: "En camino — va para allá", // ✦
+  dsp_outcome_open: "¿Qué pasó?", // ✦
+  dsp_outcome_note: "Nota para el registro (opcional)", // ✦
+  dsp_outcome_note_ph: "p. ej. entregado al vecino junto al arroyo", // ✦
+  dsp_delivered: "Entregado", // ✦
+  dsp_not_at_spot: "No estaba en el lugar", // ✦
+  dsp_saved_in_route: "Guardado — la cola muestra En camino.", // ✦
+  dsp_saved_delivered: "Guardado — entregado. Se quitó de la cola activa.", // ✦
+  dsp_saved_held: "Guardado — el pedido sigue activo y guardamos el artículo para otro intento.", // ✦
+  dsp_held_note: "La última vez no estaba — guardamos el artículo para otro intento.", // ✦
+  dsp_attempts_note: "{n} intentos hasta ahora.", // ✦
+  dsp_in_route_at: "En camino desde {time}.", // ✦
+  dsp_ping_note: "El vecino recibe un aviso tranquilo: notificación en la app, y un texto solo si lo autorizó.", // ✦
   // Volunteer flow (owner-directed 2026-09-12, Part B) — ES ✦ candidates.
   vol_card_title: "Voluntariado", // ✦
   vol_card_sub: "Formas de ayudar más allá del dinero y los artículos — el equipo te contactará.", // ✦
@@ -1547,6 +1580,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   myr_status_claimed: "En marcha — alguien del equipo la está atendiendo.", // ✦
   myr_status_completed: "Completada — gracias.", // ✦
   myr_status_unknown: "En archivo — el equipo puede verla.", // ✦
+  myr_status_in_route: "En camino — alguien del equipo lo está llevando.", // ✦
   myr_sent: "Enviado {when}", // ✦
   // Peer groups + check-in audience (PEER_GROUPS_SPEC §7 — BUILD B frontend).
   // ES ✦ owner copy-read candidates (same batch as Pass 1–3 strings).

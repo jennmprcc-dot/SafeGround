@@ -26,11 +26,16 @@ import { normPhone } from "~/lib/peerSupportServer";
 import { outreachIdentity } from "~/lib/outreachServer";
 import {
   PEER_SUPPORT_ADMIN_PHONES,
+  phoneKey,
   sendFcmMessage,
   tokensForPhone,
 } from "~/lib/pushServer";
+import { gateSms, sendSms } from "~/lib/smsServer";
 import {
+  DONATION_DAY_LABEL,
+  DONATION_PING_COPY,
   DONATION_PUSH_LINKS,
+  DONATION_REQUESTER_LINK,
   isDonationCategory,
   isOfferPath,
   isPickupOrDelivery,
@@ -242,6 +247,206 @@ export async function fanOutDonationAdmins(
   return { notifiedPhones, tokensSent };
 }
 
+/* ── Requester ping (owner-directed 2026-09-16) ─────────────────────
+ * Staff claim → "In route" → outcome. At each step the SUBMITTER (the row's
+ * contact_phone) gets one calm heads-up:
+ *   - PUSH to every device token they registered (tokensForPhone — the same
+ *     fan-out the check-in peer pushes use; maybeRegisterPush on the device is
+ *     what PUT those tokens there). Zero phone digits in title/body.
+ *   - SMS ONLY through gateSms (sms_consent + not unsubscribed + business
+ *     hours/after-hours consent). NEVER emergency:true — this is coordination,
+ *     not a 911 path. No consent → no text, silently.
+ * Best-effort everywhere: a store outage or a failed token never fails the
+ * staff action that already landed. A 60s per-(row, kind) cooldown stops a
+ * double-tap or a retry from texting twice, while still letting claim and
+ * In route (different kinds) each send their own message.
+ * --------------------------------------------------------------------- */
+
+export type DonationPingKind = "claim" | "in_route" | "reschedule";
+
+export interface DonationPingResult {
+  kind: DonationPingKind;
+  /** Device tokens we found for the submitter's phone (consent = their Allow). */
+  pushTargets: number;
+  /** Tokens FCM accepted. */
+  pushSent: number;
+  /** True when a text actually left for Twilio. */
+  smsSent: boolean;
+  /** Why no text: no_consent | after_hours | configuration | cooldown |
+   *  invalid_phone | send_failed. Null when a text was sent (or attempted ok). */
+  smsReason: string | null;
+}
+
+const DONATION_PING_COOLDOWN_MS = 60_000;
+const recentPings = new Map<string, number>();
+
+/** First name of the staff member who acted — roster display name first, then
+ * the HomeTeam display name. NEVER invented, and NEVER a string that carries
+ * digits (a roster row whose display name is a phone number must not leak into
+ * a message body): those resolve to null → the calm "Someone from MPRCC…". */
+export async function staffFirstName(phone: string): Promise<string | null> {
+  const key = phoneKey(phone);
+  if (!key) return null;
+  let raw: string | null = null;
+  try {
+    const rows = (await sql()`
+      select display_name from public.outreach_roster
+      where substring(phone from length(phone) - 9) = ${key} and active
+      limit 1`) as unknown as Array<{ display_name: string }>;
+    raw = rows[0]?.display_name ?? null;
+  } catch {
+    /* roster unreachable → try the hometeam name below */
+  }
+  if (!raw) {
+    try {
+      const rows = (await sql()`
+        select display_name from public.hometeam_members
+        where substring(phone from length(phone) - 9) = ${key} and status = 'active'
+        limit 1`) as unknown as Array<{ display_name: string }>;
+      raw = rows[0]?.display_name ?? null;
+    } catch {
+      /* no name anywhere → fallback copy */
+    }
+  }
+  if (!raw) return null;
+  const first = String(raw).trim().split(/\s+/)[0]?.replace(/^["'“‘]+|["'”’]+$/g, "") ?? "";
+  if (!first || first.length > 24 || /[0-9]/.test(first)) return null;
+  return first;
+}
+
+/** Next appropriate outreach day (Marin-local): tomorrow when it's Mon–Fri,
+ * otherwise the next Monday. Returns the EN label + the ES day index so the
+ * reschedule line stays gentle and true. */
+export function nextOutreachDay(now: Date = new Date()): { tomorrow: boolean; weekdayIndex: number } {
+  const short = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  for (const offset of [1, 2, 3]) {
+    const wd = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      weekday: "short",
+    }).format(new Date(now.getTime() + offset * 86_400_000));
+    const idx = short.indexOf(wd);
+    if (idx >= 1 && idx <= 5) return { tomorrow: offset === 1, weekdayIndex: idx };
+  }
+  return { tomorrow: true, weekdayIndex: 1 };
+}
+
+/** The calm reschedule day word — "tomorrow" or the weekday name. */
+export function rescheduleDayLabel(
+  day: { tomorrow: boolean; weekdayIndex: number },
+  lang: "en" | "es" = "en",
+): string {
+  const words = DONATION_DAY_LABEL[lang];
+  return day.tomorrow ? words.tomorrow : words.days[day.weekdayIndex];
+}
+
+const fillPing = (tpl: string, vars: Record<string, string>): string =>
+  tpl.replace(/\{(\w+)\}/g, (_m, k: string) => vars[k] ?? "");
+
+const clipPing = (raw: string, max: number): string => {
+  const t = String(raw ?? "").trim().replace(/\s+/g, " ");
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+
+/**
+ * Tell the submitter what's happening with their own row. Called by
+ * /api/donations/claim (claim), /api/donations/in-route (in_route) and
+ * /api/donations/complete (reschedule). Returns counts/reasons only — never
+ * throws, never logs, never echoes a phone number.
+ */
+export async function pingDonationSubmitter(opts: {
+  table: DonationTableName;
+  id: string;
+  kind: DonationPingKind;
+  /** The row's item text (requester's own words) — the {item} substitution. */
+  itemLabel: string;
+  /** The row's contact_phone. Server-side only; never in a payload. */
+  contactPhone: string;
+  /** Claiming staff first name (claim only). Null → "Someone from MPRCC…". */
+  staffName?: string | null;
+  /** Offers are pickups (staff comes TO them) — wording flips accordingly. */
+  offer?: boolean;
+  /** EN day word for the reschedule line. */
+  dayLabel?: string | null;
+}): Promise<DonationPingResult> {
+  const out: DonationPingResult = {
+    kind: opts.kind,
+    pushTargets: 0,
+    pushSent: 0,
+    smsSent: false,
+    smsReason: null,
+  };
+  const item = clipPing(opts.itemLabel, 60) || "item";
+  const name = opts.staffName ? clipPing(opts.staffName, 24) : "";
+  const copy = DONATION_PING_COPY;
+  let title: string;
+  let body: string;
+  if (opts.kind === "claim") {
+    title = opts.offer ? copy.title.claimOffer.en : copy.title.claim.en;
+    body = opts.offer
+      ? fillPing(name ? copy.claimOffer.en : copy.claimOfferFallback.en, { name, item })
+      : fillPing(name ? copy.claim.en : copy.claimFallback.en, { name, item });
+  } else if (opts.kind === "in_route") {
+    title = copy.title.inRoute.en;
+    body = fillPing(opts.offer ? copy.inRouteOffer.en : copy.inRoute.en, { item });
+  } else {
+    title = copy.title.reschedule.en;
+    body = fillPing(opts.offer ? copy.rescheduleOffer.en : copy.reschedule.en, {
+      item,
+      day: opts.dayLabel ?? "soon",
+    });
+  }
+  // Defensive: nothing user-visible may carry a phone-length digit run.
+  if (/\d{7,}/.test(`${title} ${body}`)) {
+    body = body.replace(/[0-9]{7,}/g, "…");
+  }
+
+  /* 1. Push — every device token this phone registered (empty for anyone who
+   *    never tapped Allow: zero tokens, zero pushes, nothing to clean up). */
+  try {
+    const tokens = await tokensForPhone(opts.contactPhone);
+    out.pushTargets = tokens.length;
+    for (const token of tokens.slice(0, 20)) {
+      try {
+        const r = await sendFcmMessage({
+          token,
+          title,
+          body: clipPing(body, 140),
+          link: DONATION_REQUESTER_LINK,
+        });
+        if (r.status === "sent") out.pushSent += 1;
+      } catch {
+        /* best-effort per token */
+      }
+    }
+  } catch {
+    /* push store unreachable — the SMS path below still gets its chance */
+  }
+
+  /* 2. SMS — consent + STOP + business hours, via gateSms. Never emergency. */
+  const cooldownKey = `${opts.table}:${opts.id}:${opts.kind}`;
+  const now = Date.now();
+  const last = recentPings.get(cooldownKey) ?? 0;
+  if (now - last < DONATION_PING_COOLDOWN_MS) {
+    out.smsReason = "cooldown";
+    return out;
+  }
+  try {
+    const gate = await gateSms(opts.contactPhone);
+    if (!gate.send) {
+      out.smsReason = gate.reason;
+      return out;
+    }
+    const text = `${body} (MPRCC SafeGround. Reply STOP to stop texts.)`;
+    const sent = await sendSms(opts.contactPhone, text);
+    out.smsSent = sent.ok;
+    out.smsReason = sent.ok ? null : sent.reason;
+    if (sent.ok) recentPings.set(cooldownKey, now);
+  } catch {
+    out.smsReason = "send_failed";
+  }
+  return out;
+}
+
 /* ── Queue row shapes (snake_case columns → camelCase JSON) ───────── */
 export interface DonationOfferRow {
   id: string;
@@ -258,7 +463,15 @@ export interface DonationOfferRow {
   status: string;
   claimedBy: string | null;
   claimedAt: string | null;
+  /** In route — set when staff mark the item on its way (2026-09-16). */
+  routeStartedAt: string | null;
   completedAt: string | null;
+  /** delivered | peer_not_at_spot | null (no outcome recorded yet). */
+  outcome: string | null;
+  outcomeAt: string | null;
+  outcomeByPhone: string | null;
+  /** Delivery attempts recorded (each outcome bumps this). */
+  attempts: number;
   outcomeNote: string | null;
   createdAt: string;
   updatedAt: string;
@@ -284,7 +497,12 @@ export function mapOfferRow(r: Record<string, unknown>): DonationOfferRow {
     status: String(r.status),
     claimedBy: r.claimed_by_phone == null ? null : String(r.claimed_by_phone),
     claimedAt: r.claimed_at == null ? null : String(r.claimed_at),
+    routeStartedAt: r.route_started_at == null ? null : String(r.route_started_at),
     completedAt: r.completed_at == null ? null : String(r.completed_at),
+    outcome: r.outcome == null ? null : String(r.outcome),
+    outcomeAt: r.outcome_at == null ? null : String(r.outcome_at),
+    outcomeByPhone: r.outcome_by_phone == null ? null : String(r.outcome_by_phone),
+    attempts: Number(r.attempts ?? 0),
     outcomeNote: r.outcome_note == null ? null : String(r.outcome_note),
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
@@ -303,7 +521,15 @@ export interface DonationRequestRow {
   status: string;
   claimedBy: string | null;
   claimedAt: string | null;
+  /** In route — set when staff mark the item on its way (2026-09-16). */
+  routeStartedAt: string | null;
   completedAt: string | null;
+  /** delivered | peer_not_at_spot | null (no outcome recorded yet). */
+  outcome: string | null;
+  outcomeAt: string | null;
+  outcomeByPhone: string | null;
+  /** Delivery attempts recorded (each outcome bumps this). */
+  attempts: number;
   outcomeNote: string | null;
   createdAt: string;
   updatedAt: string;
@@ -322,7 +548,12 @@ export function mapRequestRow(r: Record<string, unknown>): DonationRequestRow {
     status: String(r.status),
     claimedBy: r.claimed_by_phone == null ? null : String(r.claimed_by_phone),
     claimedAt: r.claimed_at == null ? null : String(r.claimed_at),
+    routeStartedAt: r.route_started_at == null ? null : String(r.route_started_at),
     completedAt: r.completed_at == null ? null : String(r.completed_at),
+    outcome: r.outcome == null ? null : String(r.outcome),
+    outcomeAt: r.outcome_at == null ? null : String(r.outcome_at),
+    outcomeByPhone: r.outcome_by_phone == null ? null : String(r.outcome_by_phone),
+    attempts: Number(r.attempts ?? 0),
     outcomeNote: r.outcome_note == null ? null : String(r.outcome_note),
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),

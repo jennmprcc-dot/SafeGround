@@ -49,13 +49,16 @@ interface MyDonationRow {
   createdAt: string;
 }
 
-/** Calm status line — open/claimed/completed map to plain-language EN/ES. */
+/** Calm status line — open/claimed/in_route/completed map to plain-language
+ * EN/ES (in_route added 2026-09-16: staff marked the item on its way). */
 function statusKey(status: string): I18nKey {
   switch (status) {
     case "open":
       return "myr_status_open";
     case "claimed":
       return "myr_status_claimed";
+    case "in_route":
+      return "myr_status_in_route";
     case "completed":
       return "myr_status_completed";
     default:
