@@ -267,7 +267,13 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
   const [outcome, setOutcome] = useState("");
 
   const load = useCallback(async (p: string, openOnly: boolean) => {
-    setState({ kind: "loading" });
+    // Returning the SAME object bails React out of the re-render. Without this
+    // a refetch that re-enters "loading" re-rendered → new callback/prop
+    // identities → effect re-ran → fetch again: the owner-reported 2026-09-16
+    // dashboard flicker (measured ~6,300 API calls in 4s). A real state change
+    // (ready → loading, e.g. after a claim or Try again) still shows the
+    // skeleton exactly as before.
+    setState((prev) => (prev.kind === "loading" ? prev : { kind: "loading" }));
     try {
       const base = queue === "offers" ? DONATION_API.offersQueue : DONATION_API.requestsQueue;
       const res = await fetch(`${base}?phone=${encodeURIComponent(p)}&status=${openOnly ? "open" : "all"}`);
@@ -291,7 +297,7 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
 
   useEffect(() => {
     if (phone.length >= 10) void load(phone, onlyOpen);
-    else setState({ kind: "loading" });
+    else setState((prev) => (prev.kind === "loading" ? prev : { kind: "loading" }));
   }, [phone, onlyOpen, load]);
 
   const act = async (id: string, action: "claim" | "complete") => {

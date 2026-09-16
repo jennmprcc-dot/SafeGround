@@ -16,7 +16,7 @@
  * payload carries — never client trust.
  */
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { AppShell } from "~/components/shell";
 import { Button, Card, EmptyState, SkeletonRows, StatusBadge } from "~/components/ui";
 import { StaffSmsTeam } from "~/components/staffSmsTeam";
@@ -28,6 +28,7 @@ import { ALERT_KIND_LABEL } from "~/lib/alerts";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { DonationQueueSection } from "~/components/donationQueues";
 import { VolunteerQueueSection } from "~/components/volunteerQueues";
+import { DASH_TAB_URL, resolveTab, type OutreachTab } from "~/lib/outreachTabs";
 
 /* Staff PIN lock (owner-directed 2026-09-11): the phone only identifies WHO;
    the PIN proves it's them. On a verified unlock we persist sg.alert.phone
@@ -36,20 +37,10 @@ import { VolunteerQueueSection } from "~/components/volunteerQueues";
 const STAFF_UNLOCKED_KEY = "sg.staff.unlocked";
 const STAFF_PIN_SESSION = "sg.staff.pin";
 
-type Tab = "sweeps" | "alerts" | "offers" | "needs" | "volunteers" | "more";
-
-/** Pure resolver for the dashboard tab from the URL query. Same fallback
- * semantics as the original mount-only resolution ("sweeps" when no valid tab):
- * tab=alerts|sweeps|more|volunteers pass through; tab=offers|needs pass
- * through (Pass 2 queue deep links); tab=donations resolves to the Offers
- * queue unless queue=requests (the Needs/request queue). Kept module-level so
- * both first paint and the URL-sync effect use the exact same function. */
-function resolveTab(search: { tab?: string; queue?: string }): Tab {
-  const q = search.tab;
-  if (q === "alerts" || q === "sweeps" || q === "more" || q === "volunteers" || q === "offers" || q === "needs") return q;
-  if (q === "donations") return search.queue === "requests" ? "needs" : "offers";
-  return "sweeps";
-}
+/** Dashboard sub-tab. resolveTab() + the canonical URL table live in
+ * ~/lib/outreachTabs so the page, the header chips (routeHint) and the test
+ * script all read ONE source of truth. */
+type Tab = OutreachTab;
 
 interface SweepItem {
   id: string;
@@ -133,6 +124,7 @@ function SectionTitle({ children }: { children: string }) {
 
 function OutreachPage() {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [identity] = useState(() => getAlertIdentity());
   const [phoneInput, setPhoneInput] = useState(identity?.phone ?? "");
   const [phone, setPhone] = useState(identity?.phone ?? "");
@@ -616,7 +608,21 @@ function OutreachPage() {
                   key={t}
                   type="button"
                   aria-pressed={tab === t}
-                  onClick={() => setTab(t)}
+                  onClick={() => {
+                    // ONE source of truth: the URL. Navigate to this tab's
+                    // canonical query instead of only setTab — the URL-sync
+                    // effect above then resolves the panel, the in-page
+                    // highlight AND the header chip from the same value, so
+                    // they can never disagree (owner-reported 2026-09-16:
+                    // tapping Needs then a header chip yanked the panel).
+                    // setTab first keeps the tap instant; the effect lands on
+                    // the identical value afterwards. Already-here taps do
+                    // nothing (no duplicate history entries).
+                    if (tab === t) return;
+                    setTab(t);
+                    const url = DASH_TAB_URL[t];
+                    void navigate({ to: "/outreach", search: { tab: url.tab, queue: url.queue } });
+                  }}
                   className={
                     tab === t
                       ? "min-h-[48px] flex-1 rounded-[12px] border-2 border-sg-sage bg-sg-sage-wash px-3 text-btn font-medium text-sg-sage-deep"
@@ -793,16 +799,23 @@ function OutreachPage() {
             {/* Pass 2 donation dispatch — TWO SEPARATE queues, never combined
                 (owner: "keep offers and needs separate"). Same phone+PIN staff
                 gate as the rest of the page; the queue API re-checks the
-                roster server-side. */}
-            {tab === "offers" ? (
+                roster server-side.
+                Owner QA 2026-09-16 ("glitches when i open the needs"):
+                these sections stay MOUNTED and are only hidden when their tab
+                is inactive — mounting/unmounting them re-ran their fetch and
+                flashed the skeleton on every tab switch. First mount fetches
+                once each; switching tabs now shows the already-loaded queue
+                instantly. (The sections' own load() is identity-stable now —
+                see the i18n `t` memo note.) */}
+            <div className={tab === "offers" ? "" : "hidden"}>
               <DonationQueueSection queue="offers" phone={phone} />
-            ) : null}
-            {tab === "needs" ? (
+            </div>
+            <div className={tab === "needs" ? "" : "hidden"}>
               <DonationQueueSection queue="requests" phone={phone} />
-            ) : null}
-            {tab === "volunteers" ? (
+            </div>
+            <div className={tab === "volunteers" ? "" : "hidden"}>
               <VolunteerQueueSection phone={phone} />
-            ) : null}
+            </div>
 
             {tab === "more" ? (
               admin ? (

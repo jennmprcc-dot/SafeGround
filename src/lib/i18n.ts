@@ -12,7 +12,7 @@
  *   a visible "Espanol proximamente" note — see components/welcome.tsx.
  * - Language persists to localStorage key `sg.lang` ('en' | 'es').
  */
-import { useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 export type Lang = "en" | "es";
 export const LANG_KEY = "sg.lang";
@@ -1626,7 +1626,9 @@ if (typeof window !== "undefined") {
 
 /** Hook: current language + setter + t() lookup with EN fallback. */
 export function useLanguage(): { lang: Lang; setLang: (l: Lang) => void; t: (key: I18nKey) => string } {
-  const lang = useSyncExternalStore(
+  // <Lang> pinned: without it the snapshot inference widened `lang` to string
+  // (two pre-existing tsc errors on this statement, resolved here).
+  const lang = useSyncExternalStore<Lang>(
     (fn) => {
       listeners.add(fn);
       return () => {
@@ -1636,5 +1638,13 @@ export function useLanguage(): { lang: Lang; setLang: (l: Lang) => void; t: (key
     () => current,
     () => "en",
   );
-  return { lang, setLang, t: (key: I18nKey) => translate(lang, key) };
+  /* Owner-reported 2026-09-16 "the admin dash still glitches when i try to open
+     the needs": `t` used to be a FRESH closure on every render, so any
+     `useCallback(fn, [..., t])` downstream changed identity every render and any
+     `useEffect(..., [thatCallback])` re-fired forever — the outreach donation
+     queue sections refetched in a runaway loop (~6,300 API calls in 4s,
+     measured on the dev server) and the panel flickered between skeleton and
+     rows. Memoize per language: identical behaviour, stable identity. */
+  const t = useCallback((key: I18nKey) => translate(lang, key), [lang]);
+  return useMemo(() => ({ lang, setLang, t }), [lang, t]);
 }
