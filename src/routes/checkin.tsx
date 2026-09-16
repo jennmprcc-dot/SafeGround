@@ -753,12 +753,17 @@ function CheckInPage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-4 px-4 pt-5">
-        <header>
-          <h1 className="text-h1">Check in</h1>
-          {locating ? (
-            <p role="status" className="text-small text-sg-ink-soft">Reading your location once — nothing is stored.</p>
-          ) : null}
-          <p className="mt-0.5 text-small text-sg-ink-soft">Let someone know you're okay — no rush.</p>
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-h1">Check in</h1>
+            {locating ? (
+              <p role="status" className="text-small text-sg-ink-soft">Reading your location once — nothing is stored.</p>
+            ) : null}
+            <p className="mt-0.5 text-small text-sg-ink-soft">Let someone know you're okay — no rush.</p>
+          </div>
+          <Link to="/peer-text" className="mt-1 inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-[12px] border border-sg-line bg-sg-card px-3 text-small font-medium text-sg-sage-deep">
+            ✉️ {t("ptext_home_cta")}
+          </Link>
         </header>
 
         {!phone ? (

@@ -2646,4 +2646,180 @@ alter table public.analytics_events
   check (event_type in ('resource_search', 'peer_support_request', 'sweep_alert_view',
                         'check_in', 'donation_offer_submit', 'donation_request_submit',
                         'donation_offer_complete', 'donation_request_complete',
-                        'volunteer_submit', 'peer_group_created', 'checkin_group_send'));
+                        'volunteer_submit', 'peer_group_created', 'checkin_group_send',
+                        'peer_text_send', 'peer_text_reply'));
+
+-- ---------------------------------------------------------------------------
+-- Peer-to-peer texting (owner goal 2026-09-16 — "peers text peers").
+--
+-- The on-demand, peer-to-peer channel: a neighbor picks an intent (+ optional
+-- note + per-send location choice) and the message fans out to chosen peers by
+-- SMS (opt-in + business-hours gated server-side, NEVER emergency:true),
+-- push, or in-app. Distinct from Peer Support (staff) and check-ins (no
+-- free-text intent, no SMS).
+--
+-- DATA MODEL (three tables, bounded retention):
+--   peer_messages            — one thread row per send. sender_id is the
+--                              caller resolved server-side from their own
+--                              phone (never a client id). Exact coords live
+--                              HERE for the SENDER only; peers only ever see
+--                              fuzz_* (rounded ~150m at write, same as
+--                              check_ins). map_token backs the 24h-expiring
+--                              SMS map links (loc_expires_at = sent_at+24h via
+--                              trigger — generated columns can't express
+--                              timestamptz + interval).
+--   peer_message_recipients  — minimal delivery log: one row per recipient per
+--                              channel actually used (sms|push|inapp). Needed
+--                              for reply routing (an inbound SMS from that
+--                              phone finds its thread here) + honest counts.
+--                              Phone is kept ONLY because SMS routing requires
+--                              it; bounded by the auto-purge trigger
+--                              (~90 days) and never exposed to other rows.
+--   peer_message_replies     — one-to-one replies to the SENDER ONLY (never
+--                              re-broadcast to the group).
+--
+-- SAFETY / PRIVACY (non-negotiable, floors carried from the business plan):
+--   * Opt-in-only SMS: every recipient passes gateSms/smsConsentFor at send
+--     time (server-side, never client-supplied) — no consent row on their
+--     phone = no SMS, ever.
+--   * Business hours (Mon–Fri 8a–6p PT) unless the RECIPIENT consents to
+--     after-hours; peer-to-peer SMS is NEVER sent emergency:true.
+--   * "Reply STOP" honored by /api/sms/inbound (markSmsUnsubscribed) and
+--     never routed as a reply.
+--   * NEVER random/bulk: every send is explicit + user-initiated to an
+--     explicitly chosen audience; a reply is a direct echo to the sender only.
+--   * NEVER auto-contacts 911 or any agency ("Unsafe location" reaches the
+--     sender's own trusted peers, nothing else).
+--   * Location per-send, default none, never pre-selected; raw lat/lng NEVER
+--     in SMS — fuzzed = words + map link, exact = link only. Map links expire
+--     in 24h.
+--   * RLS on all three tables, insert-only zero-public-read (the existing
+--     donation_requests/offers pattern); app routes read/write via the
+--     service role, and re-verify ownership in SQL.
+-- ---------------------------------------------------------------------------
+create table if not exists public.peer_messages (
+  id              uuid primary key default gen_random_uuid(),
+  sender_id       uuid not null references public.users (id) on delete cascade,
+  intent          text not null check (intent in ('need', 'unsafe', 'ok')),
+  note            text check (note is null or char_length(note) <= 140),
+  audience_kind   text not null check (audience_kind in ('me', 'all', 'group', 'peers')),
+  audience_group_id uuid references public.peer_groups (id) on delete set null,
+  -- Location choice, sender-picked PER SEND: 'none' | 'fuzzed' | 'exact'.
+  -- Never pre-selected by the app; the send route requires an explicit value.
+  loc_kind        text not null default 'none' check (loc_kind in ('none', 'fuzzed', 'exact')),
+  -- Exact point: written by the sender, readable by the sender only (the GET
+  -- route returns it only to the owner). Peers NEVER see these columns.
+  loc_exact_lat   double precision check (loc_exact_lat between -90 and 90),
+  loc_exact_lng   double precision check (loc_exact_lng between -180 and 180),
+  -- Peer-facing fuzz: ~150m (rounded to 3 decimals ≈ 111m) — computed at
+  -- write in the trigger, never client-side.
+  loc_fuzz_lat    double precision check (loc_fuzz_lat between -90 and 90),
+  loc_fuzz_lng    double precision check (loc_fuzz_lng between -180 and 180),
+  -- 24h-expiring access token embedded in SMS map links (unique).
+  map_token       text unique check (map_token is null or char_length(map_token) between 8 and 80),
+  sent_at         timestamptz not null default now(),
+  -- Set by the BEFORE INSERT trigger (loc_expires_at = sent_at + 24h).
+  loc_expires_at  timestamptz
+);
+alter table public.peer_messages enable row level security;
+-- Insert-only zero-public-read (spec A9.5): the owner may create their own
+-- thread row; NO public select policy exists — the GET route reads via the
+-- service role with sender_id re-verified in SQL.
+drop policy if exists "peer messages owner insert" on public.peer_messages;
+create policy "peer messages owner insert" on public.peer_messages for insert
+  with check (sender_id = auth.uid());
+create index if not exists idx_peer_messages_sender
+  on public.peer_messages (sender_id, sent_at desc);
+
+create table if not exists public.peer_message_recipients (
+  id           uuid primary key default gen_random_uuid(),
+  thread_id    uuid not null references public.peer_messages (id) on delete cascade,
+  recipient_id uuid not null references public.users (id) on delete cascade,
+  phone        text not null check (char_length(phone) between 7 and 20),
+  channel      text not null check (channel in ('sms', 'push', 'inapp')),
+  sent_at      timestamptz not null default now()
+);
+alter table public.peer_message_recipients enable row level security;
+-- Insert-only zero-public-read: only the thread's OWNER may log recipients;
+-- no public select policy (reply routing runs service-side from an SMS phone,
+-- never from a client).
+drop policy if exists "peer recipients owner insert" on public.peer_message_recipients;
+create policy "peer recipients owner insert" on public.peer_message_recipients for insert
+  with check (exists (
+    select 1 from public.peer_messages m
+    where m.id = thread_id and m.sender_id = auth.uid()
+  ));
+create index if not exists idx_peer_recipients_phone
+  on public.peer_message_recipients (phone, sent_at desc);
+create index if not exists idx_peer_recipients_thread
+  on public.peer_message_recipients (thread_id);
+
+-- Bounded retention: ~90-day auto-purge, guaranteed on every insert (no cron
+-- needed; the table stays small by construction).
+create or replace function public.trg_fn_peer_recipients_purge()
+returns trigger language plpgsql set search_path = public
+as $sg$
+begin
+  delete from public.peer_message_recipients
+  where sent_at < now() - interval '90 days';
+  return new;
+end;
+$sg$;
+drop trigger if exists trg_peer_recipients_purge on public.peer_message_recipients;
+create trigger trg_peer_recipients_purge
+  before insert on public.peer_message_recipients
+  for each row execute function public.trg_fn_peer_recipients_purge();
+
+create table if not exists public.peer_message_replies (
+  id         uuid primary key default gen_random_uuid(),
+  thread_id  uuid not null references public.peer_messages (id) on delete cascade,
+  author_id  uuid not null references public.users (id) on delete cascade,
+  body       text not null check (char_length(body) between 1 and 160),
+  created_at timestamptz not null default now()
+);
+alter table public.peer_message_replies enable row level security;
+-- Insert-only zero-public-read: only a RECIPIENT of the thread may reply (the
+-- SMS inbound route inserts service-side); no public select policy.
+drop policy if exists "peer replies recipient insert" on public.peer_message_replies;
+create policy "peer replies recipient insert" on public.peer_message_replies for insert
+  with check (exists (
+    select 1 from public.peer_message_recipients r
+    where r.thread_id = thread_id and r.recipient_id = auth.uid()
+  ));
+create index if not exists idx_peer_replies_thread
+  on public.peer_message_replies (thread_id, created_at desc);
+comment on table public.peer_messages is
+  'Peer-to-peer message thread (on-demand). RLS on, insert-only zero-public-'
+  'read; service-role routes re-verify sender_id in SQL. Exact coords are '
+  'sender-only; peers see fuzz only via the 24h map token.';
+comment on table public.peer_message_recipients is
+  'Minimal delivery log for peer texts (reply routing + honest counts). RLS '
+  'on, insert-only. Phone is the one place numbers legitimately live for SMS '
+  'routing; bounded (~90-day auto-purge) + never client-readable.';
+comment on table public.peer_message_replies is
+  'One-to-one replies to the original sender only — never re-broadcast. RLS '
+  'on, insert-only (recipients of the thread only).';
+
+-- peer_messages BEFORE INSERT trigger: 24h location expiry + server-side fuzz
+-- (rounded ~150m, exactly like check_ins — peers never compute or receive
+-- exact). Runs on the service role at write time; the route never fuzzes.
+create or replace function public.trg_fn_peer_messages()
+returns trigger language plpgsql set search_path = public
+as $sg$
+begin
+  new.loc_expires_at := new.sent_at + interval '24 hours';
+  if new.loc_kind in ('fuzzed', 'exact') then
+    if new.loc_fuzz_lat is null and new.loc_exact_lat is not null then
+      new.loc_fuzz_lat := round(new.loc_exact_lat * 1000) / 1000;
+    end if;
+    if new.loc_fuzz_lng is null and new.loc_exact_lng is not null then
+      new.loc_fuzz_lng := round(new.loc_exact_lng * 1000) / 1000;
+    end if;
+  end if;
+  return new;
+end;
+$sg$;
+drop trigger if exists trg_peer_messages on public.peer_messages;
+create trigger trg_peer_messages
+  before insert on public.peer_messages
+  for each row execute function public.trg_fn_peer_messages();
