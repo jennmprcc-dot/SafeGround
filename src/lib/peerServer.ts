@@ -47,8 +47,15 @@ export function peerCallerPhone(req: Request, body?: { phone?: unknown }): strin
 export async function userIdForPhone(phone: string): Promise<string | null> {
   if (!phone) return null;
   try {
+    // Match via the DB's own normalization (sg_norm_phone, canonical 10-digit):
+    // an 11-digit US form ("1415…") and its 10-digit form ("415…") resolve to
+    // the same user, exactly like sg_peer_bind and the roster gates already do.
+    // Without this, a caller pasting "+1 415…" bound on GET /api/checkin but
+    // then POSTed a check-in that silently missed (owner bug 2026-09-07).
     const rows = (await query(
-      `select id from public.users where phone = $1 limit 1`,
+      `select id from public.users
+         where public.sg_norm_phone(phone) = public.sg_norm_phone($1)
+         limit 1`,
       [phone],
     )) as unknown as Array<{ id: string }>;
     return rows[0]?.id ?? null;
