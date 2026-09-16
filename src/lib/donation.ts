@@ -73,18 +73,101 @@ export const MPRCC_PORCH = {
     "the house on the right with the ramp — not the house in back",
 } as const;
 
-/** Queue status lifecycle: open → claimed → completed. */
+/** Queue status lifecycle: open → claimed → in_route → completed.
+ * (in_route added 2026-09-16: staff claim, then mark the item on the way —
+ * the queue keeps 'claimed' + 'in_route' rows active until a Delivered
+ * outcome clears them. "Peer not at spot" returns the row to 'claimed'.) */
 export const DONATION_STATUS = {
   OPEN: "open",
   CLAIMED: "claimed",
+  IN_ROUTE: "in_route",
   COMPLETED: "completed",
 } as const;
 export type DonationStatus = (typeof DONATION_STATUS)[keyof typeof DONATION_STATUS];
 export const DONATION_STATUSES: readonly DonationStatus[] = [
   DONATION_STATUS.OPEN,
   DONATION_STATUS.CLAIMED,
+  DONATION_STATUS.IN_ROUTE,
   DONATION_STATUS.COMPLETED,
 ];
+/** Statuses a row is still ACTIVE in (the queue's default Open filter). */
+export const DONATION_ACTIVE_STATUSES: readonly string[] = [
+  DONATION_STATUS.OPEN,
+  DONATION_STATUS.CLAIMED,
+  DONATION_STATUS.IN_ROUTE,
+];
+/** Outcome recorded when staff close a row (owner-directed 2026-09-16). */
+export const DONATION_OUTCOME = {
+  DELIVERED: "delivered",
+  PEER_NOT_AT_SPOT: "peer_not_at_spot",
+} as const;
+export type DonationOutcome = (typeof DONATION_OUTCOME)[keyof typeof DONATION_OUTCOME];
+export const isDonationOutcome = (raw: unknown): raw is DonationOutcome =>
+  raw === DONATION_OUTCOME.DELIVERED || raw === DONATION_OUTCOME.PEER_NOT_AT_SPOT;
+
+/* ── Requester ping copy (owner-directed 2026-09-16) ───────────────────
+ * The exact owner template for a claim is "Jenn is bringing your tent."
+ * ({name} resolved at claim time from the roster, {item} from the row).
+ * EN + ES pairs live here (pure data, client-safe) so the wording can't drift
+ * between the push body, the SMS body, and any UI preview. The SMS/push sender
+ * uses EN — no per-phone language preference is stored server-side yet, the
+ * same convention as every other server-sent body in this app. ZERO phone
+ * digits ever appear in any of these strings. */
+export const DONATION_PING_COPY = {
+  /** Staff claimed a Need ("I'm on it"). */
+  claim: {
+    en: "{name} is bringing your {item}.",
+    es: "{name} te está llevando tu {item}.",
+  },
+  /** Claim fallback when the claiming staff name can't be resolved. */
+  claimFallback: {
+    en: "Someone from MPRCC is bringing your {item}.",
+    es: "Alguien de MPRCC te está llevando tu {item}.",
+  },
+  /** Staff claimed an Offer (they're coming to pick the donation up). */
+  claimOffer: {
+    en: "{name} is coming to pick up your {item}.",
+    es: "{name} va a recoger tu {item}.",
+  },
+  claimOfferFallback: {
+    en: "Someone from MPRCC is coming to pick up your {item}.",
+    es: "Alguien de MPRCC va a recoger tu {item}.",
+  },
+  /** Staff marked it In route (out for delivery). */
+  inRoute: {
+    en: "MPRCC staff is on the way with your {item}.",
+    es: "El equipo de MPRCC va en camino con tu {item}.",
+  },
+  /** In route for an Offer — staff are on their way to collect the donation. */
+  inRouteOffer: {
+    en: "MPRCC staff is on the way for your {item}.",
+    es: "El equipo de MPRCC va en camino por tu {item}.",
+  },
+  /** Calm reschedule after "Peer not at spot" — the item is held for a retry. */
+  reschedule: {
+    en: "We stopped by but didn't catch you. We'll try again {day} — your {item} is being held for you.",
+    es: "Pasamos pero no te encontramos. Lo intentaremos otra vez {day} — guardamos tu {item} para ti.",
+  },
+  /** Reschedule for an Offer — we'll come back for the donation. */
+  rescheduleOffer: {
+    en: "We came by but didn't catch you. We'll try again {day} for your {item}.",
+    es: "Pasamos pero no te encontramos. Lo intentaremos otra vez {day} por tu {item}.",
+  },
+  /** Push notification titles (one line, no phone digits, no urgency tricks). */
+  title: {
+    claim: { en: "SafeGround — your request is being handled", es: "SafeGround — tu pedido está en marcha" },
+    claimOffer: { en: "SafeGround — your donation pickup", es: "SafeGround — la recogida de tu donación" },
+    inRoute: { en: "SafeGround — on the way", es: "SafeGround — en camino" },
+    reschedule: { en: "SafeGround — we'll try again", es: "SafeGround — lo intentaremos otra vez" },
+  },
+} as const;
+/** "Tomorrow" / weekday label for the reschedule line (EN; ES day names below). */
+export const DONATION_DAY_LABEL = {
+  en: { tomorrow: "tomorrow", days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] },
+  es: { tomorrow: "mañana", days: ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"] },
+} as const;
+/** Where the requester's push should land — their OWN My Requests page. */
+export const DONATION_REQUESTER_LINK = "/requests";
 
 /** Request pickup/delivery preference. */
 export const PICKUP_OR_DELIVERY = ["pickup", "delivery", "either"] as const;
@@ -112,10 +195,16 @@ export const DONATION_API = {
   offersQueue: "/api/donations/offers",
   /** GET ?phone=…[&status=open|all] (roster-gated) → {ok, requests} | 403 */
   requestsQueue: "/api/donations/requests",
-  /** POST {queue: "offers"|"requests", id, staffPhone} (roster-gated) → {ok} */
+  /** POST {queue: "offers"|"requests", id, staffPhone} (roster-gated)
+   *  → {ok, claimed, ping?}; pings the requester when the claim lands. */
   claim: "/api/donations/claim",
-  /** POST {queue: "offers"|"requests", id, staffPhone, outcomeNote?}
-   *  (roster-gated) → {ok} */
+  /** POST {queue: "offers"|"requests", id, staffPhone} (roster-gated)
+   *  claimed → in_route; pings the requester "on the way". */
+  inRoute: "/api/donations/in-route",
+  /** POST {queue: "offers"|"requests", id, staffPhone, outcomeNote?,
+   *  outcome?: "delivered"|"peer_not_at_spot"} (roster-gated) → {ok, completed,
+   *  held, ping?}. delivered → completed + cleared; peer_not_at_spot → the row
+   *  returns to 'claimed' and STAYS ACTIVE with a calm reschedule ping. */
   complete: "/api/donations/complete",
 } as const;
 

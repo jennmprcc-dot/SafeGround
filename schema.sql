@@ -2455,8 +2455,59 @@ create index if not exists idx_donation_requests_created
   on public.donation_requests (created_at desc);
 comment on table public.donation_requests is
   'Donation requests (Pass 2) — a neighbor asks for an item. pickup/delivery '
-  'preference + free-text size. Status open→claimed→completed; staff-claimed '
-  'via server routes only. No public SELECT — anonymous readers get zero rows.';
+  'preference + free-text size. Status open→claimed→in_route→completed; '
+  'staff-claimed via server routes only. No public SELECT — anonymous readers '
+  'get zero rows.';
+-- ---------------------------------------------------------------------------
+-- Donation dispatch requester notifications (owner-directed 2026-09-16)
+-- ---------------------------------------------------------------------------
+-- Staff claim → "In route" → outcome, with the requester told at each step (push
+-- to their own registered devices; SMS ONLY through gateSms — consent +
+-- business hours + STOP, never emergency:true). Idempotent: bun
+-- scripts/apply-schema.ts is the apply path, so every statement below re-runs
+-- safely on a live DB (drop-then-add by constraint name, add column if not
+-- exists):
+--  * the status CHECK gains 'in_route' (claimed → in_route → completed | held)
+--  * route_started_at / outcome / outcome_at / outcome_by_phone / attempts are
+--    the honest audit trail: who recorded what, when, and how many tries.
+-- "Peer not at spot" NEVER completes a row: status returns to 'claimed' so the
+-- request stays in the active queue with the item held for another try.
+-- RLS is untouched: still INSERT-only for the public + no public SELECT/UPDATE.
+-- Reads and writes stay on the roster-gated service-role routes.
+alter table public.donation_requests
+  add column if not exists route_started_at timestamptz,
+  add column if not exists outcome text,
+  add column if not exists outcome_at timestamptz,
+  add column if not exists outcome_by_phone text
+    check (outcome_by_phone is null or char_length(outcome_by_phone) between 7 and 20),
+  add column if not exists attempts integer not null default 0;
+alter table public.donation_requests
+  drop constraint if exists donation_requests_status_check;
+alter table public.donation_requests
+  add constraint donation_requests_status_check
+  check (status in ('open', 'claimed', 'in_route', 'completed'));
+alter table public.donation_requests
+  drop constraint if exists donation_requests_outcome_check;
+alter table public.donation_requests
+  add constraint donation_requests_outcome_check
+  check (outcome is null or outcome in ('delivered', 'peer_not_at_spot'));
+alter table public.donation_offers
+  add column if not exists route_started_at timestamptz,
+  add column if not exists outcome text,
+  add column if not exists outcome_at timestamptz,
+  add column if not exists outcome_by_phone text
+    check (outcome_by_phone is null or char_length(outcome_by_phone) between 7 and 20),
+  add column if not exists attempts integer not null default 0;
+alter table public.donation_offers
+  drop constraint if exists donation_offers_status_check;
+alter table public.donation_offers
+  add constraint donation_offers_status_check
+  check (status in ('open', 'claimed', 'in_route', 'completed'));
+alter table public.donation_offers
+  drop constraint if exists donation_offers_outcome_check;
+alter table public.donation_offers
+  add constraint donation_offers_outcome_check
+  check (outcome is null or outcome in ('delivered', 'peer_not_at_spot'));
 
 -- Pass 2 analytics (zero-PII, category/status/timestamp only): extend the
 -- analytics_events event_type CHECK with the four donation events. Idempotent:

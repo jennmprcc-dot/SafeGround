@@ -4,12 +4,22 @@
  * + claimed_at from the GATED caller (never from a body field). open → claimed.
  * staff_limited may claim (consistent with the existing plan). No delete path.
  *
+ * Requester ping (owner-directed 2026-09-16): when the claim LANDS, the
+ * submitter is told, by name — "Jenn is bringing your tent." The name is
+ * resolved at claim time from the roster/HomeTeam display name of whoever
+ * claimed (never hardcoded); if no name resolves, the calm
+ * "Someone from MPRCC is bringing your {item}." Fallback is used instead.
+ * Push goes to the submitter's OWN registered device tokens; SMS only through
+ * gateSms (consent + business hours + STOP, never emergency:true). ZERO phone
+ * digits appear in either payload — the contact number is read server-side
+ * from the row and never echoed back.
+ *
  * POST /api/donations/claim
  *   { queue: "offers"|"requests", id, staffPhone }
  *   staffPhone via body.staffPhone (or x-sg-phone header) — roster-gated
  *   (admin OR staff_limited).
- * → 200 { ok, claimed: boolean } (claimed=false when the row isn't open — e.g.
- *   already claimed/completed or unknown id) | 400 | 403 calm | 503
+ * → 200 { ok, claimed: boolean, ping? } (claimed=false when the row isn't open
+ *   — e.g. already claimed/completed or unknown id) | 400 | 403 calm | 503
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "~/db";
@@ -17,9 +27,18 @@ import { normPhone } from "~/lib/peerSupportServer";
 import {
   DONATION_MISSING_TABLE_MSG,
   donationTableReady,
+  pingDonationSubmitter,
   queueTable,
+  staffFirstName,
   staffGateOr403,
+  type DonationPingResult,
 } from "~/lib/donationServer";
+
+interface ClaimedRow {
+  id: string;
+  item: string;
+  contact_phone: string;
+}
 
 async function claim(c: { request: Request }) {
   let body: { queue?: unknown; id?: unknown; staffPhone?: unknown } = {};
@@ -56,14 +75,31 @@ async function claim(c: { request: Request }) {
             set status = 'claimed', claimed_by_phone = ${caller},
                 claimed_at = now(), updated_at = now()
             where id = ${id}::uuid and status = 'open'
-            returning id`) as unknown as Array<{ id: string }>)
+            returning id, item_description as item, contact_phone`) as unknown as ClaimedRow[])
         : ((await sql()`
             update public.donation_requests
             set status = 'claimed', claimed_by_phone = ${caller},
                 claimed_at = now(), updated_at = now()
             where id = ${id}::uuid and status = 'open'
-            returning id`) as unknown as Array<{ id: string }>);
-    return Response.json({ ok: true, claimed: rows.length > 0, id });
+            returning id, item, contact_phone`) as unknown as ClaimedRow[]);
+    const row = rows[0];
+    if (!row) return Response.json({ ok: true, claimed: false, id });
+    // The ping is best-effort and NEVER fails the claim that already landed.
+    let ping: DonationPingResult | null = null;
+    try {
+      ping = await pingDonationSubmitter({
+        table: target.table,
+        id: row.id,
+        kind: "claim",
+        itemLabel: row.item,
+        contactPhone: row.contact_phone,
+        staffName: await staffFirstName(caller),
+        offer: target.kind === "offer",
+      });
+    } catch {
+      ping = null;
+    }
+    return Response.json({ ok: true, claimed: true, id, ping });
   } catch {
     return Response.json(
       { ok: false, error: "That didn't go through — the database didn't answer. Try again in a moment." },

@@ -1,22 +1,35 @@
 /**
- * Pass 2 — Donation Dispatch staff queues (owner-directed 2026-09-12).
+ * Pass 2 — Donation Dispatch staff queues (owner-directed 2026-09-12;
+ * requester notifications + In route + outcomes 2026-09-16).
  *
  * TWO SEPARATE queues — "Offers" and "Needs" — never combined. Rendered inside
  * /outreach as separate tabs, behind the page's existing phone+PIN staff gate
  * (staffPin.ts pattern); the queue API itself re-checks the roster server-side
  * (staffGateOr403) so a non-roster phone gets the calm 403 line.
  *
- * Open first, then claimed, then completed via an Open/All filter toggle. Each
- * row shows category, description, quantity, condition/size/notes, the path
- * details (street address for staff to act; the static MPRCC porch block for
- * mprcc_porch), contact_phone (tap-to-call), and created_at. Actions: Claim
- * ("I'm on it" — the server sets claimed_by from the gated caller) and Complete
- * (prompts for an outcome_note). No auto-matching — staff coordinate by phone.
+ * Open first, then claimed, then In route, then completed, via an Open/All
+ * filter toggle. Each row shows category, description, quantity,
+ * condition/size/notes, the path details (street address for staff to act; the
+ * static MPRCC porch block for mprcc_porch), contact_phone (tap-to-call), and
+ * created_at.
+ *
+ * The row flow is an explicit three-step ladder, never a text note:
+ *   (1) Claim   — "I'm on it" (server sets claimed_by from the gated caller and
+ *                 pings the requester, naming the claimer: "Jenn is bringing
+ *                 your tent.")
+ *   (2) In route — a real state + button; pings "MPRCC staff is on the way
+ *                 with your {item}."
+ *   (3) Outcome — two buttons: Delivered (row leaves the active queue) or Peer
+ *                 not at spot (row STAYS ACTIVE, item held, calm reschedule
+ *                 ping). The note is optional and lands on the row with who/when.
+ * No auto-matching — staff still coordinate by phone. No delete path exists.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
   DONATION_API,
+  DONATION_OUTCOME,
   MPRCC_PORCH,
+  type DonationOutcome,
   type DonationStatus,
 } from "~/lib/donation";
 import { formatPhone } from "~/lib/alertIdentity";
@@ -42,7 +55,12 @@ interface OfferRow {
   status: DonationStatus;
   claimedBy: string | null;
   claimedAt: string | null;
+  routeStartedAt: string | null;
   completedAt: string | null;
+  outcome: string | null;
+  outcomeAt: string | null;
+  outcomeByPhone: string | null;
+  attempts: number;
   outcomeNote: string | null;
   createdAt: string;
   updatedAt: string;
@@ -60,7 +78,12 @@ interface RequestRow {
   status: DonationStatus;
   claimedBy: string | null;
   claimedAt: string | null;
+  routeStartedAt: string | null;
   completedAt: string | null;
+  outcome: string | null;
+  outcomeAt: string | null;
+  outcomeByPhone: string | null;
+  attempts: number;
   outcomeNote: string | null;
   createdAt: string;
   updatedAt: string;
@@ -79,13 +102,10 @@ function timeLabel(iso: string): string {
 }
 
 function statusBadge(status: DonationStatus): "Active" | "Planned" | "Resolved" {
-  if (status === "claimed") return "Planned";
+  if (status === "claimed" || status === "in_route") return "Planned";
   if (status === "completed") return "Resolved";
   return "Active";
 }
-
-const statusLabel = (status: DonationStatus): string =>
-  status === "open" ? "Open" : status === "claimed" ? "Claimed" : "Completed";
 
 /** MPRCC porch block — static constant, shown verbatim for mprcc_porch rows. */
 function PorchBlock() {
@@ -101,23 +121,26 @@ interface RowActionsProps {
   id: string;
   status: DonationStatus;
   acting: boolean;
-  completingFor: string | null;
+  panelFor: string | null;
   outcome: string;
   onOutcome: (v: string) => void;
-  onStartComplete: (id: string) => void;
-  onCancelComplete: () => void;
+  onStartOutcome: (id: string) => void;
+  onCancelOutcome: () => void;
   onClaim: (id: string) => void;
-  onComplete: (id: string) => void;
+  onInRoute: (id: string) => void;
+  onRecord: (id: string, outcome: DonationOutcome) => void;
 }
 
 /** The card-level handlers (id/status are card-owned, injected at render). */
 type RowActionHandlers = Omit<RowActionsProps, "id" | "status">;
 
-/** Claim + Complete action block, shared by offer + request cards. */
+/** Claim → In route → outcome, shared by offer + request cards. */
 function RowActions(props: RowActionsProps) {
   const { t } = useLanguage();
-  const { id, status, acting, completingFor, outcome, onOutcome, onStartComplete, onCancelComplete, onClaim, onComplete } = props;
+  const { id, status, acting, panelFor, outcome, onOutcome, onStartOutcome, onCancelOutcome, onClaim, onInRoute, onRecord } = props;
   if (status === "completed") return null;
+  const panelOpen = panelFor === id;
+  const canRecord = status === "claimed" || status === "in_route";
   return (
     <div className="mt-3 flex flex-col gap-2">
       {status === "open" ? (
@@ -125,37 +148,44 @@ function RowActions(props: RowActionsProps) {
           {t("dn_q_claim")}
         </Button>
       ) : null}
-      {completingFor === id ? (
+      {status === "claimed" ? (
+        <Button variant="secondary" full disabled={acting} onClick={() => onInRoute(id)}>
+          {t("dsp_mark_in_route")}
+        </Button>
+      ) : null}
+      {panelOpen ? (
         <div className="flex flex-col gap-2 rounded-[12px] border border-sg-line bg-sg-paper p-3">
+          <p className="text-btn font-medium">{t("dsp_outcome_open")}</p>
           <label className="flex flex-col gap-1.5">
-            <span className="text-btn font-medium">{t("dn_q_outcome")}</span>
+            <span className="text-small text-sg-ink-soft">{t("dsp_outcome_note")}</span>
             <input
               value={outcome}
               onChange={(e) => onOutcome(e.target.value)}
-              placeholder={t("dn_q_outcome_ph")}
+              placeholder={t("dsp_outcome_note_ph")}
               maxLength={500}
               className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
             />
           </label>
-          <div className="flex gap-2">
-            <Button
-              full
-              disabled={acting || !outcome.trim()}
-              disabledReason={!outcome.trim() ? t("dn_q_complete_deny") : undefined}
-              onClick={() => onComplete(id)}
-            >
-              {t("dn_q_complete")}
-            </Button>
-            <Button variant="quiet" full disabled={acting} onClick={onCancelComplete}>
-              {t("dn_q_cancel")}
-            </Button>
-          </div>
+          <Button full disabled={acting} onClick={() => onRecord(id, DONATION_OUTCOME.DELIVERED)}>
+            {t("dsp_delivered")}
+          </Button>
+          <Button
+            variant="secondary"
+            full
+            disabled={acting}
+            onClick={() => onRecord(id, DONATION_OUTCOME.PEER_NOT_AT_SPOT)}
+          >
+            {t("dsp_not_at_spot")}
+          </Button>
+          <Button variant="quiet" full disabled={acting} onClick={onCancelOutcome}>
+            {t("dn_q_cancel")}
+          </Button>
         </div>
-      ) : (
-        <Button variant="quiet" full disabled={acting} onClick={() => onStartComplete(id)}>
-          {t("dn_q_complete")}…
+      ) : canRecord ? (
+        <Button variant="quiet" full disabled={acting} onClick={() => onStartOutcome(id)}>
+          {t("dsp_outcome_open")}…
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -179,7 +209,7 @@ function OfferCard({
           {row.approachNotes ? <p className="mt-0.5 text-small text-sg-ink-soft">Approach: {row.approachNotes}</p> : null}
           {row.pickupTimeWindow ? <p className="mt-0.5 text-small text-sg-ink-soft">Pickup window: {row.pickupTimeWindow}</p> : null}
         </div>
-        <StatusBadge kind={statusBadge(row.status)}>{statusLabel(row.status)}</StatusBadge>
+        <StatusBadge kind={statusBadge(row.status)}>{statusLabel(row.status, t)}</StatusBadge>
       </div>
 
       {/* Path details — address for staff to act; porch block for mprcc_porch */}
@@ -209,10 +239,7 @@ function OfferCard({
             : ` · ${t("dn_q_claimed").replace("{phone}", formatPhone(row.claimedBy))}`
           : ""}
       </p>
-      {row.status === "completed" && row.outcomeNote ? (
-        <p className="mt-2 text-small text-sg-ink-soft">Outcome: {row.outcomeNote}</p>
-      ) : null}
-
+      <RowProgress row={row} />
       <RowActions {...actions} status={row.status} id={row.id} />
     </Card>
   );
@@ -234,7 +261,7 @@ function RequestCard({
           {row.size ? <p className="mt-0.5 text-small text-sg-ink-soft">Size: {row.size}</p> : null}
           {row.notes ? <p className="mt-0.5 text-small text-sg-ink-soft">{row.notes}</p> : null}
         </div>
-        <StatusBadge kind={statusBadge(row.status)}>{statusLabel(row.status)}</StatusBadge>
+        <StatusBadge kind={statusBadge(row.status)}>{statusLabel(row.status, t)}</StatusBadge>
       </div>
 
       <p className="mt-2 text-small text-sg-ink-soft">
@@ -247,13 +274,55 @@ function RequestCard({
             : ` · ${t("dn_q_claimed").replace("{phone}", formatPhone(row.claimedBy))}`
           : ""}
       </p>
-      {row.status === "completed" && row.outcomeNote ? (
-        <p className="mt-2 text-small text-sg-ink-soft">Outcome: {row.outcomeNote}</p>
-      ) : null}
-
+      <RowProgress row={row} />
       <RowActions {...actions} status={row.status} id={row.id} />
     </Card>
   );
+}
+
+/** The honest trail under a card: In route timestamp, held-for-retry state and
+ * the recorded outcome (who/what/when all live on the row server-side). */
+function RowProgress({
+  row,
+}: {
+  row: {
+    status: DonationStatus;
+    routeStartedAt: string | null;
+    outcome: string | null;
+    outcomeNote: string | null;
+    attempts: number;
+  };
+}) {
+  const { t } = useLanguage();
+  return (
+    <>
+      {row.status === "in_route" && row.routeStartedAt ? (
+        <p className="mt-1 text-small text-sg-ink-soft">
+          {t("dsp_in_route_at").replace("{time}", timeLabel(row.routeStartedAt))}
+        </p>
+      ) : null}
+      {row.status !== "completed" && row.outcome === DONATION_OUTCOME.PEER_NOT_AT_SPOT ? (
+        <span className="mt-1 block rounded-[10px] bg-sg-sage-wash px-3 py-2 text-small text-sg-sage-deep">
+          {t("dsp_held_note")}
+          {row.attempts > 0 ? ` ${t("dsp_attempts_note").replace("{n}", String(row.attempts))}` : ""}
+        </span>
+      ) : null}
+      {row.status === "completed" ? (
+        <p className="mt-1 text-small text-sg-ink-soft">
+          {row.outcome === DONATION_OUTCOME.DELIVERED ? t("dsp_delivered") : t("dn_q_complete")}
+          {row.outcomeNote ? ` — ${row.outcomeNote}` : ""}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** Calm status label — Open / Claimed / In route / Completed. */
+function statusLabel(status: DonationStatus, t: (k: "dsp_status_in_route") => string): string {
+  if (status === "open") return "Open";
+  if (status === "claimed") return "Claimed";
+  if (status === "in_route") return t("dsp_status_in_route");
+  return "Completed";
 }
 
 export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKind; phone: string }) {
@@ -263,7 +332,7 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionConfirmed, setActionConfirmed] = useState<SubmitConfirmState | null>(null);
-  const [completingFor, setCompletingFor] = useState<string | null>(null);
+  const [panelFor, setPanelFor] = useState<string | null>(null);
   const [outcome, setOutcome] = useState("");
 
   const load = useCallback(async (p: string, openOnly: boolean) => {
@@ -300,27 +369,40 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
     else setState((prev) => (prev.kind === "loading" ? prev : { kind: "loading" }));
   }, [phone, onlyOpen, load]);
 
-  const act = async (id: string, action: "claim" | "complete") => {
+  const act = async (
+    id: string,
+    action: "claim" | "in_route" | "delivered" | "peer_not_at_spot",
+  ) => {
     setActing(true);
     setActionError(null);
     try {
-      const res = await fetch(action === "claim" ? DONATION_API.claim : DONATION_API.complete, {
+      const url =
+        action === "claim"
+          ? DONATION_API.claim
+          : action === "in_route"
+            ? DONATION_API.inRoute
+            : DONATION_API.complete;
+      const payload =
+        action === "claim" || action === "in_route"
+          ? { queue, id, staffPhone: phone }
+          : { queue, id, staffPhone: phone, outcomeNote: outcome.trim(), outcome: action };
+      const res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          action === "complete"
-            ? { queue, id, staffPhone: phone, outcomeNote: outcome.trim() }
-            : { queue, id, staffPhone: phone },
-        ),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && data?.ok) {
-        setActionConfirmed({
-          saved: true,
-          kind: "saved",
-          line: t("dn_q_saved"),
-        });
-        setCompletingFor(null);
+        const line =
+          action === "claim"
+            ? t("dn_q_saved")
+            : action === "in_route"
+              ? t("dsp_saved_in_route")
+              : action === "delivered"
+                ? t("dsp_saved_delivered")
+                : t("dsp_saved_held");
+        setActionConfirmed({ saved: true, kind: "saved", line });
+        setPanelFor(null);
         setOutcome("");
         await load(phone, onlyOpen);
       } else {
@@ -335,13 +417,14 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
 
   const actionsFor: RowActionHandlers = {
     acting,
-    completingFor,
+    panelFor,
     outcome,
     onOutcome: setOutcome,
-    onStartComplete: (id) => { setCompletingFor(id); setOutcome(""); },
-    onCancelComplete: () => { setCompletingFor(null); setOutcome(""); },
+    onStartOutcome: (id) => { setPanelFor(id); setOutcome(""); },
+    onCancelOutcome: () => { setPanelFor(null); setOutcome(""); },
     onClaim: (id) => void act(id, "claim"),
-    onComplete: (id) => void act(id, "complete"),
+    onInRoute: (id) => void act(id, "in_route"),
+    onRecord: (id, o) => void act(id, o),
   };
 
   const title = queue === "offers" ? t("dn_q_offer_title") : t("dn_q_request_title");
@@ -384,6 +467,7 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
       </div>
 
       <p className="text-small text-sg-ink-soft">{t("dn_staff_action")}</p>
+      <p className="text-small text-sg-ink-soft">{t("dsp_ping_note")}</p>
 
       {actionError ? (
         <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">

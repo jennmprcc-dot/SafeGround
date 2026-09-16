@@ -7,12 +7,13 @@
  *
  * GET /api/donations/offers?phone=…[&status=open|all]
  *   caller phone via ?phone= or x-sg-phone header (roster-gated).
- *   status=open (default) → open + claimed; status=all → + completed.
+ *   status=open (default) → open + claimed + in_route; status=all → + completed.
  * → 200 { ok, offers: DonationOfferRow[] } | 403 calm | 503
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "~/db";
 import { normPhone } from "~/lib/peerSupportServer";
+import { DONATION_ACTIVE_STATUSES, DONATION_STATUSES } from "~/lib/donation";
 import {
   DONATION_MISSING_TABLE_MSG,
   donationTableReady,
@@ -32,13 +33,14 @@ async function offersQueue(c: { request: Request }) {
     );
   }
   const status = String(url.searchParams.get("status") ?? "open").toLowerCase();
-  const filter = status === "all" ? ["open", "claimed", "completed"] : ["open", "claimed"];
+  const filter = status === "all" ? [...DONATION_STATUSES] : [...DONATION_ACTIVE_STATUSES];
   try {
     const rows = (await sql()`
       select id, path, item_description, category, condition_note, quantity,
              contact_phone, address_street, address_city, address_zip,
              approach_notes, pickup_time_window, photo_b64, status,
-             claimed_by_phone, claimed_at, completed_at, outcome_note,
+             claimed_by_phone, claimed_at, route_started_at, completed_at,
+             outcome, outcome_at, outcome_by_phone, attempts, outcome_note,
              created_at, updated_at
       from public.donation_offers
       where status = any(${filter})
