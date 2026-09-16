@@ -23,8 +23,11 @@ import { StaffSmsTeam } from "~/components/staffSmsTeam";
 import { ResourceCheckins } from "~/components/resourceCheckins";
 import { clearAlertIdentity, getAlertIdentity, phoneLooksOk, setAlertIdentity } from "~/lib/alertIdentity";
 import { useLanguage, type I18nKey } from "~/lib/i18n";
-import { CheckCircleIcon, HandsIcon } from "~/lib/icons";
+import { CheckCircleIcon, HandsIcon, MapPinIcon } from "~/lib/icons";
 import { ALERT_KIND_LABEL } from "~/lib/alerts";
+// Reuses the ONE directions helper the responder/sender flow uses (geo: on
+// Android/maps.apple.com on iOS) — same behavior everywhere, never in-app nav.
+import { getDirectionsHref } from "~/components/alertMap";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { DonationQueueSection } from "~/components/donationQueues";
 import { VolunteerQueueSection } from "~/components/volunteerQueues";
@@ -701,7 +704,10 @@ function OutreachPage() {
                         <div className="min-w-0">
                           <p className="text-body font-medium">
                             {ALERT_KIND_LABEL[a.kind as keyof typeof ALERT_KIND_LABEL] ?? a.kind}
-                            {" · "}{a.senderName}{a.senderTail ? ` ${a.senderTail}` : ""}
+                            {" · "}{a.senderName}
+                            {/* The ••• tail as a secondary hint only — a name leads
+                                when we have one; "a neighbor" when we truly don't. */}
+                            {a.senderTail ? <span className="font-normal text-sg-ink-soft"> {a.senderTail}</span> : null}
                           </p>
                           {a.note ? <p className="mt-1 break-words text-small text-sg-ink-soft">{a.note}</p> : null}
                           <p className="mt-1 text-small text-sg-ink-soft">
@@ -718,6 +724,39 @@ function OutreachPage() {
                         </div>
                         <StatusBadge kind="Active">Active</StatusBadge>
                       </div>
+                      {/* Owner bug 2026-09-16: admin saw the words but never the spot.
+                          Admin-only by payload (summary.ts nulls exactLat/Lng for
+                          everyone else) AND re-guarded here. */}
+                      {admin && a.location === "exact" && a.exactLat != null && a.exactLng != null ? (
+                        <div className="mt-3 rounded-[12px] border border-sg-line bg-sg-sky-wash p-3">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-sg-sage text-white shadow-sm"
+                              aria-hidden
+                            >
+                              <MapPinIcon size={14} />
+                            </span>
+                            <p className="text-small font-medium text-sg-ink">
+                              Pinned spot{" "}
+                              <span className="font-normal text-sg-ink-soft">
+                                {a.exactLat.toFixed(5)}, {a.exactLng.toFixed(5)}
+                              </span>
+                            </p>
+                          </div>
+                          <a
+                            href={getDirectionsHref(a.exactLat, a.exactLng)}
+                            className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[12px] bg-sg-sage px-4 text-btn text-white transition-colors hover:bg-sg-sage-deep"
+                            aria-label="Get directions — opens your phone's Maps with turn-by-turn"
+                          >
+                            Get directions
+                            <span className="sr-only">Opens your phone's Maps with turn-by-turn</span>
+                          </a>
+                          <p className="mt-2 text-small text-sg-ink-soft">
+                            {a.expiresAt ? `Closes on its own after 24h — ${timeLabel(a.expiresAt)}.` : "Closes on its own after 24h."}
+                            {" "}Exact means only you + the people they notified.
+                          </p>
+                        </div>
+                      ) : null}
                       {admin && a.senderPhone ? (
                         <p className="mt-2 text-small">
                           <a href={`tel:${a.senderPhone}`} className="text-sg-sky underline underline-offset-2">
