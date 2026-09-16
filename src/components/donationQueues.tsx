@@ -19,9 +19,14 @@
  *                 your tent.")
  *   (2) In route — a real state + button; pings "MPRCC staff is on the way
  *                 with your {item}."
- *   (3) Outcome — two buttons: Delivered (row leaves the active queue) or Peer
- *                 not at spot (row STAYS ACTIVE, item held, calm reschedule
- *                 ping). The note is optional and lands on the row with who/when.
+ *   (3) Outcome — three responses: Delivered (row leaves the active queue),
+ *                 Peer not at spot (row STAYS ACTIVE, item held, calm
+ *                 reschedule ping) or Not in supplies right now (MPRCC doesn't
+ *                 have the item yet — the row returns to 'open' and STAYS in
+ *                 the active pool, still claimable, with one calm ping telling
+ *                 the neighbor it isn't in supplies yet; owner-directed
+ *                 2026-09-16). The note is optional and lands on the row with
+ *                 who/when.
  * No auto-matching — staff still coordinate by phone. No delete path exists.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -129,6 +134,7 @@ interface RowActionsProps {
   onClaim: (id: string) => void;
   onInRoute: (id: string) => void;
   onRecord: (id: string, outcome: DonationOutcome) => void;
+  onNotInSupplies: (id: string) => void;
 }
 
 /** The card-level handlers (id/status are card-owned, injected at render). */
@@ -137,10 +143,14 @@ type RowActionHandlers = Omit<RowActionsProps, "id" | "status">;
 /** Claim → In route → outcome, shared by offer + request cards. */
 function RowActions(props: RowActionsProps) {
   const { t } = useLanguage();
-  const { id, status, acting, panelFor, outcome, onOutcome, onStartOutcome, onCancelOutcome, onClaim, onInRoute, onRecord } = props;
+  const { id, status, acting, panelFor, outcome, onOutcome, onStartOutcome, onCancelOutcome, onClaim, onInRoute, onRecord, onNotInSupplies } = props;
   if (status === "completed") return null;
   const panelOpen = panelFor === id;
+  // The delivery ladder (delivered / peer not at spot) only makes sense once
+  // someone has it in hand. "Not in supplies right now" is the answer for any
+  // row still in the queue — including an OPEN, never-claimed one.
   const canRecord = status === "claimed" || status === "in_route";
+  const openNotInSupplies = status === "open";
   return (
     <div className="mt-3 flex flex-col gap-2">
       {status === "open" ? (
@@ -155,7 +165,9 @@ function RowActions(props: RowActionsProps) {
       ) : null}
       {panelOpen ? (
         <div className="flex flex-col gap-2 rounded-[12px] border border-sg-line bg-sg-paper p-3">
-          <p className="text-btn font-medium">{t("dsp_outcome_open")}</p>
+          <p className="text-btn font-medium">
+            {openNotInSupplies ? t("dsp_not_in_supplies") : t("dsp_outcome_open")}
+          </p>
           <label className="flex flex-col gap-1.5">
             <span className="text-small text-sg-ink-soft">{t("dsp_outcome_note")}</span>
             <input
@@ -166,17 +178,25 @@ function RowActions(props: RowActionsProps) {
               className="min-h-[52px] w-full rounded-[12px] border-2 border-sg-line bg-sg-card px-4 text-body text-sg-ink outline-none focus:border-sg-ink"
             />
           </label>
-          <Button full disabled={acting} onClick={() => onRecord(id, DONATION_OUTCOME.DELIVERED)}>
-            {t("dsp_delivered")}
+          {canRecord ? (
+            <Button full disabled={acting} onClick={() => onRecord(id, DONATION_OUTCOME.DELIVERED)}>
+              {t("dsp_delivered")}
+            </Button>
+          ) : null}
+          {canRecord ? (
+            <Button
+              variant="secondary"
+              full
+              disabled={acting}
+              onClick={() => onRecord(id, DONATION_OUTCOME.PEER_NOT_AT_SPOT)}
+            >
+              {t("dsp_not_at_spot")}
+            </Button>
+          ) : null}
+          <Button variant="secondary" full disabled={acting} onClick={() => onNotInSupplies(id)}>
+            {t("dsp_not_in_supplies")}
           </Button>
-          <Button
-            variant="secondary"
-            full
-            disabled={acting}
-            onClick={() => onRecord(id, DONATION_OUTCOME.PEER_NOT_AT_SPOT)}
-          >
-            {t("dsp_not_at_spot")}
-          </Button>
+          <p className="text-small text-sg-ink-soft">{t("dsp_not_in_supplies_hint")}</p>
           <Button variant="quiet" full disabled={acting} onClick={onCancelOutcome}>
             {t("dn_q_cancel")}
           </Button>
@@ -185,7 +205,11 @@ function RowActions(props: RowActionsProps) {
         <Button variant="quiet" full disabled={acting} onClick={() => onStartOutcome(id)}>
           {t("dsp_outcome_open")}…
         </Button>
-      ) : null}
+      ) : (
+        <Button variant="quiet" full disabled={acting} onClick={() => onStartOutcome(id)}>
+          {t("dsp_not_in_supplies")}
+        </Button>
+      )}
     </div>
   );
 }
@@ -307,6 +331,12 @@ function RowProgress({
           {row.attempts > 0 ? ` ${t("dsp_attempts_note").replace("{n}", String(row.attempts))}` : ""}
         </span>
       ) : null}
+      {row.status !== "completed" && row.outcome === DONATION_OUTCOME.NOT_IN_SUPPLIES ? (
+        <span className="mt-1 block rounded-[10px] bg-sg-paper px-3 py-2 text-small text-sg-ink-soft">
+          {t("dsp_not_in_supplies_trail")}
+          {row.attempts > 0 ? ` ${t("dsp_attempts_note").replace("{n}", String(row.attempts))}` : ""}
+        </span>
+      ) : null}
       {row.status === "completed" ? (
         <p className="mt-1 text-small text-sg-ink-soft">
           {row.outcome === DONATION_OUTCOME.DELIVERED ? t("dsp_delivered") : t("dn_q_complete")}
@@ -371,17 +401,22 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
 
   const act = async (
     id: string,
-    action: "claim" | "in_route" | "delivered" | "peer_not_at_spot",
+    action: "claim" | "in_route" | "delivered" | "peer_not_at_spot" | "not_in_supplies",
   ) => {
     setActing(true);
     setActionError(null);
     try {
+      // "not_in_supplies" has its own route (the row goes back to 'open' —
+      // still in the queue — with the requester told calmly); the delivery
+      // outcomes both go through /complete.
       const url =
         action === "claim"
           ? DONATION_API.claim
           : action === "in_route"
             ? DONATION_API.inRoute
-            : DONATION_API.complete;
+            : action === "not_in_supplies"
+              ? DONATION_API.notInSupplies
+              : DONATION_API.complete;
       const payload =
         action === "claim" || action === "in_route"
           ? { queue, id, staffPhone: phone }
@@ -400,7 +435,9 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
               ? t("dsp_saved_in_route")
               : action === "delivered"
                 ? t("dsp_saved_delivered")
-                : t("dsp_saved_held");
+                : action === "not_in_supplies"
+                  ? t("dsp_saved_not_in_supplies")
+                  : t("dsp_saved_held");
         setActionConfirmed({ saved: true, kind: "saved", line });
         setPanelFor(null);
         setOutcome("");
@@ -425,6 +462,7 @@ export function DonationQueueSection({ queue, phone }: { queue: DonationQueueKin
     onClaim: (id) => void act(id, "claim"),
     onInRoute: (id) => void act(id, "in_route"),
     onRecord: (id, o) => void act(id, o),
+    onNotInSupplies: (id) => void act(id, "not_in_supplies"),
   };
 
   const title = queue === "offers" ? t("dn_q_offer_title") : t("dn_q_request_title");

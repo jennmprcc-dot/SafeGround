@@ -96,14 +96,22 @@ export const DONATION_ACTIVE_STATUSES: readonly string[] = [
   DONATION_STATUS.CLAIMED,
   DONATION_STATUS.IN_ROUTE,
 ];
-/** Outcome recorded when staff close a row (owner-directed 2026-09-16). */
+/** Outcome recorded when staff close a row (owner-directed 2026-09-16).
+ *  - delivered       → the row leaves the active queue (completed).
+ *  - peer_not_at_spot→ the row stays active ('claimed'), item held, retry.
+ *  - not_in_supplies → MPRCC doesn't have the item yet: the row returns to
+ *    'open' (back in the active pool) with the requester told calmly
+ *    (owner-directed 2026-09-16, backlog 332a92b7). */
 export const DONATION_OUTCOME = {
   DELIVERED: "delivered",
   PEER_NOT_AT_SPOT: "peer_not_at_spot",
+  NOT_IN_SUPPLIES: "not_in_supplies",
 } as const;
 export type DonationOutcome = (typeof DONATION_OUTCOME)[keyof typeof DONATION_OUTCOME];
 export const isDonationOutcome = (raw: unknown): raw is DonationOutcome =>
-  raw === DONATION_OUTCOME.DELIVERED || raw === DONATION_OUTCOME.PEER_NOT_AT_SPOT;
+  raw === DONATION_OUTCOME.DELIVERED ||
+  raw === DONATION_OUTCOME.PEER_NOT_AT_SPOT ||
+  raw === DONATION_OUTCOME.NOT_IN_SUPPLIES;
 
 /* ── Requester ping copy (owner-directed 2026-09-16) ───────────────────
  * The exact owner template for a claim is "Jenn is bringing your tent."
@@ -143,6 +151,22 @@ export const DONATION_PING_COPY = {
     en: "MPRCC staff is on the way for your {item}.",
     es: "El equipo de MPRCC va en camino por tu {item}.",
   },
+  /** "Not in supplies right now" (owner-directed 2026-09-16, backlog 332a92b7)
+   *  — the owner's copy, VERBATIM, sent as the text message. It is long on
+   *  purpose: it explains that MPRCC is community-driven and that waiting is
+   *  normal, so the neighbor doesn't read it as a "no". */
+  notInSupplies: {
+    en: "Your {item} isn't in our supplies right now. SafeGround is a community-driven organization that relies on donations from the community — we do our best to answer every request, and it can take time depending on the need. As soon as we're able to get your {item}, someone will be in touch.",
+    es: "Tu {item} no está en nuestros suministros en este momento. SafeGround es una organización impulsada por la comunidad que depende de donaciones de la comunidad — hacemos lo posible por responder a cada pedido, y puede tomar tiempo según la necesidad. En cuanto podamos conseguir tu {item}, alguien se comunicará contigo.",
+  },
+  /** The same message for the PUSH body, cut to its first + last sentence
+   *  (both verbatim from the owner copy above) — a phone notification body is
+   *  clipped by the OS, and the owner's full copy must never arrive as a
+   *  sentence chopped in half. The text message carries the whole thing. */
+  notInSuppliesPush: {
+    en: "Your {item} isn't in our supplies right now. As soon as we're able to get your {item}, someone will be in touch.",
+    es: "Tu {item} no está en nuestros suministros en este momento. En cuanto podamos conseguir tu {item}, alguien se comunicará contigo.",
+  },
   /** Calm reschedule after "Peer not at spot" — the item is held for a retry. */
   reschedule: {
     en: "We stopped by but didn't catch you. We'll try again {day} — your {item} is being held for you.",
@@ -158,6 +182,10 @@ export const DONATION_PING_COPY = {
     claim: { en: "SafeGround — your request is being handled", es: "SafeGround — tu pedido está en marcha" },
     claimOffer: { en: "SafeGround — your donation pickup", es: "SafeGround — la recogida de tu donación" },
     inRoute: { en: "SafeGround — on the way", es: "SafeGround — en camino" },
+    notInSupplies: {
+      en: "SafeGround — your request is still on the list",
+      es: "SafeGround — tu pedido sigue en la lista",
+    },
     reschedule: { en: "SafeGround — we'll try again", es: "SafeGround — lo intentaremos otra vez" },
   },
 } as const;
@@ -206,6 +234,12 @@ export const DONATION_API = {
    *  held, ping?}. delivered → completed + cleared; peer_not_at_spot → the row
    *  returns to 'claimed' and STAYS ACTIVE with a calm reschedule ping. */
   complete: "/api/donations/complete",
+  /** POST {queue: "offers"|"requests", id, staffPhone, outcomeNote?}
+   *  (roster-gated) → {ok, returned, ping?}. "Not in supplies right now": the
+   *  row goes back to 'open' (claimed_by cleared → active pool, still
+   *  claimable) with outcome 'not_in_supplies', attempts + 1, and one calm
+   *  ping to the requester (owner-directed 2026-09-16, backlog 332a92b7). */
+  notInSupplies: "/api/donations/not-in-supplies",
 } as const;
 
 /** Push deep-link the queue pages should exist at after the UI PR (kept here so

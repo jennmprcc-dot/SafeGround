@@ -2490,7 +2490,7 @@ alter table public.donation_requests
   drop constraint if exists donation_requests_outcome_check;
 alter table public.donation_requests
   add constraint donation_requests_outcome_check
-  check (outcome is null or outcome in ('delivered', 'peer_not_at_spot'));
+  check (outcome is null or outcome in ('delivered', 'peer_not_at_spot', 'not_in_supplies'));
 alter table public.donation_offers
   add column if not exists route_started_at timestamptz,
   add column if not exists outcome text,
@@ -2507,7 +2507,24 @@ alter table public.donation_offers
   drop constraint if exists donation_offers_outcome_check;
 alter table public.donation_offers
   add constraint donation_offers_outcome_check
-  check (outcome is null or outcome in ('delivered', 'peer_not_at_spot'));
+  check (outcome is null or outcome in ('delivered', 'peer_not_at_spot', 'not_in_supplies'));
+
+-- ---------------------------------------------------------------------------
+-- "Not in supplies right now" (owner-directed 2026-09-16, backlog 332a92b7)
+-- ---------------------------------------------------------------------------
+-- Staff answer an ACTIVE row (open | claimed | in_route) when MPRCC simply
+-- doesn't have the item yet: the row returns to 'open' with claimed_by_phone /
+-- claimed_at / route_started_at cleared (back in the active pool for a later
+-- claim), the outcome is recorded as 'not_in_supplies' with attempts + 1 and
+-- the optional staff note, and the requester gets ONE calm ping (push to their
+-- own registered tokens + a text only through gateSms - consent + hours + STOP,
+-- never emergency:true, zero phone digits). The row STAYS in the open queue: it
+-- can still be claimed and fulfilled when the item arrives, and the 60s
+-- per-(row, kind) ping cooldown in donationServer stops a double-tap from
+-- pinging twice. The outcome CHECKs above carry 'not_in_supplies' on BOTH
+-- tables. RLS is untouched: still INSERT-only for the public, no public
+-- SELECT/UPDATE - every read/write stays on the roster-gated service routes.
+
 
 -- Pass 2 analytics (zero-PII, category/status/timestamp only): extend the
 -- analytics_events event_type CHECK with the four donation events. Idempotent:

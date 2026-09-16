@@ -716,6 +716,10 @@ const EN = {
   dsp_attempts_note: "{n} tries so far.", // ✦
   dsp_in_route_at: "In route since {time}.", // ✦
   dsp_ping_note: "The neighbor gets a calm heads-up: an app notification, and a text only if they opted in.", // ✦
+  dsp_not_in_supplies: "Not in supplies right now", // ✦
+  dsp_not_in_supplies_hint: "Tells your neighbor calmly that we don't have it yet — the request stays open and can still be filled.", // ✦
+  dsp_saved_not_in_supplies: "Saved — the request stays open. Your neighbor has been told it isn't in our supplies yet.", // ✦
+  dsp_not_in_supplies_trail: "Not in our supplies yet — still on the list.", // ✦
   // Volunteer flow (owner-directed 2026-09-12, Part B) — a third card on the
   // Give page + a staff Volunteers queue in /outreach. Contact = phone OR
   // email, name + interest optional. Every new string is ✦ for the owner's
@@ -1598,6 +1602,10 @@ const ES: Partial<Record<I18nKey, string>> = {
   dsp_attempts_note: "{n} intentos hasta ahora.", // ✦
   dsp_in_route_at: "En camino desde {time}.", // ✦
   dsp_ping_note: "El vecino recibe un aviso tranquilo: notificación en la app, y un texto solo si lo autorizó.", // ✦
+  dsp_not_in_supplies: "No está en los suministros ahora", // ✦
+  dsp_not_in_supplies_hint: "Le avisa con calma al vecino que todavía no lo tenemos — el pedido sigue abierto y se puede cumplir después.", // ✦
+  dsp_saved_not_in_supplies: "Guardado — el pedido sigue abierto. Le avisamos al vecino que todavía no está en nuestros suministros.", // ✦
+  dsp_not_in_supplies_trail: "Todavía no está en nuestros suministros — sigue en la lista.", // ✦
   // Volunteer flow (owner-directed 2026-09-12, Part B) — ES ✦ candidates.
   vol_card_title: "Voluntariado", // ✦
   vol_card_sub: "Formas de ayudar más allá del dinero y los artículos — el equipo te contactará.", // ✦
