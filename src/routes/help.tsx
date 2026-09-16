@@ -49,7 +49,15 @@ import { cn } from "~/lib/cn";
 /* Live fetch from the database via the listResources server fn (the server's
  * own DB-unreachable fallback is demoResources(); the client mirrors it in
  * demoResourceRows above so a transport failure never shows "0 places" —
- * source drives the honest offline label). */
+ * source drives the honest offline label).
+ *
+ * PR-D (offline PWA): when the transport fails (offline), the client FIRST
+ * tries the bundled /resources-fallback.json served by the service worker
+ * (network-first → precached copy on network failure under sg-resources-v1).
+ * Rendering from that snapshot sets source="fallback" → OfflineBanner +
+ * "Last synced {bundledAt}" + openNow forced false + a calm call-ahead note.
+ * Only if even the fallback JSON is unreachable do we degrade to the in-JS
+ * Marin copy (source="demo"), so the help page never shows "0 places". */
 /** DemoResource (Marin copy) → ResourceRow (DB shape) for the transport-failure
  * fallback. Mirrors the server's demoResources() mapping, client-safe. */
 function demoResourceRows(): ResourceRow[] {
@@ -67,17 +75,35 @@ function demoResourceRows(): ResourceRow[] {
     openNow: r.openNow ?? false,
   }));
 }
+/** Shape of the bundled /resources-fallback.json (public, shipped with the app). */
+interface ResourcesFallback {
+  bundledAt?: string;
+  rows: ResourceRow[];
+}
+async function fetchFallbackRows(): Promise<{ rows: ResourceRow[]; bundledAt: string } | null> {
+  try {
+    const res = await fetch("/resources-fallback.json", { headers: { accept: "application/json" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as ResourcesFallback;
+    if (!Array.isArray(data.rows) || data.rows.length === 0) return null;
+    return { rows: data.rows, bundledAt: typeof data.bundledAt === "string" ? data.bundledAt : "" };
+  } catch {
+    return null;
+  }
+}
 function useResources(): {
   resources: ResourceRow[];
   loading: boolean;
   offline: boolean;
   source: DataSource;
+  syncedAt: string | null;
   retry: () => void;
 } {
   const [resources, setResources] = useState<ResourceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [source, setSource] = useState<DataSource>("demo");
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
@@ -91,14 +117,23 @@ function useResources(): {
         setLoading(false);
         if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
       })
-      .catch(() => {
+      .catch(async () => {
         if (!alive) return;
         // Transport-level failure (offline / stale bundle / server-fn 404):
-        // NEVER show "0 places" — degrade to the same typed Marin copy the
-        // server itself falls back to (realMarinAsDemoResources), labeled
-        // honestly as offline. Owner-visible bug 2026-09-12.
-        setResources(demoResourceRows());
-        setSource("demo");
+        // NEVER show "0 places". First try the SW-cached bundled snapshot
+        // (/resources-fallback.json — network-first, cache on failure), then
+        // the in-JS Marin copy as the last resort. Owner-visible bug 2026-09-12.
+        const fb = await fetchFallbackRows();
+        if (!alive) return;
+        if (fb) {
+          setResources(fb.rows);
+          setSource("fallback");
+          setSyncedAt(fb.bundledAt || null);
+        } else {
+          setResources(demoResourceRows());
+          setSource("demo");
+          setSyncedAt(null);
+        }
         setLoading(false);
         if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
       });
@@ -106,7 +141,7 @@ function useResources(): {
       alive = false;
     };
   }, [tick]);
-  return { resources, loading, offline, source, retry: () => setTick((t) => t + 1) };
+  return { resources, loading, offline, source, syncedAt, retry: () => setTick((t) => t + 1) };
 }
 
 /** ResourceRow (DB shape, nullable fields) → the DemoResource view the existing
@@ -198,7 +233,7 @@ function ViewTabs({
 
 /* ── Navigator page ─────────────────────────────────────────────── */
 function NavigatorPage() {
-  const { resources, loading, offline, source, retry } = useResources();
+  const { resources, loading, source, syncedAt, retry } = useResources();
   const { push } = useToasts();
   const { lang, t } = useLanguage();
   // 3-mode nav: ?cat=food,daycenters pre-selects Food and Day Use chips;
@@ -261,7 +296,13 @@ function NavigatorPage() {
     }, 0);
   };
 
-  const adapted = useMemo(() => resources.map(adapt), [resources]);
+  const adapted = useMemo(() => resources.map((r) => {
+    const d = adapt(r);
+    // Offline fallback snapshot: never claim a place is open — hours may have
+    // changed since the list was bundled. openNow forced false for every row.
+    if (source === "fallback") d.openNow = false;
+    return d;
+  }), [resources, source]);
   const filtered = useMemo(() => {
     let list = adapted;
     if (selected.length > 0) list = list.filter((r) => selected.includes(r.category));
@@ -439,7 +480,17 @@ function NavigatorPage() {
           </section>
         ) : null}
 
-        {offline && <OfflineBanner message="No connection — showing saved list. It's all here." onRetry={retry} />}
+        {/* PR-D offline fallback: when the list renders from the SW-cached
+            bundled snapshot (source==="fallback"), show a calm OfflineBanner +
+            "Last synced {date}" (the date the fallback was bundled). */}
+        {source === "fallback" ? (
+          <div className="flex flex-col gap-1">
+            <OfflineBanner message={t("res_offline_banner")} onRetry={retry} />
+            <p className="px-1 text-small text-sg-ink-soft">
+              {t("res_offline_synced")} {syncedAt ?? ""}
+            </p>
+          </div>
+        ) : null}
 
         {view === "map" ? (
           <ResourceMapPane
@@ -458,7 +509,7 @@ function NavigatorPage() {
                 {filtered.length} {filtered.length === 1 ? "place" : "places"} · open now: {openNow}
               </p>
               <p className="text-small text-sg-ink-soft">
-                {source === "db" ? "Live database" : "Real Marin listings (offline copy)"}
+                {source === "db" ? "Live database" : source === "fallback" ? t("res_offline_source") : "Real Marin listings (offline copy)"}
               </p>
             </div>
 
@@ -495,6 +546,9 @@ function NavigatorPage() {
                           {r.hours ? <span>· {r.hours.split("·")[0].trim()}</span> : null}
                           {r.verifiedAt ? <VerifiedMark label="Verified" /> : null}
                         </span>
+                        {source === "fallback" ? (
+                          <span className="block text-small text-sg-ink-soft">{t("res_offline_call_ahead")}</span>
+                        ) : null}
                       </span>
                       <span className="shrink-0 pl-2">
                         {r.openNow ? <StatusBadge kind="Okay">Okay</StatusBadge> : null}

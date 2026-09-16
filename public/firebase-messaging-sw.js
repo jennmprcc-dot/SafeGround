@@ -136,3 +136,62 @@ self.addEventListener("notificationclick", (event) => {
     }),
   );
 });
+
+/* ── PWA offline resources (PR-D) ───────────────────────────────────
+ * OPTION B, ONE service worker: the SAME worker above also precaches the
+ * bundled offline resources JSON so the Help page still shows real Marin
+ * listings with no connection. Push + notificationclick handlers above are
+ * UNCHANGED. No other routes/assets change caching behavior.
+ *
+ * Strategy: network-first for the resources fetch — always try the network,
+ * serve the precached copy ONLY when the network fails (offline). We never
+ * serve stale cache while online, and we never write to the cache on success
+ * (the cache stays the bundled snapshot, so "Last synced" is honest).
+ */
+const RESOURCES_CACHE = "sg-resources-v1";
+const RESOURCES_URL = "/resources-fallback.json";
+
+// Install: precache the bundled offline resources JSON. Push wiring is
+// untouched; we do NOT skipWaiting so the new worker activates on next load
+// just like today.
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(RESOURCES_CACHE).then((cache) => cache.add(RESOURCES_URL)));
+});
+
+// Activate: drop any older sg-resources-* cache so the versioned cache stays
+// single and the bundledAt snapshot stays current.
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => k.startsWith("sg-resources-") && k !== RESOURCES_CACHE)
+          .map((k) => caches.delete(k)),
+      ),
+    ),
+  );
+});
+
+// Network-first ONLY for the bundled resources JSON (same-origin GET). All
+// other requests pass through untouched. On network failure (offline) we fall
+// back to the precached copy; a non-ok response is treated as a miss so the
+// user still sees the saved list rather than an error page.
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+  if (event.request.method !== "GET") return;
+  if (url.pathname !== RESOURCES_URL) return;
+  event.respondWith(
+    fetch(event.request)
+      .then((res) => {
+        if (res && res.ok) return res;
+        throw new Error("resources fetch not ok");
+      })
+      .catch(() =>
+        caches
+          .open(RESOURCES_CACHE)
+          .then((cache) => cache.match(RESOURCES_URL))
+          .then((cached) => cached || Response.error()),
+      ),
+  );
+});

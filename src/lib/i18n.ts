@@ -100,6 +100,11 @@ const EN = {
   // Help page chrome around the chips
   help_chips: "Categories — choose any to filter",
   help_search: "Search name or place…",
+  // PWA offline resources fallback (PR-D) — calm offline copy for the /help page.
+  res_offline_banner: "No connection — showing the saved list. It's all here.",
+  res_offline_synced: "Last synced",
+  res_offline_call_ahead: "Call ahead — hours may have changed.",
+  res_offline_source: "Saved list",
   help_list: "List",
   help_map: "Map",
   // Resource check-ins (PR-C, owner-directed 2026-09-11) — neighbor-reported
@@ -1033,6 +1038,10 @@ const ES: Partial<Record<I18nKey, string>> = {
   catname_emergency: "Ayuda en crisis",
   help_chips: "Categorías — elige para filtrar",
   help_search: "Buscar por nombre o lugar…",
+  res_offline_banner: "Sin conexión — mostrando la lista guardada. Todo está aquí.",
+  res_offline_synced: "Última sincronización",
+  res_offline_call_ahead: "Llame antes de ir — el horario puede haber cambiado.",
+  res_offline_source: "Lista guardada",
   help_list: "Lista",
   help_map: "Mapa",
   rv_report_cta: "¿Algo anda mal? Avisa de un cambio",

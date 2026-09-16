@@ -28,7 +28,7 @@ import type { NeedRow, NeedStatus, NeedVisibility, NeedSource, MemberStatusRow }
 
 /* ── Public row shapes (serializable) ──────────────────────────── */
 
-export type DataSource = "db" | "demo";
+export type DataSource = "db" | "demo" | "fallback";
 
 export interface ResourceRow {
   id: string;
