@@ -728,6 +728,22 @@ const EN = {
   vol_q_saved: "Saved — the queue now shows it.",
   vol_q_load_err: "Couldn't load the volunteers queue — the database didn't answer.",
   vol_done_notified: "The team has been notified.",
+  // My Requests page — donation rows (owner bug 2026-09-16: "my needs / my
+  // requests don't populate"). EN ✦ owner copy-read candidates like Pass 1–3.
+  myr_section: "Your donation requests & offers", // ✦
+  myr_sub: "What you asked for or offered, and where it stands.", // ✦
+  myr_empty: "Nothing here yet.", // ✦
+  myr_empty_sub: "When you request or offer an item, it shows up here with its status.", // ✦
+  myr_need_phone: "Add your number when you ask for or offer an item — then your items show up here.", // ✦
+  myr_loading: "Checking…", // ✦
+  myr_err: "Couldn't load your items — try again in a moment.", // ✦
+  myr_kind_offer: "Offer", // ✦
+  myr_kind_request: "Request", // ✦
+  myr_status_open: "Open — the outreach team will look at it soon.", // ✦
+  myr_status_claimed: "Being handled — someone on the team is on it.", // ✦
+  myr_status_completed: "Done — thank you.", // ✦
+  myr_status_unknown: "On file — the team can see it.", // ✦
+  myr_sent: "Sent {when}", // ✦
   // Peer groups + check-in audience (PEER_GROUPS_SPEC §7 — BUILD B frontend).
   // EN from the spec table verbatim; ES ✦ owner copy-read candidates.
   ck_audience_label: "Who gets this check-in?",
@@ -1465,6 +1481,21 @@ const ES: Partial<Record<I18nKey, string>> = {
   vol_q_saved: "Guardado — la cola ya lo muestra.",
   vol_q_load_err: "No se pudo cargar la cola de voluntarios — la base de datos no respondió.",
   vol_done_notified: "El equipo ya fue avisado.",
+  // My Requests page — donation rows (ES ✦ owner copy-read candidates).
+  myr_section: "Tus pedidos y ofertas de donación", // ✦
+  myr_sub: "Lo que pediste u ofreciste, y cómo va.", // ✦
+  myr_empty: "Aún no hay nada aquí.", // ✦
+  myr_empty_sub: "Cuando pidas u ofrezcas un artículo, aparecerá aquí con su estado.", // ✦
+  myr_need_phone: "Agrega tu número al pedir u ofrecer un artículo — luego tus artículos aparecerán aquí.", // ✦
+  myr_loading: "Revisando…", // ✦
+  myr_err: "No se pudieron cargar tus artículos — inténtalo de nuevo en un momento.", // ✦
+  myr_kind_offer: "Oferta", // ✦
+  myr_kind_request: "Pedido", // ✦
+  myr_status_open: "Abierta — el equipo la revisará pronto.", // ✦
+  myr_status_claimed: "En marcha — alguien del equipo la está atendiendo.", // ✦
+  myr_status_completed: "Completada — gracias.", // ✦
+  myr_status_unknown: "En archivo — el equipo puede verla.", // ✦
+  myr_sent: "Enviado {when}", // ✦
   // Peer groups + check-in audience (PEER_GROUPS_SPEC §7 — BUILD B frontend).
   // ES ✦ owner copy-read candidates (same batch as Pass 1–3 strings).
   ck_audience_label: "¿Quién recibe este registro?",

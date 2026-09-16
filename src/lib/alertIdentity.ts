@@ -7,6 +7,10 @@
 
 const PHONE_KEY = "sg.alert.phone";
 const NAME_KEY = "sg.alert.name";
+/** Fired after setAlertIdentity persists a phone — the shell listens so
+ * device push registration can run the moment a number is added (not just on
+ * next app open). Client-only; SSR renders never dispatch. */
+export const IDENTITY_CHANGED_EVENT = "sg.identity-changed";
 
 /** Digits-only normalized phone (matches sg_norm_phone: strip +, spaces, dashes). */
 export function normPhone(raw: unknown): string {
@@ -32,6 +36,9 @@ export function setAlertIdentity(phone: string, name: string): AlertIdentity {
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(PHONE_KEY, p);
     localStorage.setItem(NAME_KEY, n);
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(IDENTITY_CHANGED_EVENT));
   }
   return { phone: p, name: n };
 }

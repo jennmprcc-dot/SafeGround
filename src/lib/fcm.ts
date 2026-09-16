@@ -56,6 +56,58 @@ export interface FcmStatus {
   emptyTokenReason?: string;
 }
 
+/* ── Auto-registration (owner bug 2026-09-16: NO device ever registers) ──
+ * The production app never stored a push token because registerDevicePush was
+ * only reachable from /push-test. This is the BEST-EFFORT path the real app
+ * calls whenever a phone identity exists: consent-first (the Allow prompt is
+ * the ONLY consent), at most once per phone (localStorage flag — never nag),
+ * silent no-op when push isn't supported (iOS Safari pre-install, some
+ * Androids — those users already get SMS where consent exists). */
+const PUSH_ASKED_PREFIX = "sg.push.asked.";
+
+/** Per-phone flag key — last 10 digits, same identity as push_tokens. */
+export function pushAskedKey(phone: string): string {
+  return PUSH_ASKED_PREFIX + phone.replace(/[^0-9]/g, "").slice(-10);
+}
+
+/**
+ * One-time, best-effort device registration for a phone identity. Resolves
+ * quickly in every path, throws nothing: push must never block or fail the
+ * app. The flag is set only once the flow reaches a DEFINITIVE answer —
+ * granted (consented, even if the server-side store hiccuped) or denied
+ * (user said no) — so a throttled prompt that resolved "default" without
+ * asking can still try again on a later visit without nagging.
+ */
+export async function maybeRegisterPush(phone: string, deviceLabel?: string): Promise<void> {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+  const clean = phone.replace(/[^0-9]/g, "");
+  if (clean.length < 10) return;
+  const flagKey = pushAskedKey(clean);
+  if (localStorage.getItem(flagKey) !== null) return; // asked for this phone — never nag
+  if (!pushSupported()) {
+    try {
+      localStorage.setItem(flagKey, "1"); // nothing to ask for — done for this phone
+    } catch {
+      /* private mode */
+    }
+    return;
+  }
+  let status: FcmStatus | null = null;
+  try {
+    status = await registerDevicePush(clean, deviceLabel);
+  } catch {
+    status = null;
+  }
+  const permission = status?.permission;
+  if (permission === "granted" || permission === "denied") {
+    try {
+      localStorage.setItem(flagKey, "1");
+    } catch {
+      /* private mode */
+    }
+  }
+}
+
 /* ── script loader (Promise, deduped, cross-origin safe) ─────────── */
 const loaded = new Map<string, Promise<void>>();
 function loadScript(src: string): Promise<void> {
