@@ -34,6 +34,10 @@ import { sql } from "~/db";
 import { normPhone } from "~/lib/alertIdentity";
 import { peerRpc, userIdForPhone } from "~/lib/peerServer";
 import { phoneKey, sendFcmMessage, tokensForPhone } from "~/lib/pushServer";
+// Backlog 84dd5b25: the check-in push deep-links straight to the fresh fuzzed
+// pin on the friends map. Pure link builder — carries only the check-in ROW id
+// (a uuid), never a coordinate, name, phone or place.
+import { checkInFocusLink } from "~/lib/checkinFocus";
 
 /* ── Audience ─────────────────────────────────────────────────────── */
 export type AudienceKind = "me" | "all" | "group" | "peers";
@@ -353,9 +357,18 @@ export async function fanOutCheckIn(opts: {
   recipients: MutualPeer[];
   /** The caller's own check-ins in the last 24h (the day ceiling counts them). */
   checkInsLast24h: number;
+  /** The row just written — the push link focuses exactly this check-in
+   * (backlog 84dd5b25). Absent/odd id → the plain /checkin link (still lands
+   * on the page the owner asked for, just without the pin highlight). */
+  checkInId?: string | null;
 }): Promise<FanOutResult> {
   const { senderId, senderName, recipients } = opts;
   const audience = recipients.length;
+  // The tap-through target: the friends map with THIS check-in's fuzzed pin
+  // highlighted (backlog 84dd5b25). The id is a row uuid; no coordinates ride
+  // along, and the link stays same-origin ("/…") so the service worker's
+  // same-origin-only rule keeps holding.
+  const link = checkInFocusLink(opts.checkInId);
   if (audience === 0) return { notified: 0, sent: 0, audience: 0, ceiling: false };
   if (opts.checkInsLast24h > MAX_CHECKINS_PER_DAY) {
     return { notified: 0, sent: 0, audience, ceiling: true };
@@ -385,7 +398,7 @@ export async function fanOutCheckIn(opts: {
     const body = pushBodyFor(senderName);
     for (const token of tokens.slice(0, 20)) {
       try {
-        const r = await sendFcmMessage({ token, title: PUSH_TITLE, body, link: "/checkin" });
+        const r = await sendFcmMessage({ token, title: PUSH_TITLE, body, link });
         if (r.status === "sent") sent += 1;
       } catch {
         /* best-effort per token — never fails the check-in */
