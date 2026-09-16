@@ -833,7 +833,11 @@ function mapAlert(r: DbAlertRow, viewer: { phone: string; staff: boolean; admin:
     canSeeExact,
     audience: r.audience as AlertAudienceGroup[],
     senderName: r.sender_name ?? (own ? "You" : "a neighbor"),
-    senderPhone: r.sender_phone,
+    // senderPhone is gated like exact coords: only the sender themself or a
+    // roster admin sees the raw number. Every other viewer gets "" — the field
+    // is needed only for the sender's own "is this mine?" match and the admin
+    // tel: link; no UI/feature depends on a non-sender viewer receiving it.
+    senderPhone: own || viewer.admin ? r.sender_phone : "",
     claimedBy: r.claimed_by,
     claimedByName: r.claimed_name,
     claimedAt: c(r.claimed_at),

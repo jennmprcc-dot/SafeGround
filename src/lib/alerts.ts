@@ -58,7 +58,9 @@ export interface AlertRow {
   audience: AlertAudienceGroup[];
   /** Display name of the sender (urgency is calm — no title-casing theatrics). */
   senderName: string;
-  /** Raw normalized phone — needed for matching "is this mine? / who's helping?" */
+  /** Raw normalized phone — ONLY the sender themself or a roster admin receives
+   * it. Everyone else gets "" (empty): needed only for the sender's own
+   * "is this mine?" match and the admin tel: link — never for a plain viewer. */
   senderPhone: string;
   /** "I'm on it" — the first helper's normalized phone (or null). */
   claimedBy: string | null;
