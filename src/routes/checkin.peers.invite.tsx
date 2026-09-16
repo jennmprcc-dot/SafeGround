@@ -136,19 +136,25 @@ function InvitePage() {
     }
   };
 
+  /* Owner bug 2026-09-16: the shared text named the code but never the link, so
+     a first-time invitee had no way in. The deep link is now IN the text (and in
+     the clipboard fallback) — one line, calm and short. */
   const shareCode = async () => {
     if (!code) return;
-    const url = typeof location !== "undefined" ? `${location.origin}/checkin/peers?code=${code}` : `SafeGround invite code: ${code}`;
+    const link = typeof location !== "undefined" ? `${location.origin}/checkin/peers?code=${code}` : null;
+    const text = link
+      ? `I'd like you to be a trusted peer on SafeGround. Open this link and enter the code within 48h: ${link} — your code: ${code}`
+      : `I'd like you to be a trusted peer on SafeGround. Open SafeGround and enter this code within 48h: ${code}`;
     if (typeof navigator !== "undefined" && "share" in navigator) {
       try {
-        await navigator.share({ title: "SafeGround invite", text: `I'd like you to be a trusted peer on SafeGround. Open SafeGround and enter this code within 48h: ${code}` });
+        await navigator.share({ title: "SafeGround invite", text });
       } catch {
         /* user cancelled the share sheet — code stays on screen */
       }
     } else if (typeof navigator !== "undefined" && "clipboard" in navigator) {
       try {
-        await navigator.clipboard.writeText(code);
-        push({ kind: "success", message: "Code copied — send it to someone you trust." });
+        await navigator.clipboard.writeText(text);
+        push({ kind: "success", message: "Invite copied — send it to someone you trust." });
       } catch {
         push({ kind: "error", message: "Couldn't copy — long-press to select the code." });
       }
