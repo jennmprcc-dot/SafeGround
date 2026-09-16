@@ -883,6 +883,64 @@ const EN = {
   ptext_next_2: "If they reply, their words come back to you here.", // ✦
   ptext_next_3: "You can send another message, or close this — it's saved.", // ✦
   ptext_back_mine: "Back to my messages", // ✦
+
+  // ── Plain-language step guides (owner-directed 2026-09-16) ────────────
+  // Part B of peer-texting-and-plain-language-design.md: one calm "here's how
+  // it works" preview at the top of each critical flow (2-4 "you do this"
+  // steps + exactly one "what happens next"). Spec strings are verbatim; every
+  // string is ✦ for the owner's copy-read (EN source + ES below). No urgency
+  // wording, no blame, no dead ends.
+  sg_how_h: "Here's how it works", // ✦
+  sg_what_next: "What happens next", // ✦ (spec B2)
+  sg_steps_show: "Show the steps", // ✦
+  sg_steps_hide: "Hide the steps", // ✦
+  // 1. Check-in (spec B3.1)
+  ck_step1: "Choose who you check in with", // ✦
+  ck_step2: "Use your location once", // ✦
+  ck_step3: "Add a note (optional)", // ✦
+  ck_step4: "Send your check-in", // ✦
+  ck_whatnext: "The people you choose see a rough area (~150m), never your exact spot. Clears in 24h.", // ✦
+  // 2. Emergency alert to the MPRCC team (spec B3.2 — urgent-need)
+  un_step1: "Pick what you need", // ✦
+  un_step2: "Add your phone number", // ✦
+  un_step3: "Choose how much location to share", // ✦
+  un_step4: "Review and send to the team", // ✦
+  un_whatnext: "The MPRCC team gets your need and reaches out at the number you gave. Never 911.", // ✦
+  // 2b. Alert to your own people (alerts/new) — spec B3.2 covers the team
+  // send, so this second emergency surface carries its own calm steps in the
+  // same voice (adaptation; flagged to the lead).
+  al_step1: "Pick what's happening", // ✦
+  al_step2: "Choose who should know", // ✦
+  al_step3: "Choose your location and send", // ✦
+  al_whatnext: "The people you chose get your alert, with only the location you picked. Never 911.", // ✦
+  // 3. Invite a trusted peer (spec B3.3)
+  invite_step1: "Add your own number", // ✦
+  invite_step2: "Share your invite", // ✦
+  invite_step3: "They accept on their phone", // ✦
+  invite_whatnext: "They become a trusted peer and can see your check-ins and messages.", // ✦
+  // 4. Donate an item / request an item (spec B3.4)
+  dn_step1: "Choose how to give or get", // ✦
+  dn_step2: "Describe the item", // ✦
+  dn_step3: "Add your phone number", // ✦
+  dn_step4: "Review and send", // ✦
+  dn_whatnext: "MPRCC staff contact you to coordinate — usually within a day or two.", // ✦
+  // 6. Peer-support request (spec B3.6)
+  ps_step1: "Add your phone number", // ✦
+  ps_step2: "Add a note (optional)", // ✦
+  ps_step3: "Review and send", // ✦
+  ps_whatnext: "An MPRCC peer reaches out to you. Nothing goes to 911.", // ✦
+  // 7. Volunteer interest (spec B3.7)
+  vol_step1: "Add your name (optional)", // ✦
+  vol_step2: "Add a phone or email", // ✦
+  vol_step3: "Tell us what you're thinking of (optional)", // ✦
+  vol_step4: "Send your interest", // ✦
+  vol_whatnext: "MPRCC reaches out to welcome you. This doesn't commit you to anything.", // ✦
+  // 8. First-visit gate (spec B3.8 — chrome only; the legal text itself stays
+  // immutable + EN-only in disclaimer.tsx)
+  sg_gate_step1: "Read the safety note", // ✦
+  sg_gate_step2: "Choose what SafeGround is for you", // ✦
+  sg_gate_step3: "Agree to continue", // ✦
+  sg_gate_whatnext: "Then you can find help, check in, and message your people. No account needed.", // ✦
 } as const;
 
 export type I18nKey = keyof typeof EN;
@@ -1703,6 +1761,49 @@ const ES: Partial<Record<I18nKey, string>> = {
   ptext_next_2: "Si responden, sus palabras vuelven a ti aquí.", // ✦
   ptext_next_3: "Puedes enviar otro mensaje, o cerrar esto — queda guardado.", // ✦
   ptext_back_mine: "Volver a mis mensajes", // ✦
+
+  // ── Guías paso a paso en lenguaje sencillo (2026-09-16) ──────────────
+  // ✦ para la revisión de textos del dueño. Tono calmado, sin urgencia.
+  sg_how_h: "Así funciona", // ✦
+  sg_what_next: "Qué sigue después", // ✦ (spec B2)
+  sg_steps_show: "Ver los pasos", // ✦
+  sg_steps_hide: "Ocultar los pasos", // ✦
+  ck_step1: "Elige con quién te registras", // ✦
+  ck_step2: "Usa tu ubicación una vez", // ✦
+  ck_step3: "Agrega una nota (opcional)", // ✦
+  ck_step4: "Envía tu registro", // ✦
+  ck_whatnext: "Las personas que elijas ven un área aproximada (~150m), nunca tu punto exacto. Se borra en 24h.", // ✦
+  un_step1: "Elige lo que necesitas", // ✦
+  un_step2: "Agrega tu número de teléfono", // ✦
+  un_step3: "Elige cuánta ubicación compartir", // ✦
+  un_step4: "Revisa y envía al equipo", // ✦
+  un_whatnext: "El equipo de MPRCC recibe tu necesidad y te contacta al número que diste. Nunca el 911.", // ✦
+  al_step1: "Elige qué está pasando", // ✦
+  al_step2: "Elige quién debe saber", // ✦
+  al_step3: "Elige tu ubicación y envía", // ✦
+  al_whatnext: "Las personas que elegiste reciben tu aviso, solo con la ubicación que elegiste. Nunca el 911.", // ✦
+  invite_step1: "Agrega tu propio número", // ✦
+  invite_step2: "Comparte tu invitación", // ✦
+  invite_step3: "Ellos aceptan en su teléfono", // ✦
+  invite_whatnext: "Se vuelven una persona de confianza y pueden ver tus registros y mensajes.", // ✦
+  dn_step1: "Elige cómo dar o recibir", // ✦
+  dn_step2: "Describe el artículo", // ✦
+  dn_step3: "Agrega tu número de teléfono", // ✦
+  dn_step4: "Revisa y envía", // ✦
+  dn_whatnext: "El equipo de MPRCC te contacta para coordinar — normalmente en un día o dos.", // ✦
+  ps_step1: "Agrega tu número de teléfono", // ✦
+  ps_step2: "Agrega una nota (opcional)", // ✦
+  ps_step3: "Revisa y envía", // ✦
+  ps_whatnext: "Un compañero de MPRCC te contacta. Nada va al 911.", // ✦
+  vol_step1: "Agrega tu nombre (opcional)", // ✦
+  vol_step2: "Agrega un teléfono o correo", // ✦
+  vol_step3: "Cuéntanos en qué piensas (opcional)", // ✦
+  vol_step4: "Envía tu interés", // ✦
+  vol_whatnext: "MPRCC te contacta para darte la bienvenida. Esto no te compromete a nada.", // ✦
+  sg_gate_step1: "Lee la nota de seguridad", // ✦
+  sg_gate_step2: "Elige para qué es SafeGround para ti", // ✦
+  sg_gate_step3: "Acepta para continuar", // ✦
+  sg_gate_whatnext: "Luego puedes buscar ayuda, registrarte y mensajear a tus personas. No necesitas cuenta.", // ✦
 
 };
 
