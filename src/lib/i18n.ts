@@ -945,6 +945,16 @@ const EN = {
   sg_gate_step2: "Choose what SafeGround is for you", // ✦
   sg_gate_step3: "Agree to continue", // ✦
   sg_gate_whatnext: "Then you can find help, check in, and message your people. No account needed.", // ✦
+  // ── Check-in deep-link focus (backlog 84dd5b25, owner-flagged) ────────
+  // Tapping a check-in push lands on the friends map with the fresh FUZZED pin
+  // highlighted. Calm and factual: no urgency wording, and the name appears
+  // only when the notification's own check-in matched a row the viewer can
+  // already see. {name} = the peer's first name (owner copy-read owed).
+  ck_focus_named: "{name} checked in near here.", // ✦
+  ck_focus_any: "A check-in just came in near here.", // ✦
+  ck_focus_older: "This check-in is from earlier — the area may have changed since.", // ✦
+  ck_focus_note: "You're seeing the approximate area (~150m), not their exact spot.", // ✦
+  ck_focus_pin: "This check-in", // ✦
 } as const;
 
 export type I18nKey = keyof typeof EN;
@@ -1813,6 +1823,12 @@ const ES: Partial<Record<I18nKey, string>> = {
   sg_gate_step3: "Acepta para continuar", // ✦
   sg_gate_whatnext: "Luego puedes buscar ayuda, registrarte y mensajear a tus personas. No necesitas cuenta.", // ✦
 
+  // Deep-link del registro (84dd5b25): mismo tono tranquilo, mismo sentido.
+  ck_focus_named: "{name} se registró cerca de aquí.", // ✦
+  ck_focus_any: "Un registro acaba de llegar cerca de aquí.", // ✦
+  ck_focus_older: "Este registro es de antes — el área puede haber cambiado.", // ✦
+  ck_focus_note: "Estás viendo el área aproximada (~150m), no su lugar exacto.", // ✦
+  ck_focus_pin: "Este registro", // ✦
 };
 
 /* ── Lookup (EN fallback — never blank) ────────────────────────── */

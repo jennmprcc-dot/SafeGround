@@ -78,7 +78,12 @@ self.addEventListener("push", (event) => {
   const n = (data && data.notification) || {};
   const title = n.title || "SafeGround";
   const body = n.body || "";
-  const target = (data && data.data && data.data.url) || "/";
+  // Same target resolution as the SDK path above (fcm_options.link first) so a
+  // deep link like /checkin?focus=checkin:<id> still reaches the tap handler.
+  const target =
+    (data && data.fcm_options && data.fcm_options.link) ||
+    (data && data.data && data.data.url) ||
+    "/";
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
@@ -94,6 +99,8 @@ self.addEventListener("notificationclick", (event) => {
   const raw = (event.notification.data && event.notification.data.url) || "/";
   // Only open same-origin app paths — never follow an arbitrary URL.
   const target = typeof raw === "string" && raw.startsWith("/") ? raw : "/";
+  const targetPath = target.split("?")[0];
+  const absolute = self.location.origin + target;
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
@@ -104,12 +111,22 @@ self.addEventListener("notificationclick", (event) => {
         } catch (err) {
           here = "";
         }
-        // If the app is already on the target page, just bring it forward.
-        if (here !== "" && here === target.split("?")[0]) return client.focus();
+        if (here !== "" && here === targetPath) {
+          // Same page. Plain page targets just come forward. A tap that carries
+          // a query (e.g. /checkin?focus=checkin:<id>) must still be delivered:
+          // an app already sitting on /checkin has no way to know a FRESH
+          // check-in arrived, so navigate it to the deep link — the app then
+          // scrolls the friends map in and highlights the new pin. Only when
+          // the app is already on that exact URL do we just focus it.
+          if (!target.includes("?") || client.url === absolute) return client.focus();
+          if ("navigate" in client && typeof client.navigate === "function") {
+            return Promise.all([client.navigate(absolute), client.focus()]).then(() => undefined);
+          }
+          return client.focus();
+        }
         // Otherwise route the open app to the notification's page (an app
         // open on an old page would otherwise stay there after the tap).
         if ("navigate" in client && typeof client.navigate === "function") {
-          const absolute = self.location.origin + target;
           return Promise.all([client.navigate(absolute), client.focus()]).then(() => undefined);
         }
         if ("focus" in client) return client.focus();

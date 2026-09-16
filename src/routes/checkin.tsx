@@ -14,8 +14,8 @@
  * createCheckIn/getMyCheckIn/…) is deprecated and NOT used on this route — the
  * peer graph, groups and check-ins all key on that one phone.
  */
-import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, Link, Outlet, useRouterState, useSearch } from "@tanstack/react-router";
 import { AppShell, CrisisSheet } from "~/components/shell";
 import {
   BottomSheet,
@@ -40,6 +40,12 @@ import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { StepGuide } from "~/components/stepGuide";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
+import {
+  CHECKIN_FOCUS_EVENT,
+  type CheckInFocus,
+  firstNameOf,
+  parseCheckInFocus,
+} from "~/lib/checkinFocus";
 
 /* ── Row shapes from the phone-keyed API (GET /api/checkin) ─────── */
 interface MineRow {
@@ -396,10 +402,25 @@ function ConfirmSheet({
   );
 }
 
-/* ── find-my-friend map (§4d) — fuzzed pins + approximate circles ─ */
-function FriendsMap({ peers }: { peers: FriendRow[] }) {
+/* ── find-my-friend map (§4d) — fuzzed pins + approximate circles ─
+ * Backlog 84dd5b25: `focusId` marks the ONE check-in the push deep-linked to
+ * and draws a calm halo + label on its existing FUZZED pin. Nothing here reads,
+ * receives or draws a coordinate — the pins are the same decorative layout as
+ * before; only the highlight is new. */
+function FriendsMap({
+  peers,
+  focusId,
+  focusLabel,
+}: {
+  peers: FriendRow[];
+  focusId?: string | null;
+  focusLabel?: string | null;
+}) {
   return (
-    <div className="relative flex h-[240px] flex-col overflow-hidden rounded-[16px] border border-sg-line bg-sg-sky-wash">
+    <div
+      className="relative flex h-[240px] flex-col overflow-hidden rounded-[16px] border border-sg-line bg-sg-sky-wash"
+      data-sg-friends-map="1"
+    >
       <div
         aria-hidden
         className="absolute inset-0 opacity-60"
@@ -408,9 +429,30 @@ function FriendsMap({ peers }: { peers: FriendRow[] }) {
       {peers.map((p, i) => {
         const left = 15 + ((i * 43) % 62);
         const top = 18 + ((i * 41) % 44);
+        const focused = Boolean(focusId) && p.id === focusId;
         return (
-          <div key={p.id} className="absolute" style={{ left: `${left}%`, top: `${top}%` }} aria-hidden>
-            {p.overdue ? (
+          <div
+            key={p.id}
+            className="absolute"
+            style={{ left: `${left}%`, top: `${top}%` }}
+            aria-hidden
+            data-sg-focus-pin={focused ? "1" : undefined}
+          >
+            {focused ? (
+              /* The fresh check-in: a soft static halo (no flashing — calm
+                 first) around a bigger pin, with a small "This check-in" tag. */
+              <span className="relative block">
+                <span className="absolute -inset-3 rounded-full bg-sg-sky/20 ring-2 ring-sg-sky/45" />
+                <span className="relative flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-sg-sky shadow-md">
+                  <PersonIcon size={18} className="text-white" />
+                </span>
+                {focusLabel ? (
+                  <span className="absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full bg-sg-card px-2 py-1 text-small font-medium text-sg-ink shadow-md">
+                    {focusLabel}
+                  </span>
+                ) : null}
+              </span>
+            ) : p.overdue ? (
               <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-sg-clay shadow-md">
                 <PersonIcon size={14} className="text-white" />
               </span>
@@ -432,6 +474,28 @@ function FriendsMap({ peers }: { peers: FriendRow[] }) {
       </span>
     </div>
   );
+}
+
+/**
+ * Which check-in the screen should point at (backlog 84dd5b25).
+ * Two delivery paths, one behaviour: the `focus` search param (notification
+ * tapped while the app was closed → the service worker navigates the window to
+ * /checkin?focus=checkin:<id>) and the in-memory hand-off event (notification
+ * tapped / push received while the app is already open). The most recent wins.
+ */
+function useCheckInFocus(queryFocus: string | undefined): CheckInFocus {
+  const fromQuery = useMemo(() => parseCheckInFocus(queryFocus), [queryFocus]);
+  const [handoff, setHandoff] = useState<CheckInFocus | null>(null);
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const detail = (e as CustomEvent<{ id?: string | null }>).detail;
+      const id = typeof detail?.id === "string" && detail.id ? detail.id : null;
+      setHandoff({ active: true, id });
+    };
+    window.addEventListener(CHECKIN_FOCUS_EVENT, onFocus);
+    return () => window.removeEventListener(CHECKIN_FOCUS_EVENT, onFocus);
+  }, []);
+  return handoff ?? fromQuery;
 }
 
 /* ── NOTE-1 composer sheet — preset heart + custom ≤140, honest save ── */
@@ -527,6 +591,16 @@ function CheckInPage() {
   const [composer, setComposer] = useState<{ name: string; userId: string; preset: string } | null>(null);
   const [savedNotes, setSavedNotes] = useState<Array<{ id: string; recipientName: string }>>([]);
   const [helpPeer, setHelpPeer] = useState<FriendRow | null>(null);
+  /* ── Check-in deep-link focus (backlog 84dd5b25) ───────────────────────
+   * The check-in push links to /checkin?focus=checkin:<id> (app closed → the
+   * service worker navigates here) and an already-open app gets the same
+   * target as an in-memory event (src/lib/fcm.ts). One calm outcome either
+   * way: the "Friends sharing with you" map scrolls into view with the fresh
+   * FUZZED pin highlighted. Query param + event only — no schema, no storage,
+   * no location of any kind travels in the link. */
+  const checkinSearch = useSearch({ from: "/checkin" }) as { focus?: string };
+  const focus = useCheckInFocus(checkinSearch.focus);
+  const friendsSectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!phone) {
@@ -559,6 +633,56 @@ function CheckInPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phone, shareTick]);
+
+  /**
+   * The check-in the deep link points at. When the link carried an id we use
+   * exactly that row; if the id is gone (peer paused sharing / the check-in
+   * expired) we still scroll to the map but fall back to the newest row so the
+   * caption never names the wrong person. No id → newest row (the push that
+   * arrived is by definition the freshest one).
+   */
+  const focusRow = useMemo(() => {
+    if (!focus.active) return { row: null as FriendRow | null, named: false };
+    if (focus.id) {
+      const match = friends.find((f) => f.id === focus.id);
+      if (match) return { row: match, named: true };
+    }
+    return { row: friends[0] ?? null, named: false };
+  }, [focus.active, focus.id, friends]);
+
+  /** Calm caption + the one-line privacy reminder under it. */
+  const focusCaption = useMemo(() => {
+    const row = focusRow.row;
+    if (!focus.active || !row) return null;
+    if (row.overdue) return t("ck_focus_older");
+    const name = focusRow.named ? firstNameOf(row.peerName) : "";
+    return name ? t("ck_focus_named").replace("{name}", name) : t("ck_focus_any");
+  }, [focus.active, focusRow, t]);
+
+  const focusPinId = focus.active && focusRow.row ? focusRow.row.id : null;
+
+  /** Scroll the friends map into view once the list for this target is on
+   * screen. Runs on both delivery paths (fresh load with the query param, or
+   * an event while the app is open) — and again when a NEW id arrives. */
+  useEffect(() => {
+    if (!focus.active || loading) return;
+    const el = friendsSectionRef.current;
+    if (!el) return;
+    let reduce = false;
+    try {
+      reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch {
+      reduce = false;
+    }
+    const timer = window.setTimeout(() => {
+      try {
+        el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      } catch {
+        el.scrollIntoView();
+      }
+    }, 200); // let the caption + pins paint before we move the viewport
+    return () => window.clearTimeout(timer);
+  }, [focus.active, focus.id, loading, friends.length]);
 
   const mutually = useMemo(() => peers.filter((p) => p.mutual), [peers]);
   const acceptedPeers = mutually; // accepted rows rendered on /checkin (full manage lives on PEER-1)
@@ -902,15 +1026,32 @@ function CheckInPage() {
             </section>
 
             {/* find-my-friend (§4d) */}
-            <section>
+            <section ref={friendsSectionRef} data-sg-friends-section={focus.active ? "focus" : undefined}>
               <div className="mb-2 flex items-center justify-between px-1">
                 <p className="text-small font-medium text-sg-ink">Friends sharing with you</p>
               </div>
+              {/* Deep-link caption (backlog 84dd5b25): calm, names the person
+                  only when the link's check-in id matched a row we can see. */}
+              {focusCaption ? (
+                <div
+                  role="status"
+                  data-sg-focus-caption="1"
+                  className="mb-2 flex items-start gap-3 rounded-[12px] border border-sg-sky/45 bg-sg-sky-wash px-3 py-3"
+                >
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sg-card shadow-sm">
+                    <PersonIcon size={16} className="text-sg-sky" aria-hidden />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-body font-medium text-sg-ink">{focusCaption}</span>
+                    <span className="block text-small text-sg-ink-soft">{t("ck_focus_note")}</span>
+                  </span>
+                </div>
+              ) : null}
               {/* FRIEND-1 privacy copy — verbatim (spec §1.3) */}
               <p className="px-1 pb-2 text-small text-sg-ink-soft">
                 Approximate areas only (~150m) · 24 hours · never background · stop anytime in Check in.
               </p>
-              <FriendsMap peers={friends} />
+              <FriendsMap peers={friends} focusId={focusPinId} focusLabel={focusCaption ? t("ck_focus_pin") : null} />
               <ul className="mt-2 flex flex-col">
                 {friends.length === 0 ? (
                   <EmptyState
@@ -920,7 +1061,10 @@ function CheckInPage() {
                   />
                 ) : (
                   friends.map((p) => (
-                    <ListRow key={p.id}>
+                    <ListRow
+                      key={p.id}
+                      className={focusPinId === p.id ? "rounded-[12px] bg-sg-sky-wash px-2" : undefined}
+                    >
                       <IconTile wash={p.overdue ? "bg-sg-clay-wash" : "bg-sg-sage-wash"}>
                         <PersonIcon size={20} />
                       </IconTile>
@@ -1018,7 +1162,16 @@ function CheckInPage() {
   );
 }
 
-export const Route = createFileRoute("/checkin")({ component: CheckInRouteShell });
+export const Route = createFileRoute("/checkin")({
+  component: CheckInRouteShell,
+  // Deep-link target for the check-in push (backlog 84dd5b25):
+  // `/checkin?focus=checkin[:<checkInId>]`. Optional and read-only — the param
+  // only moves the viewport + highlights one existing fuzzed pin; it cannot
+  // unlock anything a viewer (a mutual trusted peer) couldn't already see.
+  validateSearch: (search: Record<string, unknown>): { focus?: string } => ({
+    focus: typeof search.focus === "string" && search.focus.length > 0 ? search.focus.slice(0, 96) : undefined,
+  }),
+});
 
 /**
  * Layout branch for the /checkin family (P1 outlet fix, 2026-09-08).

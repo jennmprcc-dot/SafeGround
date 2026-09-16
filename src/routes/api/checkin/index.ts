@@ -250,6 +250,9 @@ async function postCheckin(c: { request: Request }): Promise<Response> {
         senderName: me[0]?.display_name ?? null,
         recipients,
         checkInsLast24h: today,
+        // Tapping the push lands on /checkin?focus=checkin:<id> — the friends
+        // map scrolled into view with THIS fuzzed pin highlighted (84dd5b25).
+        checkInId: row.id,
       });
       notified = r.notified;
       sent = r.sent;

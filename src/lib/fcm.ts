@@ -15,6 +15,7 @@
  *  5. POST /api/push/register with {phone, token} → stored server-side
  */
 import type { PushPublicConfig } from "~/lib/pushServer";
+import { checkInIdFromLink, isCheckInFocusLink, requestCheckInFocus } from "~/lib/checkinFocus";
 
 const APP_COMPAT_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js";
 const MESSAGING_COMPAT_URL = "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js";
@@ -29,10 +30,16 @@ interface FirebaseAppCompat {
  * INSTANCE (fb.messaging(app)) — never on the global `firebase` object.
  * window.firebase only carries initializeApp + messaging (+ apps).
  */
+interface MessagingPayload {
+  notification?: { title?: string; body?: string };
+  /** Data-only extras we attach to a push (never PII — e.g. the tap URL). */
+  data?: Record<string, string>;
+  fcmOptions?: { link?: string };
+}
 interface MessagingCompat {
   messaging: (app: unknown) => unknown;
   getToken?: (opts: { vapidKey: string }) => Promise<string>;
-  onMessage?: (cb: (payload: { notification?: { title?: string; body?: string } }) => void) => void;
+  onMessage?: (cb: (payload: MessagingPayload) => void) => void;
   deleteToken?: () => Promise<boolean>;
 }
 interface FirebaseCompat {
@@ -174,6 +181,52 @@ export async function registerPushSW(): Promise<ServiceWorkerRegistration> {
   return reg;
 }
 
+/* ── push tap-through (backlog 84dd5b25) ─────────────────────────────
+ * Every push we send carries an fcm_options.link (a same-origin app path —
+ * check-ins deep-link to /checkin?focus=checkin:<id>). The service worker
+ * handles a notification tapped while the app is closed; these two helpers
+ * cover the FOREGROUND case: the app is open and the browser hands the
+ * message to onMessage instead of the worker. */
+
+/** The link inside a foreground payload — same order as the service worker. */
+function pushLinkFrom(payload: MessagingPayload | undefined): string {
+  const p = payload ?? {};
+  const raw = p.fcmOptions?.link ?? p.data?.url ?? "";
+  return typeof raw === "string" && raw.startsWith("/") ? raw : "/";
+}
+
+/**
+ * Route the OPEN app to a push link. We never reload when we don't have to:
+ * a link that only adds a `focus` param to the page we're already on is handed
+ * to the live screen as an in-memory event (so nothing typed is lost and the
+ * map still scrolls + highlights). Anything else navigates for real.
+ */
+function openPushLink(link: string): void {
+  if (typeof window === "undefined") return;
+  const target = typeof link === "string" && link.startsWith("/") ? link : "/";
+  const here = window.location.pathname + window.location.search;
+  if (here === target) {
+    if (isCheckInFocusLink(target)) requestCheckInFocus(checkInIdFromLink(target));
+    return;
+  }
+  if (target.split("?")[0] !== window.location.pathname) {
+    window.location.assign(target);
+    return;
+  }
+  if (isCheckInFocusLink(target)) {
+    // Same page, fresh check-in: mirror the deep link in the address bar (so a
+    // refresh lands in the same place) and focus live.
+    try {
+      window.history.replaceState(null, "", target);
+    } catch {
+      /* history is best-effort */
+    }
+    requestCheckInFocus(checkInIdFromLink(target));
+    return;
+  }
+  window.location.assign(target);
+}
+
 /* ── full registration flow. phone = sender/owner identity (digits) ── */
 export async function registerDevicePush(phone: string, deviceLabel?: string): Promise<FcmStatus> {
   if (!pushSupported()) {
@@ -221,12 +274,30 @@ export async function registerDevicePush(phone: string, deviceLabel?: string): P
   if (m.onMessage) {
     m.onMessage((payload) => {
       const n = payload.notification;
+      // Tap-through target: same resolution order as the service worker
+      // (fcm_options.link first). Same-origin app paths only.
+      const link = pushLinkFrom(payload);
       if (n?.title && typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
-          new Notification(n.title, { body: n.body ?? "" });
+          const note = new Notification(n.title, { body: n.body ?? "", icon: "/icon-192.png", badge: "/favicon.png", data: { url: link } });
+          note.onclick = () => {
+            try {
+              window.focus();
+            } catch {
+              /* some browsers refuse programmatic focus */
+            }
+            note.close();
+            openPushLink(link);
+          };
         } catch {
           /* desktop in-page notification is best-effort */
         }
+      }
+      // Check-in push while the app is ALREADY open on the check-in screen:
+      // hand the focus to the live UI (scroll + highlight) so the person never
+      // has to go hunting for the pin (backlog 84dd5b25).
+      if (isCheckInFocusLink(link) && typeof window !== "undefined" && window.location.pathname === "/checkin") {
+        requestCheckInFocus(checkInIdFromLink(link));
       }
     });
   }
