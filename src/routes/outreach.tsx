@@ -38,6 +38,19 @@ const STAFF_PIN_SESSION = "sg.staff.pin";
 
 type Tab = "sweeps" | "alerts" | "offers" | "needs" | "volunteers" | "more";
 
+/** Pure resolver for the dashboard tab from the URL query. Same fallback
+ * semantics as the original mount-only resolution ("sweeps" when no valid tab):
+ * tab=alerts|sweeps|more|volunteers pass through; tab=offers|needs pass
+ * through (Pass 2 queue deep links); tab=donations resolves to the Offers
+ * queue unless queue=requests (the Needs/request queue). Kept module-level so
+ * both first paint and the URL-sync effect use the exact same function. */
+function resolveTab(search: { tab?: string; queue?: string }): Tab {
+  const q = search.tab;
+  if (q === "alerts" || q === "sweeps" || q === "more" || q === "volunteers" || q === "offers" || q === "needs") return q;
+  if (q === "donations") return search.queue === "requests" ? "needs" : "offers";
+  return "sweeps";
+}
+
 interface SweepItem {
   id: string;
   status: string;
@@ -138,21 +151,21 @@ function OutreachPage() {
   const [resetBusy, setResetBusy] = useState(false);
   const [state, setState] = useState<LoadState>({ kind: "idle" });
   // 3-mode nav: /outreach?tab=alerts (Urgent Dispatch sub-tab) reuses the
-  // existing tab state — default tab follows the query param when valid.
+  // existing tab state — the tab follows the query param when valid. First
+  // paint resolves once; the effect below re-syncs on SPA navigations.
   const outreachSearch = useSearch({ from: "/outreach" }) as { tab?: string; queue?: string };
-  // 3-mode nav + Pass 2 push links: /outreach?tab=donations&queue=offers|requests
-  // resolves to the Offers/Needs queue tabs; tab=alerts|sweeps|more unchanged.
-  const initialTab: Tab =
-    outreachSearch.tab === "alerts" || outreachSearch.tab === "sweeps" || outreachSearch.tab === "more" || outreachSearch.tab === "volunteers"
-      ? outreachSearch.tab
-      : outreachSearch.tab === "offers" || outreachSearch.tab === "needs"
-        ? outreachSearch.tab
-        : outreachSearch.tab === "donations"
-          ? outreachSearch.queue === "requests"
-            ? "needs"
-            : "offers"
-          : "sweeps";
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const [tab, setTab] = useState<Tab>(resolveTab(outreachSearch));
+  // Owner QA 2026-09-16 "admin needs doesn't open or flickers": the admin
+  // sub-tab chips navigate via <TabAnchor to="/outreach" search=...> — same
+  // route, new query — and TanStack keeps this component MOUNTED, so the
+  // mount-only initialTab above never re-ran and the panel stayed on the old
+  // tab. Keep the panel keyed to the URL: only fires when the query actually
+  // changes (SPA navigation), so in-page tab-button clicks (setTab, no URL
+  // change) behave exactly as before. load() is NOT re-triggered — the mount
+  // effect stays []-keyed; only the visible panel switches.
+  useEffect(() => {
+    setTab(resolveTab(outreachSearch));
+  }, [outreachSearch.tab, outreachSearch.queue]);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [clearFor, setClearFor] = useState<string | null>(null);
