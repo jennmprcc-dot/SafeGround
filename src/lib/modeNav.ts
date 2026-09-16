@@ -124,7 +124,26 @@ export function routeHint(pathname: string, query: Record<string, string | undef
     pathname.startsWith("/peer-support-queue") ||
     pathname.startsWith("/admin/analytics")
   ) {
-    if (pathname === "/outreach" || pathname.startsWith("/outreach/")) return { mode: "admin", tab: "dispatch" };
+    if (pathname === "/outreach" || pathname.startsWith("/outreach/")) {
+      // Owner QA 2026-09-16 "admin needs doesn't open or flickers": the admin
+      // sub-tab highlight hardcoded "dispatch" for every /outreach URL, so the
+      // Donations chip could never light up. Resolve the highlight from ?tab=
+      // (alerts→dispatch, donations|offers|needs→donations, sweeps→sweeps,
+      // volunteers→volunteers) but only return an id that actually exists in
+      // the admin ModeDef.tabs — anything else falls back to "dispatch" so
+      // activeSubId is always a real chip.
+      const adminTabIds = MODES.find((m) => m.id === "admin")?.tabs.map((t) => t.id) ?? [];
+      const adminSub: Record<string, string> = {
+        alerts: "dispatch",
+        donations: "donations",
+        offers: "donations",
+        needs: "donations",
+        sweeps: "sweeps",
+        volunteers: "volunteers",
+      };
+      const subId = tab ? adminSub[tab] : undefined;
+      return { mode: "admin", tab: subId && adminTabIds.includes(subId) ? subId : "dispatch" };
+    }
     return { mode: "admin", tab: null };
   }
   if (view === "manage") return { mode: "admin", tab: "manage" };
