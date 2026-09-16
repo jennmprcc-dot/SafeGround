@@ -1,11 +1,18 @@
 /**
- * Safe Sleeping Check-Ins — Build B (WIREFRAMES §4).
+ * Safe Sleeping Check-Ins — Build B (WIREFRAMES §4) + peer groups (BUILD B).
  * Consent-first: the owner checks in with an exact point that never leaves the
  * database (the trigger writes the ~150m fuzz), and trusted peers see ONLY the
  * fuzzed "approximate area" via the RLS-confined peer_check_ins view. 12h
  * overdue surfaces as a gentle self-nudge + a peer-visible gentle card — no
  * names/places in toasts, no auto-escalation, no authorities ever.
  * No background tracking: every check-in is a manual, user-initiated action.
+ *
+ * IDENTITY (peer groups spec §2.1 — the hinge): everything here is phone-keyed.
+ * The caller's own number (getAlertIdentity().phone, stored on-device by the
+ * /checkin/peers/invite "own" step) rides the x-sg-phone header; the server
+ * resolves users.id from it. The old demo-UUID path (useAuth + myUserId +
+ * createCheckIn/getMyCheckIn/…) is deprecated and NOT used on this route — the
+ * peer graph, groups and check-ins all key on that one phone.
  */
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
@@ -19,28 +26,68 @@ import {
   EmptyState,
   IconTile,
   ListRow,
+  OfflineBanner,
   SkeletonRows,
   StatusBadge,
   TextArea,
   useToasts,
 } from "~/components/ui";
-import { useAuth } from "~/lib/auth";
-import {
-  createCheckIn,
-  getMyCheckIn,
-  setCheckInSharing,
-  listPeerCheckIns,
-  listTrustedPeers,
-  ensureUser,
-  demoUserId,
-} from "~/lib/server";
-import type { CheckInRow, PeerCheckInRow, PeerRow, DataSource } from "~/lib/server";
+import { type I18nKey, useLanguage } from "~/lib/i18n";
 import { MoonBlanketIcon, HeartIcon, PauseIcon, PersonIcon, LockIcon } from "~/lib/icons";
 import { NoticeConsentOptIn } from "~/components/noticeConsent";
 import { getAlertIdentity } from "~/lib/alertIdentity";
 import { cn } from "~/lib/cn";
 import { SubmitConfirm, type SubmitConfirmState } from "~/components/submitConfirm";
 import { logAnonymousEvent } from "~/lib/analytics/logger";
+
+/* ── Row shapes from the phone-keyed API (GET /api/checkin) ─────── */
+interface MineRow {
+  id: string;
+  checkedInAt: string | null;
+  visibleUntil: string | null;
+  note: string | null;
+  sharePaused: boolean;
+  exactLat: number | null;
+  exactLng: number | null;
+  audienceKind: string | null;
+}
+/** Same reader the peer screen uses (listPeersForUser). */
+interface PeerListRow {
+  userId: string;
+  name: string;
+  status: "accepted" | "pending";
+  mutual: boolean;
+  direction: "in" | "out";
+  codeExpiresAt: string | null;
+}
+/** Fuzzed peer check-ins via public.peer_check_ins — never exact coords. */
+interface FriendRow {
+  id: string;
+  userId: string;
+  peerName: string;
+  fuzzLat: number | null;
+  fuzzLng: number | null;
+  checkedInAt: string;
+  note: string | null;
+  visibleUntil: string | null;
+  sharing: boolean;
+  overdue: boolean;
+}
+interface GroupRow {
+  id: string;
+  name: string;
+  memberCount: number;
+  members: Array<{ userId: string; name: string }>;
+  staleCount: number;
+  createdAt: string | null;
+}
+/** Who sees this check-in (mirrors the server AudienceKind + extra ids). */
+type Audience =
+  | { kind: "me" }
+  | { kind: "all" }
+  | { kind: "group"; groupId: string }
+  | { kind: "peers"; peerIds: string[] };
+
 /** Check-in success consent row: only when the neighbor has a stored phone
  * identity (the consent is tied to that phone). Reads identity lazily so the
  * opt-in appears on the checked-in state without touching auth. */
@@ -48,17 +95,6 @@ function CheckinConsentRow() {
   const [id] = useState(() => getAlertIdentity());
   if (!id?.phone) return null;
   return <NoticeConsentOptIn phone={id.phone} source="checkin" />;
-}
-
-/** Stable per-user UUID for the demo auth wave: same name + same device → same id. */
-function myUserId(name: string): string {
-  let token = "";
-  if (typeof localStorage !== "undefined") token = localStorage.getItem("sg.device") ?? "";
-  if (!token) {
-    token = `dev-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-    if (typeof localStorage !== "undefined") localStorage.setItem("sg.device", token);
-  }
-  return demoUserId(name, token);
 }
 
 /* ── small helpers ──────────────────────────────────────────────── */
@@ -75,59 +111,268 @@ function hoursSince(iso: string): string {
   return `${Math.round(h)}h`;
 }
 
-/* ── check-in confirm sheet (the consent moment, §4b) ──────────── */
+/** Primary-button label derived from the audience (spec §3 #5). */
+function audienceShareLabel(
+  t: (k: I18nKey) => string,
+  audience: Audience,
+  groups: GroupRow[],
+  mutualCount: number,
+): string {
+  if (audience.kind === "me") return t("ck_share_me");
+  if (audience.kind === "all") {
+    return mutualCount === 1
+      ? t("ck_share_all_one")
+      : t("ck_share_all").replace("{n}", String(mutualCount));
+  }
+  if (audience.kind === "group") {
+    const g = groups.find((x) => x.id === audience.groupId);
+    const n = g?.memberCount ?? 0;
+    return t("ck_share_group").replace("{group}", g?.name ?? "…").replace("{n}", String(n));
+  }
+  return audience.peerIds.length === 1
+    ? t("ck_share_pick_one")
+    : t("ck_share_pick").replace("{n}", String(audience.peerIds.length));
+}
+
+/** One GET /api/checkin?phone=… read — the whole page state in a single fetch. */
+async function fetchCheckin(phone: string): Promise<{
+  ok: boolean;
+  mine: MineRow | null;
+  peers: PeerListRow[];
+  friends: FriendRow[];
+  groups: GroupRow[];
+}> {
+  const q = new URLSearchParams({ phone });
+  try {
+    const res = await fetch(`/api/checkin?${q}`, { headers: { "x-sg-phone": phone } });
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      mine?: MineRow | null;
+      peers?: PeerListRow[];
+      friends?: FriendRow[];
+      groups?: GroupRow[];
+    } | null;
+    if (!res.ok || !data || !data.ok) return { ok: false, mine: null, peers: [], friends: [], groups: [] };
+    return {
+      ok: true,
+      mine: data.mine ?? null,
+      peers: data.peers ?? [],
+      friends: data.friends ?? [],
+      groups: data.groups ?? [],
+    };
+  } catch {
+    return { ok: false, mine: null, peers: [], friends: [], groups: [] };
+  }
+}
+
+/* ── check-in confirm sheet (the consent moment, §4b + audience §3) ── */
 function ConfirmSheet({
   open,
   peers,
+  groups,
   onClose,
   onShare,
 }: {
   open: boolean;
-  peers: PeerRow[];
+  peers: PeerListRow[];
+  groups: GroupRow[];
   onClose: () => void;
-  onShare: (opts: { mode: "once" | "pin"; note: string }) => void;
+  onShare: (opts: { note: string; audience: Audience }) => void;
 }) {
-  const [mode, setMode] = useState<"once" | "pin">("once");
+  const { t } = useLanguage();
+  const [seg, setSeg] = useState<"me" | "all" | "group">("all");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const mutual = useMemo(() => peers.filter((p) => p.mutual), [peers]);
   useEffect(() => {
     if (open) {
-      setMode("once");
+      // Default: all my peers when any exist (today's behaviour preserved);
+      // Just me when none. A group is never pre-selected.
+      setSeg(mutual.length > 0 ? "all" : "me");
+      setSelectedGroupId(null);
+      setPickOpen(false);
+      setPicked([]);
       setNote("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  // FRIEND-1: the "Who sees" line names current mutual peers by first name;
-  // N = live mutual count, 0 allowed → button reads "Check in (just for me)"
-  // and the consent line says only you can see it (records for history/self-
-  // nudge, shares with nobody).
-  const mutual = peers.filter((p) => p.mutual);
-  const names = mutual.map((p) => p.displayName.split(" ")[0]).slice(0, 2);
-  const count = mutual.length;
-  const who = count > 0 ? names.join(" and ") : "Only you — no one else sees this";
+
+  const audience: Audience =
+    seg === "me"
+      ? { kind: "me" }
+      : seg === "group" && pickOpen
+        ? { kind: "peers", peerIds: picked }
+        : seg === "group" && selectedGroupId
+          ? { kind: "group", groupId: selectedGroupId }
+          : seg === "group"
+            ? { kind: "group", groupId: "" }
+            : { kind: "all" };
+  const valid =
+    seg === "me" ||
+    seg === "all" ||
+    (seg === "group" && (pickOpen ? picked.length > 0 : selectedGroupId != null));
+  const audienceCount =
+    audience.kind === "me"
+      ? 0
+      : audience.kind === "all"
+        ? mutual.length
+        : audience.kind === "group"
+          ? (groups.find((g) => g.id === audience.groupId)?.memberCount ?? 0)
+          : audience.peerIds.length;
+
+  // ConsentReceipt Who/What — recomputed live from the audience choice.
+  const firstNames = mutual.map((p) => p.name.split(" ")[0]);
+  const who =
+    audience.kind === "me"
+      ? "Only you — no one else sees this"
+      : audience.kind === "group"
+        ? `“${groups.find((g) => g.id === audience.groupId)?.name ?? "a group"}”`
+        : audience.kind === "peers"
+          ? picked.length === 0
+            ? "Only you"
+            : picked
+                .map((id) => mutual.find((m) => m.userId === id)?.name.split(" ")[0])
+                .filter((n): n is string => Boolean(n))
+                .slice(0, 2)
+                .join(" and ")
+          : firstNames.slice(0, 2).join(" and ") + (firstNames.length > 2 ? ` +${firstNames.length - 2} more` : "");
+  const what =
+    audience.kind === "me"
+      ? "Nothing — just your own check-in history"
+      : "Approximate area (~150m) + the time + your note";
+
+  const togglePicked = (id: string) =>
+    setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const segBtn = (k: "me" | "all" | "group", label: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={seg === k}
+      onClick={() => setSeg(k)}
+      className={cn(
+        "flex min-h-[48px] items-center justify-center rounded-[12px] border-2 px-2 text-btn font-medium transition-colors",
+        seg === k ? "border-sg-sage bg-sg-sage-wash text-sg-sage-deep" : "border-sg-line bg-sg-card text-sg-ink-soft",
+      )}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <BottomSheet open={open} onClose={onClose} title="Check in for tonight?">
       <div className="flex flex-col gap-4 pb-2">
-        <ConsentReceipt
-          who={who}
-          what={count > 0 ? "Approximate area (~150m) + the time + your note" : "Nothing — just your own check-in history"}
-          howLong="24 hours, then it disappears"
-        />
+        <ConsentReceipt who={who} what={what} howLong="24 hours, then it disappears" />
+
+        {/* Who gets this check-in? — 3 segments + group picker (spec §3 #2) */}
+        <div className="flex flex-col gap-2">
+          <p className="text-btn font-medium">{t("ck_audience_label")}</p>
+          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("ck_audience_label")}>
+            {segBtn("me", t("ck_aud_me"))}
+            {segBtn("all", t("ck_aud_all"))}
+            {segBtn("group", t("ck_aud_group"))}
+          </div>
+          {mutual.length === 0 ? (
+            <p className="px-1 text-small text-sg-ink-soft">{t("ck_aud_all_disabled")}</p>
+          ) : null}
+          {seg === "group" ? (
+            groups.length === 0 ? (
+              <Link to="/checkin/peers" hash="groups" className="inline-flex min-h-[48px] items-center self-start text-sg-sky underline underline-offset-2">
+                {t("ck_aud_none")}
+              </Link>
+            ) : (
+              <div className="flex flex-wrap gap-2" role="listbox" aria-label={t("ck_aud_group")}>
+                {groups.map((g) => {
+                  const active = !pickOpen && selectedGroupId === g.id;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      disabled={g.memberCount === 0}
+                      onClick={() => {
+                        setSelectedGroupId(g.id);
+                        setPickOpen(false);
+                      }}
+                      className={cn(
+                        "inline-flex min-h-[48px] items-center gap-1.5 rounded-full border-2 px-3 text-btn transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+                        active ? "border-sg-sage bg-sg-sage-wash text-sg-sage-deep" : "border-sg-line bg-sg-card text-sg-ink-soft",
+                      )}
+                    >
+                      <span className="max-w-[160px] truncate">{g.name}</span>
+                      <span className="text-small opacity-70">· {g.memberCount}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          ) : null}
+          {seg === "group" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPickOpen((v) => !v);
+                setSelectedGroupId(null);
+              }}
+              className="inline-flex min-h-[48px] items-center self-start text-sg-sky underline underline-offset-2"
+            >
+              {t("ck_aud_pick")}
+            </button>
+          ) : null}
+          {seg === "group" && pickOpen ? (
+            <div className="flex flex-col gap-1 rounded-[12px] bg-sg-paper px-2 py-2">
+              <label className="flex min-h-[48px] cursor-pointer items-center gap-3 px-2 text-small font-medium text-sg-ink">
+                <input
+                  type="checkbox"
+                  checked={mutual.length > 0 && picked.length === mutual.length}
+                  onChange={() => {
+                    if (picked.length === mutual.length) setPicked([]);
+                    else setPicked(mutual.map((p) => p.userId));
+                  }}
+                  className="h-5 w-5 accent-[#2F6B4F]"
+                />
+                {t("ck_pick_select_all")}
+              </label>
+              <div className="flex flex-col">
+                {mutual.map((p) => (
+                  <label key={p.userId} className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-[12px] px-2">
+                    <input
+                      type="checkbox"
+                      checked={picked.includes(p.userId)}
+                      onChange={() => togglePicked(p.userId)}
+                      className="h-5 w-5 accent-[#2F6B4F]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-body font-medium text-sg-ink">{p.name.split(" ")[0]}</span>
+                      <span className="block text-small text-sg-ink-soft">sees your check-ins</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="px-2 pb-1 text-small text-sg-ink-soft">
+                {t("ck_pick_count").replace("{n}", String(picked.length))}
+              </p>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Where should they look? — one honest option (the old "I'll place a
+             pin" radio was a no-op and is gone; a real pin needs a map the app
+             doesn't ship, so the single location read is the only promise). */}
         <fieldset className="flex flex-col gap-2">
           <legend className="text-btn font-medium">Where should they look?</legend>
           <label className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-[12px] border-2 border-sg-line bg-sg-card px-3">
-            <input type="radio" name="where" checked={mode === "once"} onChange={() => setMode("once")} className="accent-sg-sage" />
+            <input type="radio" name="where" checked onChange={() => undefined} className="accent-sg-sage" />
             <span className="text-body">
               Use my location once
               <span className="block text-small text-sg-ink-soft">reads once, shared only if you say yes</span>
             </span>
           </label>
-          <label className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-[12px] border-2 border-sg-line bg-sg-card px-3">
-            <input type="radio" name="where" checked={mode === "pin"} onChange={() => setMode("pin")} className="accent-sg-sage" />
-            <span className="text-body">
-              I'll place a pin
-              <span className="block text-small text-sg-ink-soft">a nearby spot you choose — no live location</span>
-            </span>
-          </label>
         </fieldset>
+
         <TextArea
           label="Note (optional)"
           helper="e.g. 'out tonight, phone low' — 140 characters"
@@ -136,9 +381,12 @@ function ConfirmSheet({
           onChange={(e) => setNote(e.target.value)}
           placeholder="Anything you want your peers to know?"
         />
-        <Button full onClick={() => onShare({ mode, note })}>
-          {count > 0 ? `Share check-in with ${count} ${count === 1 ? "peer" : "peers"}` : "Check in (just for me)"}
+        <Button full disabled={!valid} onClick={() => onShare({ note, audience })}>
+          {audienceShareLabel(t, audience, groups, mutual.length)}
         </Button>
+        {audience.kind !== "me" && audienceCount > 0 ? (
+          <p className="px-1 text-small text-sg-ink-soft">{t("ck_push_note")}</p>
+        ) : null}
         <Button variant="quiet" full onClick={onClose}>
           Not now
         </Button>
@@ -148,7 +396,7 @@ function ConfirmSheet({
 }
 
 /* ── find-my-friend map (§4d) — fuzzed pins + approximate circles ─ */
-function FriendsMap({ peers }: { peers: PeerCheckInRow[] }) {
+function FriendsMap({ peers }: { peers: FriendRow[] }) {
   return (
     <div className="relative flex h-[240px] flex-col overflow-hidden rounded-[16px] border border-sg-line bg-sg-sky-wash">
       <div
@@ -230,7 +478,7 @@ function NoteComposer({
 
 /* ── "How to help" — overdue peer expander (text/call/outreach steps,
  *   NEVER authorities; spec §1.4 keeps this unchanged) ─────────── */
-function HelpSheet({ peer, onClose }: { peer: PeerCheckInRow | null; onClose: () => void }) {
+function HelpSheet({ peer, onClose }: { peer: FriendRow | null; onClose: () => void }) {
   if (!peer) return null;
   const name = peer.peerName.split(" ")[0];
   return (
@@ -254,14 +502,16 @@ function HelpSheet({ peer, onClose }: { peer: PeerCheckInRow | null; onClose: ()
 
 /* ── Check-in page ──────────────────────────────────────────────── */
 function CheckInPage() {
-  const { signedIn, displayName, signIn } = useAuth();
+  const { t } = useLanguage();
   const { push } = useToasts();
+  const [id] = useState(() => getAlertIdentity());
+  const phone = id?.phone ?? "";
   const [loading, setLoading] = useState(true);
-  const [mine, setMine] = useState<CheckInRow | null>(null);
-  const [mineSource, setMineSource] = useState<DataSource>("demo");
-  const [peers, setPeers] = useState<PeerRow[]>([]);
-  const [friends, setFriends] = useState<PeerCheckInRow[]>([]);
-  const [friendsSource, setFriendsSource] = useState<DataSource>("demo");
+  const [offline, setOffline] = useState(false);
+  const [mine, setMine] = useState<MineRow | null>(null);
+  const [peers, setPeers] = useState<PeerListRow[]>([]);
+  const [friends, setFriends] = useState<FriendRow[]>([]);
+  const [groups, setGroups] = useState<GroupRow[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pauseOpen, setPauseOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
@@ -269,58 +519,75 @@ function CheckInPage() {
   const [locating, setLocating] = useState(false);
   /** Persistent on-screen confirmation of the check-in submit (owner-directed 2026-09-07). */
   const [checkinConfirmed, setCheckinConfirmed] = useState<SubmitConfirmState | null>(null);
+  /** The audience of the LAST successful send this session — drives the honest
+   * "visible to …" line on the status card (the API keeps only audienceKind). */
+  const [lastAudience, setLastAudience] = useState<Audience | null>(null);
   // NOTE-1: composer sheet state + locally-saved note rows (outbox).
   const [composer, setComposer] = useState<{ name: string; userId: string; preset: string } | null>(null);
   const [savedNotes, setSavedNotes] = useState<Array<{ id: string; recipientName: string }>>([]);
-  const [helpPeer, setHelpPeer] = useState<PeerCheckInRow | null>(null);
-
-  const userId = signedIn ? myUserId(displayName) : "";
+  const [helpPeer, setHelpPeer] = useState<FriendRow | null>(null);
 
   useEffect(() => {
-    if (!signedIn) {
+    if (!phone) {
       setLoading(false);
-      setMine(null);
-      setPeers([]);
-      setFriends([]);
       return;
     }
     let alive = true;
     setLoading(true);
-    ensureUser({ data: { userId, displayName } }).catch(() => undefined);
-    Promise.all([
-      getMyCheckIn({ data: { userId } }),
-      listTrustedPeers({ data: { userId } }),
-      listPeerCheckIns({ data: { userId } }),
-    ])
-      .then(([mineRes, peersRes, friendsRes]) => {
+    fetchCheckin(phone)
+      .then((data) => {
         if (!alive) return;
-        setMine(mineRes.row);
-        setMineSource(mineRes.source);
-        setPeers(peersRes.rows);
-        setFriends(friendsRes.rows);
-        setFriendsSource(friendsRes.source);
+        if (data.ok) {
+          setMine(data.mine);
+          setPeers(data.peers);
+          setFriends(data.friends);
+          setGroups(data.groups);
+          setOffline(false);
+        } else {
+          setOffline(true);
+        }
         setLoading(false);
       })
       .catch(() => {
-        if (!alive) {
-          setLoading(false);
-          setMine(null);
-          setPeers([]);
-          setFriends([]);
-        }
+        if (!alive) return;
+        setOffline(true);
+        setLoading(false);
       });
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signedIn, userId, shareTick]);
+  }, [phone, shareTick]);
 
   const mutually = useMemo(() => peers.filter((p) => p.mutual), [peers]);
   const acceptedPeers = mutually; // accepted rows rendered on /checkin (full manage lives on PEER-1)
-  const selfOverdue = mine?.overdue ?? false;
+  const selfOverdue = mine?.checkedInAt
+    ? Date.now() - new Date(mine.checkedInAt).getTime() > 12 * 3_600_000
+    : false;
+  const defaultAudience: Audience = mutually.length > 0 ? { kind: "all" } : { kind: "me" };
 
-  const share = async (opts: { mode: "once" | "pin"; note: string }) => {
+  /** Honest "visible to …" line on the status card (spec §3 status card). */
+  const visibleLine = (): string => {
+    const la = lastAudience;
+    if (la?.kind === "peers") return t("ck_visible_pick").replace("{n}", String(la.peerIds.length));
+    if (la?.kind === "group") {
+      const g = groups.find((x) => x.id === la.groupId);
+      return g
+        ? t("ck_visible_group").replace("{group}", g.name).replace("{n}", String(g.memberCount))
+        : t("ck_visible_group_anon");
+    }
+    if (mine?.audienceKind === "me" || la?.kind === "me") return t("ck_visible_me");
+    if (mine?.audienceKind === "group") return t("ck_visible_group_anon");
+    if (mine?.audienceKind === "peers") return t("ck_visible_peers_anon");
+    return t("ck_visible_all").replace("{n}", String(mutually.length));
+  };
+
+  const share = async (opts: { note: string; audience: Audience }) => {
     setConfirmOpen(false);
+    if (!phone) {
+      push({ kind: "info", message: "Add your number first — then you can check in with your peers." });
+      return;
+    }
     // REAL location only — a single user-initiated device read, used once for
     // this check-in. No stored fallback, no invented point: if the read fails
     // or isn't available, the sender sees a calm notice and tries again.
@@ -344,27 +611,73 @@ function CheckInPage() {
       push({ kind: "error", message: "Couldn't read your location — allow it once, or try again when you can." });
       return;
     }
-    const res = await createCheckIn({ data: { userId, lat, lng, note: opts.note } });
-    if (res.ok) {
-      setMine(res.row);
-      setMineSource(res.source);
-      setShareTick((t) => t + 1);
-      // Anonymous analytics: bare `check_in` counter, ONLY when the check-in
-      // REALLY landed in the DB (source === "db" — demo fallbacks never
-      // count). No coords, no note, no user_id. Fire-and-forget.
-      if (res.source === "db") {
+    const payload = {
+      phone,
+      lat,
+      lng,
+      note: opts.note,
+      audience:
+        opts.audience.kind === "group"
+          ? { kind: "group", groupId: opts.audience.groupId }
+          : opts.audience.kind === "peers"
+            ? { kind: "peers", peerIds: opts.audience.peerIds }
+            : { kind: opts.audience.kind },
+    };
+    try {
+      const res = await fetch("/api/checkin", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-sg-phone": phone },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        id?: string;
+        checkedInAt?: string | null;
+        visibleUntil?: string | null;
+        note?: string | null;
+        sharePaused?: boolean;
+        exactLat?: number | null;
+        exactLng?: number | null;
+        audienceKind?: string | null;
+        notified?: number;
+        error?: string;
+      } | null;
+      if (res.ok && data?.ok) {
+        setMine({
+          id: data.id ?? "",
+          checkedInAt: data.checkedInAt ?? new Date().toISOString(),
+          visibleUntil: data.visibleUntil ?? null,
+          note: data.note ?? null,
+          sharePaused: data.sharePaused === true,
+          exactLat: data.exactLat ?? null,
+          exactLng: data.exactLng ?? null,
+          audienceKind: data.audienceKind ?? null,
+        });
+        setLastAudience(opts.audience);
+        setShareTick((x) => x + 1);
+        // Anonymous analytics: bare `check_in` counter, ONLY when the check-in
+        // REALLY landed in the DB. No coords, no note, no user_id. Fire-and-forget.
         try {
           logAnonymousEvent("check_in");
         } catch {
           /* silent — the check-in already succeeded */
         }
+        // Honest post-send line driven by the SERVER's real delivery counts
+        // (spec §3): notified > 0 → "your people were notified"; 0 → "they'll
+        // see it when they open the app"; "Just me" → the private line.
+        const line =
+          opts.audience.kind === "me"
+            ? t("ck_saved_me")
+            : (data.notified ?? 0) > 0
+              ? t("ck_saved_notified")
+              : t("ck_saved_quiet");
+        setCheckinConfirmed({ saved: true, kind: "saved", line });
+        push({ kind: "success", message: "You're checked in — rest easy." });
+      } else {
+        setCheckinConfirmed({ saved: false, kind: "draft", line: "No connection right now — your draft is saved. Try again when you can." });
+        push({ kind: "error", message: data?.error ?? "No connection right now — your draft is saved. Try again when you can." });
       }
-      // Persistent on-screen confirmation (owner-directed): STAYS until the
-      // next check-in starts. Peers aren't push-notified by this path — the
-      // check-in itself is the notice, so "no team push" copy is the honest one.
-      setCheckinConfirmed({ saved: true, kind: "saved", line: res.source === "db" ? "Saved — your people can see you're okay." : "Saved on this phone — will sync when connected." });
-      push({ kind: "success", message: res.source === "db" ? "You're checked in — rest easy." : "Check-in saved here — will sync when connected." });
-    } else {
+    } catch {
       setCheckinConfirmed({ saved: false, kind: "draft", line: "No connection right now — your draft is saved. Try again when you can." });
       push({ kind: "error", message: "No connection right now — your draft is saved. Try again when you can." });
     }
@@ -372,11 +685,24 @@ function CheckInPage() {
 
   const pauseNow = async (paused: boolean) => {
     setPauseOpen(false);
-    const res = await setCheckInSharing({ data: { userId, paused } });
-    if (res.ok) {
-      setMine((m) => (m ? { ...m, sharePaused: paused } : m));
-      push({ kind: "info", message: paused ? "Sharing is paused — your peers see 'Not sharing right now'." : "Sharing is back on." });
-    } else {
+    if (!phone) {
+      push({ kind: "info", message: "Add your number first — then you can manage sharing." });
+      return;
+    }
+    try {
+      const res = await fetch("/api/checkin/sharing", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-sg-phone": phone },
+        body: JSON.stringify({ phone, paused }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (res.ok && data?.ok) {
+        setMine((m) => (m ? { ...m, sharePaused: paused } : m));
+        push({ kind: "info", message: paused ? "Sharing is paused — your peers see 'Not sharing right now'." : "Sharing is back on." });
+      } else {
+        push({ kind: "error", message: data?.error ?? "Couldn't update right now — try again in a moment." });
+      }
+    } catch {
       push({ kind: "error", message: "Couldn't update right now — try again in a moment." });
     }
   };
@@ -384,8 +710,8 @@ function CheckInPage() {
   // NOTE-1: open the composer (preset pre-fills, editable). The heart button
   // and "Write a note" both land here.
   const openComposer = (name: string, peerId: string, preset = "") => {
-    if (!signedIn) {
-      push({ kind: "info", message: "Sign in to save a note for a friend." });
+    if (!phone) {
+      push({ kind: "info", message: "Add your number first — then you can save a note for a friend." });
       return;
     }
     setComposer({ name: name.split(" ")[0], userId: peerId, preset });
@@ -396,8 +722,8 @@ function CheckInPage() {
   const saveNote = async (peer: { name: string; userId: string }, text: string) => {
     if (!text.trim()) return;
     setComposer(null);
-    const id = getAlertIdentity();
-    if (!id?.phone) {
+    const identity = getAlertIdentity();
+    if (!identity?.phone) {
       // No phone identity yet — keep the draft locally so nothing is lost.
       setSavedNotes((prev) => [...prev, { id: `local-${Date.now()}`, recipientName: peer.name }]);
       push({ kind: "info", message: `Note saved for ${peer.name} — will send when messaging arrives` });
@@ -406,8 +732,8 @@ function CheckInPage() {
     try {
       const res = await fetch("/api/peers/notes", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-sg-phone": id.phone },
-        body: JSON.stringify({ phone: id.phone, userId: peer.userId, note: text.trim().slice(0, 140) }),
+        headers: { "content-type": "application/json", "x-sg-phone": identity.phone },
+        body: JSON.stringify({ phone: identity.phone, userId: peer.userId, note: text.trim().slice(0, 140) }),
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (res.ok && data?.ok) {
@@ -435,21 +761,30 @@ function CheckInPage() {
           <p className="mt-0.5 text-small text-sg-ink-soft">Let someone know you're okay — no rush.</p>
         </header>
 
-        {!signedIn ? (
-          <EmptyState
-            icon={<MoonBlanketIcon size={28} />}
-            title="Check-ins are private by design"
-            body="Sign in so your check-in goes only to people you choose — your exact spot is never shared with anyone else."
-            steps={
-              <Button full onClick={() => { signIn(); push({ kind: "info", message: "Signed in — you can check in with the people you trust." }); }}>
-                Sign in
-              </Button>
-            }
-          />
+        {!phone ? (
+          /* Phone-less state (spec §2.1): calm "add your number" card — the
+             invite screen's own step stores the number via setAlertIdentity. */
+          <Card>
+            <p className="text-body text-sg-ink-soft">
+              Peers are tied to a phone number you use on this device. Add it once and you can check in with the people you trust.
+            </p>
+            <div className="mt-3">
+              <Link to="/checkin/peers/invite" className="block w-full">
+                <Button full>Add my number</Button>
+              </Link>
+            </div>
+          </Card>
         ) : loading ? (
           <SkeletonRows rows={3} />
         ) : (
           <>
+            {offline ? (
+              <OfflineBanner
+                message="No connection — showing what's saved on this phone."
+                onRetry={() => setShareTick((x) => x + 1)}
+              />
+            ) : null}
+
             {/* status card (§4a states) */}
             <Card className={cn(selfOverdue && "border-sg-clay/50 bg-sg-clay-wash/40")}>
               <div className="flex items-start gap-3">
@@ -461,7 +796,7 @@ function CheckInPage() {
                     <>
                       <h2 className="text-h2">You're checked in — rest easy.</h2>
                       <p className="mt-1 text-small text-sg-ink-soft">
-                        {timeLabel(mine.checkedInAt)} · visible to {mutually.length} {mutually.length === 1 ? "peer" : "peers"} until tomorrow {timeLabel(mine.visibleUntil)}
+                        {timeLabel(mine.checkedInAt as string)} · {visibleLine()} until tomorrow {timeLabel(mine.visibleUntil as string)}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button variant="secondary" onClick={() => setConfirmOpen(true)}>Check in again</Button>
@@ -481,7 +816,7 @@ function CheckInPage() {
                   ) : selfOverdue ? (
                     <>
                       <h2 className="text-h2">It's been a while since your last check-in</h2>
-                      <p className="mt-1 text-small text-sg-ink-soft">Want to let {mutually.length > 0 ? mutually[0]?.displayName.split(" ")[0] : "your peers"} know you're okay?</p>
+                      <p className="mt-1 text-small text-sg-ink-soft">Want to let {mutually.length > 0 ? mutually[0]?.name.split(" ")[0] : "your peers"} know you're okay?</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button onClick={() => setConfirmOpen(true)}>Check in now</Button>
                         <Button variant="quiet" onClick={() => push({ kind: "info", message: "Snoozed for 2 hours — we'll gently remind you again." })}>Snooze 2h</Button>
@@ -490,15 +825,16 @@ function CheckInPage() {
                   ) : (
                     <>
                       <h2 className="text-h2">Not checked in tonight</h2>
-                      <p className="mt-1 text-small text-sg-ink-soft">{mutually.length === 0 ? "Check-ins work best with one trusted person." : `Sharing with ${mutually.map((p) => p.displayName.split(" ")[0]).slice(0, 3).join(", ")}.`}</p>
+                      <p className="mt-1 text-small text-sg-ink-soft">{mutually.length === 0 ? "Check-ins work best with one trusted person." : `Sharing with ${mutually.map((p) => p.name.split(" ")[0]).slice(0, 3).join(", ")}.`}</p>
                       <div className="mt-3">
-                        <Button onClick={() => setConfirmOpen(true)}>Check in &amp; share with {mutually.length} {mutually.length === 1 ? "peer" : "peers"}</Button>
+                        <Button onClick={() => setConfirmOpen(true)}>
+                          {audienceShareLabel(t, defaultAudience, groups, mutually.length)}
+                        </Button>
                       </div>
                     </>
                   )}
                 </div>
               </div>
-              {mineSource === "demo" && mine ? <p className="mt-2 text-small text-sg-ink-soft">Demo check-in — shown here until the database connects.</p> : null}
               {checkinConfirmed ? (
                 <div className="mt-2">
                   <SubmitConfirm state={checkinConfirmed} />
@@ -539,7 +875,7 @@ function CheckInPage() {
                     <ListRow key={p.userId}>
                       <IconTile wash="bg-sg-sage-wash"><PersonIcon size={20} /></IconTile>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-body font-medium text-sg-ink">{p.displayName}</span>
+                        <span className="block truncate text-body font-medium text-sg-ink">{p.name}</span>
                         <span className="block text-small text-sg-ink-soft">sees your check-ins · remove anytime</span>
                       </span>
                       <Link to="/checkin/peers" className="inline-flex min-h-[44px] items-center px-1 text-sg-sky underline underline-offset-2">
@@ -555,7 +891,6 @@ function CheckInPage() {
             <section>
               <div className="mb-2 flex items-center justify-between px-1">
                 <p className="text-small font-medium text-sg-ink">Friends sharing with you</p>
-                <p className="text-small text-sg-ink-soft">{friendsSource === "db" ? "live" : "demo"}</p>
               </div>
               {/* FRIEND-1 privacy copy — verbatim (spec §1.3) */}
               <p className="px-1 pb-2 text-small text-sg-ink-soft">
@@ -595,7 +930,7 @@ function CheckInPage() {
                           How to help &rarr;
                         </Button>
                       ) : (
-                        <Button variant="quiet" onClick={() => openComposer(p.peerName, p.peerId, "Thinking of you \u2665")} className="!min-h-[44px] !px-2" aria-label={`Send a kind note to ${p.peerName}`}>
+                        <Button variant="quiet" onClick={() => openComposer(p.peerName, p.userId, "Thinking of you \u2665")} className="!min-h-[44px] !px-2" aria-label={`Send a kind note to ${p.peerName}`}>
                           <HeartIcon size={18} aria-hidden />
                         </Button>
                       )}
@@ -627,7 +962,7 @@ function CheckInPage() {
           what="Approximate area (~150m) + time + note"
           howLong="24 hours, then it disappears"
           stopLabel="Pause sharing"
-          onStop={() => (signedIn ? setPauseOpen(true) : push({ kind: "info", message: "Sign in to manage sharing." }))}
+          onStop={() => (phone ? setPauseOpen(true) : push({ kind: "info", message: "Add your number first — then you can manage sharing." }))}
         />
 
         <button type="button" onClick={() => setCrisisOpen(true)} className="self-start text-sg-sky underline underline-offset-2 min-h-[48px] inline-flex items-center">
@@ -635,7 +970,13 @@ function CheckInPage() {
         </button>
       </div>
 
-      <ConfirmSheet open={confirmOpen} peers={peers} onClose={() => setConfirmOpen(false)} onShare={(o) => void share(o)} />
+      <ConfirmSheet
+        open={confirmOpen}
+        peers={peers}
+        groups={groups}
+        onClose={() => setConfirmOpen(false)}
+        onShare={(o) => void share(o)}
+      />
 
       <NoteComposer
         open={composer != null}
