@@ -262,7 +262,18 @@ export async function fanOutDonationAdmins(
  * In route (different kinds) each send their own message.
  * --------------------------------------------------------------------- */
 
-export type DonationPingKind = "claim" | "in_route" | "reschedule";
+export type DonationPingKind = "claim" | "in_route" | "reschedule" | "not_in_supplies";
+
+/** Push bodies are clipped — a notification is not a letter. The owner's "not
+ *  in supplies right now" copy is the longest of the set (it explains WHY the
+ *  wait is normal), so it gets a longer allowance and still never arrives as a
+ *  half-chopped sentence. SMS always carries the full body. */
+const PUSH_BODY_CAP: Record<DonationPingKind, number> = {
+  claim: 140,
+  in_route: 140,
+  reschedule: 140,
+  not_in_supplies: 200,
+};
 
 export interface DonationPingResult {
   kind: DonationPingKind;
@@ -349,8 +360,9 @@ const clipPing = (raw: string, max: number): string => {
 
 /**
  * Tell the submitter what's happening with their own row. Called by
- * /api/donations/claim (claim), /api/donations/in-route (in_route) and
- * /api/donations/complete (reschedule). Returns counts/reasons only — never
+ * /api/donations/claim (claim), /api/donations/in-route (in_route),
+ * /api/donations/complete (reschedule) and /api/donations/not-in-supplies
+ * (not_in_supplies). Returns counts/reasons only — never
  * throws, never logs, never echoes a phone number.
  */
 export async function pingDonationSubmitter(opts: {
@@ -380,6 +392,9 @@ export async function pingDonationSubmitter(opts: {
   const copy = DONATION_PING_COPY;
   let title: string;
   let body: string;
+  /** Set only when the push body must differ from the text body (the OS clips
+   *  a notification; the text message always carries the full copy). */
+  let pushBody: string | null = null;
   if (opts.kind === "claim") {
     title = opts.offer ? copy.title.claimOffer.en : copy.title.claim.en;
     body = opts.offer
@@ -388,6 +403,13 @@ export async function pingDonationSubmitter(opts: {
   } else if (opts.kind === "in_route") {
     title = copy.title.inRoute.en;
     body = fillPing(opts.offer ? copy.inRouteOffer.en : copy.inRoute.en, { item });
+  } else if (opts.kind === "not_in_supplies") {
+    // Owner copy, verbatim in the text. The push uses the same message with
+    // its middle explanation left out (both sentences verbatim from it) so the
+    // notification stays readable.
+    title = copy.title.notInSupplies.en;
+    body = fillPing(copy.notInSupplies.en, { item });
+    pushBody = fillPing(copy.notInSuppliesPush.en, { item });
   } else {
     title = copy.title.reschedule.en;
     body = fillPing(opts.offer ? copy.rescheduleOffer.en : copy.reschedule.en, {
@@ -396,8 +418,11 @@ export async function pingDonationSubmitter(opts: {
     });
   }
   // Defensive: nothing user-visible may carry a phone-length digit run.
-  if (/\d{7,}/.test(`${title} ${body}`)) {
+  let pushOut = pushBody ?? body;
+  if (/\d{7,}/.test(`${title} ${body} ${pushOut}`)) {
     body = body.replace(/[0-9]{7,}/g, "…");
+    pushOut = pushOut.replace(/[0-9]{7,}/g, "…");
+    pushBody = pushOut;
   }
 
   /* 1. Push — every device token this phone registered (empty for anyone who
@@ -410,7 +435,7 @@ export async function pingDonationSubmitter(opts: {
         const r = await sendFcmMessage({
           token,
           title,
-          body: clipPing(body, 140),
+          body: clipPing(pushBody ?? body, PUSH_BODY_CAP[opts.kind]),
           link: DONATION_REQUESTER_LINK,
         });
         if (r.status === "sent") out.pushSent += 1;
