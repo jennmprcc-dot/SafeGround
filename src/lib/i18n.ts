@@ -371,18 +371,18 @@ const EN = {
   // Resource mentions are live links to /help (owner-directed 2026-09-12).
   // The body is split so "food and shelter" can be the link label.
   home_story_body: "", // superseded by _a/_link/_b — kept for contract only
-  home_story_body_a: "SafeGround is your free, private helper. Find ",
+  home_story_body_a: "SafeGround is MPRCC's free, private helper. Find ", // ✦
   home_story_body_link: "food and shelter",
-  home_story_body_b: " fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. Just real help when you need it.",
+  home_story_body_b: " fast. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking. It's not just mutual aid — it's lived-experience support and advocacy on the path to a wellness village: tiny homes and permanent housing for all.", // ✦
   home_story_more: "Tell me more",
   // Landing page = "What is SafeGround?" (PASS 3 §2.2) — the home route is
   // rebuilt as a static 7-block page. EN copy here is the owner's verbal ask
   // lightly reflowed; every string is ✦ for the owner's copy-read.
-  home_what_h1: "A calm place to find help.", // ✦
-  home_what_sub: "Made by neighbors who've been there.", // ✦
+  home_what_h1: "A hand from people who've been there.", // ✦
+  home_what_sub: "SafeGround is made by MPRCC — a peer-led collective founded by people with lived experience of homelessness.", // ✦
   home_what_body:
-    "SafeGround is your free, private helper. Find food, shelter, and care. Get heads-ups about sweeps. Let your people know you're okay with one tap. No account. No background tracking, ever.", // ✦
-  home_who: "For anyone in Marin who needs a hand — or wants to give one.", // ✦
+    "SafeGround is MPRCC's free, private helper. Find food, shelter, and care. Get heads-up alerts about sweeps. Let your people know you're okay with one tap. No account. No background tracking, ever. We're more than mutual aid — we're lived-experience support and advocacy, walking alongside you toward the long road home: a peer-led wellness village, tiny homes, and permanent housing for all. We hold a seat on the County Homeless Policy Steering Committee and the Marin County Lived Experience Advisory Board — peer voices shaping policy.", // ✦
+  home_who: "For anyone in Marin who needs a hand — or wants to give one. Six-plus years of peer-led outreach, advocacy, and community care.", // ✦
   home_here_for: "What are you here for?", // ✦
   home_sweep_link: "Heads-up near you? See sweep heads-ups", // ✦
   home_crisis_link: "In crisis? Talk to someone", // ✦
@@ -391,7 +391,7 @@ const EN = {
   home_share_h: "Pass it along", // ✦
   home_share_sub: "Know someone who could use this? Share SafeGround.", // ✦
   home_share_btn: "Share SafeGround", // ✦
-  home_share_text: "A calm place to find help — from MPRCC.", // ✦
+  home_share_text: "A calm way to find help, stay safe, and get home — from MPRCC.", // ✦
   home_share_copied: "Link copied — pass it along.", // ✦
   home_share_link_label: "Copy this link:", // ✦
   home_qr_show: "Show QR code", // ✦
@@ -1195,16 +1195,16 @@ const ES: Partial<Record<I18nKey, string>> = {
   // Owner copy is never auto-translated — empty ES value falls back to EN
   // (translate() treats falsy as missing; container labels stay ES as-is).
   home_story_body: "",
-  home_story_body_a: "",
-  home_story_body_link: "",
-  home_story_body_b: "",
+  home_story_body_a: "SafeGround es el asistente gratuito y privado de MPRCC. Encuentra ", // ✦
+  home_story_body_link: "comida y refugio", // ✦
+  home_story_body_b: " rápido. Recibe avisos de barridos. Haz saber a los tuyos que estás bien con un toque. Sin cuenta. Sin seguimiento de ubicación. No es solo ayuda mutua — es apoyo y defensa desde la experiencia vivida, en el camino a una aldea de bienestar: mini casas y vivienda permanente para todos.", // ✦
   home_story_more: "Cuéntame más",
   // PASS 3 — What-is page ES ✦ (owner copy-read candidates)
-  home_what_h1: "Un lugar tranquilo para encontrar ayuda.", // ✦
-  home_what_sub: "Hecho por vecinos que han pasado por lo mismo.", // ✦
+  home_what_h1: "Una mano de personas que han pasado por lo mismo.", // ✦
+  home_what_sub: "SafeGround es creado por MPRCC — un colectivo liderado por pares, fundado por personas con experiencia vivida de la falta de vivienda.", // ✦
   home_what_body:
-    "SafeGround es tu ayudante gratis y privado. Encuentra comida, refugio y cuidados. Recibe avisos de desalojos. Hazle saber a tu gente que estás bien con un toque. Sin cuenta. Nunca ubicación en segundo plano.", // ✦
-  home_who: "Para cualquiera en Marin que necesite una mano — o quiera dar una.", // ✦
+    "SafeGround es el asistente gratuito y privado de MPRCC. Encuentra comida, refugio y cuidado. Recibe avisos de barridos. Haz saber a los tuyos que estás bien con un toque. Sin cuenta. Sin seguimiento de ubicación, nunca. Somos más que ayuda mutua — somos apoyo y defensa desde la experiencia vivida, caminando a tu lado por el camino a casa: una aldea de bienestar entre pares, mini casas y vivienda permanente para todos. Tenemos un asiento en el Comité Directivo de Políticas de Personas sin Hogar del Condado y en la Junta Asesora de Experiencia Vivida — las voces de los pares dan forma a la política.", // ✦
+  home_who: "Para cualquiera en Marin que necesite una mano — o quiera dar una. Más de seis años de alcance, defensa y cuidado comunitario entre pares.", // ✦
   home_here_for: "¿Para qué estás aquí?", // ✦
   home_sweep_link: "¿Aviso cerca de ti? Ver avisos de desalojos", // ✦
   home_crisis_link: "¿En crisis? Habla con alguien", // ✦
@@ -1212,7 +1212,7 @@ const ES: Partial<Record<I18nKey, string>> = {
   home_share_h: "Compártelo", // ✦
   home_share_sub: "¿Conoces a alguien que pueda necesitarlo? Comparte SafeGround.", // ✦
   home_share_btn: "Compartir SafeGround", // ✦
-  home_share_text: "Un lugar tranquilo para encontrar ayuda — de MPRCC.", // ✦
+  home_share_text: "Una forma tranquila de encontrar ayuda, estar seguro y llegar a casa — de MPRCC.", // ✦
   home_share_copied: "Enlace copiado — compártelo.", // ✦
   home_share_link_label: "Copia este enlace:", // ✦
   home_qr_show: "Ver código QR", // ✦
