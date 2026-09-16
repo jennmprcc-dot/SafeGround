@@ -41,6 +41,20 @@ interface DbNeedLite {
   assigned_name: string | null;
   created_at: string | Date;
 }
+/** Owner bug 2026-09-16: the alert card fell back to "a neighbor" for anyone
+ * whose name was never stored server-side, even though the alert flow requires
+ * a first name. The alert row carries `sender_name` (HomeTeam → roster → the
+ * phone-bound users.display_name, where sg_peer_bind writes what the sender
+ * typed). Show the FIRST name only; a placeholder ('Neighbor', written by the
+ * bind before anything is typed) is not a name we were given — "a neighbor"
+ * stays the honest fallback. Never invent one. */
+function firstNameOf(raw: string | null | undefined): string | null {
+  const name = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!name) return null;
+  if (/^(a\s+)?neighbor$/i.test(name)) return null;
+  return name.split(" ")[0] ?? null;
+}
+
 interface DbAlertLite {
   id: string;
   kind: string;
@@ -115,13 +129,14 @@ async function summary(c: { request: Request }) {
     const activeAlerts = (await sql()`
       select ea.id, ea.kind, ea.note, ea.location_shared, ea.fuzz_lat, ea.fuzz_lng,
              ea.exact_lat, ea.exact_lng, ea.sender_phone,
-             coalesce(hs.display_name, rs.display_name) as sender_name,
+             coalesce(hs.display_name, rs.display_name, us.display_name) as sender_name,
              ea.claimed_by, coalesce(hc.display_name, rc.display_name) as claimed_name,
              ea.claimed_at, ea.resolved_at, ea.resolved_by_role, ea.outcome_note,
              ea.expires_at, ea.created_at
       from public.emergency_alerts ea
       left join public.hometeam_members hs on hs.phone = ea.sender_phone
       left join public.outreach_roster rs on rs.phone = ea.sender_phone and rs.active
+      left join public.users us on us.phone = ea.sender_phone
       left join public.hometeam_members hc on hc.phone = ea.claimed_by
       left join public.outreach_roster rc on rc.phone = ea.claimed_by and rc.active
       where ea.resolved_at is null and ea.expires_at > now()
@@ -153,13 +168,14 @@ async function summary(c: { request: Request }) {
       resolved = (await sql()`
         select ea.id, ea.kind, ea.note, ea.location_shared, ea.fuzz_lat, ea.fuzz_lng,
                ea.exact_lat, ea.exact_lng, ea.sender_phone,
-               coalesce(hs.display_name, rs.display_name) as sender_name,
+               coalesce(hs.display_name, rs.display_name, us.display_name) as sender_name,
                ea.claimed_by, coalesce(hc.display_name, rc.display_name) as claimed_name,
                ea.claimed_at, ea.resolved_at, ea.resolved_by_role, ea.outcome_note,
                ea.expires_at, ea.created_at
         from public.emergency_alerts ea
         left join public.hometeam_members hs on hs.phone = ea.sender_phone
         left join public.outreach_roster rs on rs.phone = ea.sender_phone and rs.active
+        left join public.users us on us.phone = ea.sender_phone
         left join public.hometeam_members hc on hc.phone = ea.claimed_by
         left join public.outreach_roster rc on rc.phone = ea.claimed_by and rc.active
         where ea.resolved_at is not null
@@ -186,7 +202,9 @@ async function summary(c: { request: Request }) {
       exactLat: admin ? r.exact_lat : null,
       exactLng: admin ? r.exact_lng : null,
       canSeeExact: admin,
-      senderName: r.sender_name ?? "a neighbor",
+      // At least a first name — never invented. Falls back to "a neighbor"
+      // only when no real name exists anywhere for this phone.
+      senderName: firstNameOf(r.sender_name) ?? "a neighbor",
       // staff_limited payloads NEVER contain neighbor phone digits.
       senderPhone: admin ? r.sender_phone : null,
       senderTail: tail4(r.sender_phone),

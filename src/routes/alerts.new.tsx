@@ -41,6 +41,29 @@ function businessHoursLine(now = new Date()): string {
   return "HomeTeam sees this during business hours Mon–Fri 8–6 unless they've opted in.";
 }
 
+/* ── Name bind (owner bug 2026-09-16) ──────────────────────────────
+ * The sender's first name used to live ONLY in this device's localStorage, so
+ * the outreach alert card had nothing to show for a neighbor with no
+ * HomeTeam/roster row and fell back to "a neighbor •••1234". This calls the
+ * existing create-or-bind route (sg_peer_bind), which writes the typed name
+ * onto the caller's own phone-bound row and NEVER overwrites a real name — so
+ * the name the sender typed is the one staff see. Best-effort: the alert is
+ * never delayed or blocked by it, and nothing else is sent (no location). */
+async function bindSenderName(phone: string, name: string): Promise<void> {
+  const p = phone.replace(/[^0-9]/g, "");
+  const n = name.trim().slice(0, 40);
+  if (p.length < 10 || n === "") return;
+  try {
+    await fetch("/api/peers/bind", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-sg-phone": p },
+      body: JSON.stringify({ phone: p, name: n }),
+    });
+  } catch {
+    /* best-effort — the alert still goes out with words + location */
+  }
+}
+
 /* ── Step 1: kind chips + note ───────────────────────────────────── */
 function KindStep({ kind, setKind, note, setNote, onNext }: {
   kind: AlertKind | null;
@@ -284,6 +307,9 @@ function SendAlertPage() {
     if (!kind || !location) return;
     setSending(true);
     setError(null);
+    // Bind the first name they typed so outreach sees it on the alert card —
+    // fire-and-forget, the send below never waits on it.
+    void bindSenderName(phoneInput, nameInput);
     let fuzzLat: number | null = null;
     let fuzzLng: number | null = null;
     let exactLat: number | null = null;
@@ -366,7 +392,8 @@ function SendAlertPage() {
           <Card>
             <h2 className="text-h2">Tell us who you are</h2>
             <p className="mt-1 text-small text-sg-ink-soft">
-              Your name isn't shown anywhere — your people just need to know it's you. Same phone you check in with.
+              Your first name is all we use — your people see it with your alert, and
+              MPRCC outreach sees it only when they step in to help. Same phone you check in with.
             </p>
             <div className="mt-4 flex flex-col gap-3">
               <label className="flex flex-col gap-1.5">
@@ -391,13 +418,17 @@ function SendAlertPage() {
                   <p className="text-small text-sg-danger-gentle">That number looks incomplete — please check it and try again, no rush.</p>
                 ) : null}
               </label>
-              <p className="text-small text-sg-ink-soft">Stays on this device. Your people see the name + the alert, never your number.</p>
+              <p className="text-small text-sg-ink-soft">Your number is how your people and the MPRCC team reach you back — it isn't shown to other neighbors.</p>
               <Button
                 full
                 disabled={!phoneOk || nameInput.trim().length === 0 || nameInput.trim().length > 40}
                 disabledReason={!phoneOk ? "A complete phone number first — no rush." : undefined}
                 onClick={() => {
                   setAlertIdentity(phoneInput, nameInput);
+                  // Best-effort: store the typed name on their own phone row so
+                  // outreach sees a first name on the alert card (never a real
+                  // name overwritten — sg_peer_bind only fills a placeholder).
+                  void bindSenderName(phoneInput, nameInput);
                   signIn(nameInput.trim());
                   push({ kind: "info", message: "Signed in — your people will know it's you." });
                 }}
