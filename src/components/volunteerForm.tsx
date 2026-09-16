@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { Button, Card, ConsentReceipt, TextArea, TextField } from "~/components/ui";
+import { StepGuide } from "~/components/stepGuide";
 import { CheckCircleIcon } from "~/lib/icons";
 import { useLanguage } from "~/lib/i18n";
 
@@ -100,6 +101,14 @@ export function VolunteerForm() {
           <h2 className="text-h2">{t("vol_card_title")}</h2>
           <p className="mt-0.5 text-small text-sg-ink-soft">{t("vol_sub")}</p>
         </div>
+
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.7. "Doesn't commit you to anything" stays calm. */}
+        <StepGuide
+          id="volunteer"
+          steps={[t("vol_step1"), t("vol_step2"), t("vol_step3"), t("vol_step4")]}
+          whatNext={t("vol_whatnext")}
+        />
 
         {topError ? (
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">

@@ -41,6 +41,7 @@ import {
   setAlertIdentity,
 } from "~/lib/alertIdentity";
 import { Button, Card, ConsentReceipt, TextArea, TextField } from "~/components/ui";
+import { StepGuide } from "~/components/stepGuide";
 import { CheckCircleIcon, CloseIcon } from "~/lib/icons";
 import { useLanguage, type I18nKey } from "~/lib/i18n";
 import { cn } from "~/lib/cn";
@@ -315,6 +316,14 @@ export function DonateItemForm() {
           <h2 className="text-h2">{t("dn_offer_title")}</h2>
           <p className="mt-0.5 text-small text-sg-ink-soft">{t("dn_offer_sub")}</p>
         </div>
+
+        {/* Plain-language "here's how it works" (owner-directed 2026-09-16) —
+            spec Part B §B3.4, the give half. First visit expands it. */}
+        <StepGuide
+          id="donate-item"
+          steps={[t("dn_step1"), t("dn_step2"), t("dn_step3"), t("dn_step4")]}
+          whatNext={t("dn_whatnext")}
+        />
 
         {topError ? (
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
@@ -595,6 +604,14 @@ export function RequestItemForm({ compact = false }: { compact?: boolean }) {
           <h2 className="text-h2">{t("dn_req_title")}</h2>
           <p className="mt-0.5 text-small text-sg-ink-soft">{t("dn_req_sub")}</p>
         </div>
+
+        {/* Same guide, the get half (spec Part B §B3.4) — this form is the
+            neighbor's "ask for something" flow today. */}
+        <StepGuide
+          id="request-item"
+          steps={[t("dn_step1"), t("dn_step2"), t("dn_step3"), t("dn_step4")]}
+          whatNext={t("dn_whatnext")}
+        />
 
         {topError ? (
           <p className="rounded-[12px] bg-sg-clay-wash px-3 py-2 text-small text-sg-clay" role="alert">
