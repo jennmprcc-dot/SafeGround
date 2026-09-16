@@ -21,7 +21,8 @@ import { OPEN_WELCOME_EVENT, WELCOME_KEY } from "~/components/welcome";
 import type { ToastState } from "~/components/ui";
 import { MODES, MODE_KEY, displayMode, readMode, routeHint, writeMode } from "~/lib/modeNav";
 import type { Mode, ModeDef, SubTab } from "~/lib/modeNav";
-import { getAlertIdentity } from "~/lib/alertIdentity";
+import { getAlertIdentity, IDENTITY_CHANGED_EVENT } from "~/lib/alertIdentity";
+import { maybeRegisterPush } from "~/lib/fcm";
 
 /* ── EN|ES segmented toggle (PR-B) — calm two-state control in the
  * header, persisted to localStorage (`sg.lang`). EN is always the
@@ -705,6 +706,39 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener("offline", onOff);
       window.removeEventListener("online", onOn);
+    };
+  }, []);
+
+  /* ── Device push registration (owner bug 2026-09-16: NO device ever
+   * registers — tokens only existed from the /push-test page). Runs the
+   * best-effort FCM registration whenever a phone identity exists: on mount
+   * (returning phones) and the moment a number is added mid-session
+   * (IDENTITY_CHANGED_EVENT from setAlertIdentity). Consent is the user's
+   * Allow tap; a per-phone localStorage flag makes it a one-time ask — it
+   * never blocks UI and silently no-ops when push isn't supported (those
+   * users already get SMS where consent exists). */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = () => {
+      const identity = getAlertIdentity();
+      if (!identity) return;
+      // Slight delay so the shell's first paint + any cold-start redirect
+      // effects finish first; a second attempt is a no-op via the flag.
+      timer = setTimeout(() => {
+        void maybeRegisterPush(
+          identity.phone,
+          identity.name === "Neighbor" ? undefined : identity.name,
+        );
+      }, 1500);
+    };
+    attempt();
+    window.addEventListener(IDENTITY_CHANGED_EVENT, attempt);
+    window.addEventListener("storage", attempt); // another tab set a number
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener(IDENTITY_CHANGED_EVENT, attempt);
+      window.removeEventListener("storage", attempt);
     };
   }, []);
 
