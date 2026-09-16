@@ -43,7 +43,11 @@ export function VolunteerQueueSection({ phone }: { phone: string }) {
   const [saved, setSaved] = useState(false);
 
   const load = useCallback(async () => {
-    setState({ kind: "loading" });
+    // Same-object bail-out: keeps a refetch from re-rendering into another
+    // fetch (the owner-reported 2026-09-16 dashboard flicker / request storm).
+    // A real transition (ready → loading after mark-contacted) still shows the
+    // skeleton.
+    setState((prev) => (prev.kind === "loading" ? prev : { kind: "loading" }));
     setActionError(null);
     try {
       const res = await fetch(`/api/volunteers?phone=${encodeURIComponent(phone)}`);
